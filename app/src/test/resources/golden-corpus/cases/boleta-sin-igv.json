@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "boleta-sin-igv",
+  "title": "Boleta exonerada sin línea de IGV",
+  "category": "exonerada",
+  "buyerRuc": null,
+  "inputImage": {
+    "textLayerResource": "expected-ocr/boleta-sin-igv.json",
+    "outputFileName": "boleta-sin-igv.png",
+    "profile": "CLEAN",
+    "blurRadiusPx": 0,
+    "horizontalSkewPermille": 0
+  },
+  "expectedOcrResource": "expected-ocr/boleta-sin-igv.json",
+  "expectedResultResource": "expected-results/boleta-sin-igv.json"
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "header": {
+    "issuerRuc": "20131312955",
+    "issuerLegalName": "TIENDA EL SOL E.I.R.L.",
+    "documentType": "SALES_RECEIPT",
+    "documentNumber": "B001-456",
+    "issueDate": "2026-08-17",
+    "currency": "PEN"
+  },
+  "lineCount": 1,
+  "lines": [
+    {
+      "description": "PAN FRANCÉS",
+      "quantity": "5",
+      "totalMinorUnits": 2500
+    }
+  ],
+  "totals": {
+    "taxableMinorUnits": null,
+    "exemptMinorUnits": 2500,
+    "unaffectedMinorUnits": null,
+    "subtotalMinorUnits": null,
+    "igvMinorUnits": null,
+    "totalMinorUnits": 2500
+  },
+  "confidence": "HIGH",
+  "warningCodes": [
+    "FIELD_REQUIRES_REVIEW",
+    "LOW_CONFIDENCE_REQUIRES_CONFIRMATION"
+  ]
+}

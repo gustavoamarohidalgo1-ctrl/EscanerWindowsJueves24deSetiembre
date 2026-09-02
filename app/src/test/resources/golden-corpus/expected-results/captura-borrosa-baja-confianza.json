@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "header": {
+    "issuerRuc": "20131312955",
+    "issuerLegalName": "COMERCIAL ANDINA S.A.C.",
+    "documentType": "INVOICE",
+    "documentNumber": "F001-12345",
+    "issueDate": "2026-08-17",
+    "currency": "PEN"
+  },
+  "lineCount": 1,
+  "lines": [
+    {
+      "description": "ARROZ EXTRA 5 KG",
+      "quantity": "2",
+      "totalMinorUnits": 10000
+    }
+  ],
+  "totals": {
+    "taxableMinorUnits": 10000,
+    "exemptMinorUnits": 0,
+    "unaffectedMinorUnits": 0,
+    "subtotalMinorUnits": null,
+    "igvMinorUnits": 1800,
+    "totalMinorUnits": 11800
+  },
+  "confidence": "LOW",
+  "warningCodes": [
+    "FIELD_REQUIRES_REVIEW",
+    "LOW_CONFIDENCE_REQUIRES_CONFIRMATION"
+  ]
+}

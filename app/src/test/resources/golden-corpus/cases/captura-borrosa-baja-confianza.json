@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "captura-borrosa-baja-confianza",
+  "title": "Captura borrosa con confianza OCR baja en todas las celdas",
+  "category": "calidad",
+  "buyerRuc": null,
+  "inputImage": {
+    "textLayerResource": "expected-ocr/factura-limpia-basica.json",
+    "outputFileName": "captura-borrosa-baja-confianza.png",
+    "profile": "BLURRED",
+    "blurRadiusPx": 2,
+    "horizontalSkewPermille": 0
+  },
+  "expectedOcrResource": "expected-ocr/captura-borrosa-baja-confianza.json",
+  "expectedResultResource": "expected-results/captura-borrosa-baja-confianza.json"
+}

@@ -1,0 +1,152 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "documentBackups",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "documentBackups",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "purgeRequested", "order": "ASCENDING" },
+        { "fieldPath": "purgedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "accountDeletionTombstones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cleanupComplete", "order": "ASCENDING" },
+        { "fieldPath": "storageCleanupPending", "order": "ASCENDING" },
+        { "fieldPath": "storageCleanupEligibleAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "members",
+      "fieldPath": "uid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "members",
+      "fieldPath": "roleUpdatedBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "fieldPath": "email",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "fieldPath": "invitedBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "fieldPath": "acceptedBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "fieldPath": "declinedBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "fieldPath": "cancelledBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "fieldPath": "syncedBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "fieldPath": "voidedBy",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "voidRecord",
+      "fieldPath": "cloudActorUid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "invitationRateLimits",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "documentUploadRateLimits",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "documentSyncOperations",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionEmailLocks",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "membershipQuotaCounters",
+      "fieldPath": "count",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "membershipQuotaCounters",
+      "fieldPath": "updatedAt",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "membershipQuotaCounters",
+      "fieldPath": "schemaVersion",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "syncMutationRateLimits",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
+}

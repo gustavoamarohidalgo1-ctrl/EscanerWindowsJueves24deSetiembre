@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "factura-limpia-basica",
+  "title": "Factura limpia con IGV 18 %",
+  "category": "limpia",
+  "buyerRuc": null,
+  "inputImage": {
+    "textLayerResource": "expected-ocr/factura-limpia-basica.json",
+    "outputFileName": "factura-limpia-basica.png",
+    "profile": "CLEAN",
+    "blurRadiusPx": 0,
+    "horizontalSkewPermille": 0
+  },
+  "expectedOcrResource": "expected-ocr/factura-limpia-basica.json",
+  "expectedResultResource": "expected-results/factura-limpia-basica.json"
+}

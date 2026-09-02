@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "factura-decimales-coma",
+  "title": "Factura con decimales en convención de coma",
+  "category": "separadores",
+  "buyerRuc": null,
+  "inputImage": {
+    "textLayerResource": "expected-ocr/factura-decimales-coma.json",
+    "outputFileName": "factura-decimales-coma.png",
+    "profile": "CLEAN",
+    "blurRadiusPx": 0,
+    "horizontalSkewPermille": 0
+  },
+  "expectedOcrResource": "expected-ocr/factura-decimales-coma.json",
+  "expectedResultResource": "expected-results/factura-decimales-coma.json"
+}

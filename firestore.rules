@@ -1,0 +1,179 @@
+rules_version = '2';
+
+// Respaldo opcional de FacturaStock. Toda escritura de negocio la hacen las Cloud Functions
+// con Admin SDK (las reglas no aplican al Admin SDK); el cliente autenticado solo lee si es
+// miembro del negocio. Compras, ventas, deudas, pagos, movimientos de stock, auditoría e índices
+// jamás se editan desde el cliente: solo Functions autorizadas (que derivan el UID del token,
+// comprueban membresía y rol, y validan el payload completo).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isMember(businessId) {
+      return request.auth != null &&
+        request.auth.token.email_verified == true &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        get(/databases/$(database)/documents/businesses/$(businessId))
+          .data.get("accountDeletionLocked", false) != true &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid));
+    }
+
+    // Rol del usuario actual dentro del negocio (false si no es miembro).
+    function hasRole(businessId, roles) {
+      return request.auth != null &&
+        request.auth.token.email_verified == true &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)) &&
+        get(/databases/$(database)/documents/businesses/$(businessId))
+          .data.get("accountDeletionLocked", false) != true &&
+        exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.role in roles;
+    }
+
+    match /businesses/{businessId} {
+      allow read: if isMember(businessId);
+      // El perfil también es control-plane: createBusiness y los futuros cambios validados
+      // pasan por Functions. Ningún rol (ni OWNER) escribe el root directamente.
+      allow create, update, delete: if false;
+
+      match /members/{uid} {
+        allow read: if isMember(businessId);
+        // La membresía y los roles se administran con los callables (Admin SDK): un cliente
+        // manipulado no puede cambiar su rol ni el de nadie.
+        allow write: if false;
+      }
+
+      // Invitaciones: la lectura del invitado pasa por listMyInvitations, que puede comprobar el
+      // tombstone de cuenta. Un JWT viejo nunca obtiene acceso directo por su claim de email.
+      match /invitations/{invitationId} {
+        allow read: if hasRole(businessId, ['OWNER', 'ADMIN']);
+        allow write: if false;
+      }
+
+      // Libros del respaldo: lectura de miembros, escritura solo vía Function. Lo publicado
+      // es inmutable para el cliente (las anulaciones son compensaciones del callable).
+      match /purchases/{purchaseId} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+        match /lines/{lineId} {
+          allow read: if isMember(businessId);
+          allow write: if false;
+        }
+        match /voidRecord/{doc} {
+          allow read: if isMember(businessId);
+          allow write: if false;
+        }
+      }
+      match /sales/{saleId} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+        match /lines/{lineId} {
+          allow read: if isMember(businessId);
+          allow write: if false;
+        }
+      }
+      // El nombre del deudor es PII del negocio: solo miembros verificados pueden leerlo. La
+      // venta a crédito y cada pago se crean por callable; ningún cliente escribe el ledger.
+      match /debts/{debtId} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+        match /payments/{paymentId} {
+          allow read: if isMember(businessId);
+          allow write: if false;
+        }
+      }
+      match /suppliers/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /products/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /catalogSyncOperations/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /catalogSyncChanges/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /supplierRucIndex/{doc} {
+        allow read, write: if false;
+      }
+      match /productSkuIndex/{doc} {
+        allow read, write: if false;
+      }
+      match /productBarcodeIndex/{doc} {
+        allow read, write: if false;
+      }
+      match /stockMovements/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /inventoryBalances/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /inventorySyncChanges/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /saleSyncKeys/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      // Índice operacional de idempotencia: el ACK/feed ya exponen lo necesario; ocultarlo
+      // evita revelar hashes y metadatos internos incluso a clientes miembros manipulados.
+      match /debtPaymentSyncKeys/{doc} {
+        allow read, write: if false;
+      }
+      match /auditEvents/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /sync/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /syncKeys/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+      match /documentIndex/{doc} {
+        allow read: if isMember(businessId);
+        allow write: if false;
+      }
+    }
+
+    // Guardas pseudónimas del borrado. Ninguna contiene UID/email en campos ni es accesible al
+    // cliente: la de UID permanece; la de email solo serializa invitaciones durante el barrido.
+    match /accountDeletionTombstones/{tombstoneId} {
+      allow read, write: if false;
+    }
+    match /accountDeletionEmailLocks/{lockId} {
+      allow read, write: if false;
+    }
+    // Contadores fixed-window pseudónimos de invitación. Solo Functions los consulta/muta; el
+    // cliente no puede inspeccionar consumo, destinatarios ni reiniciar una cuota.
+    match /invitationRateLimits/{rateLimitId} {
+      allow read, write: if false;
+    }
+    // Cuotas pseudónimas de decode documental. No exponen UID/negocio en campos ni permiten
+    // que un cliente inspeccione o reinicie la ventana antiabuso.
+    match /documentUploadRateLimits/{rateLimitId} {
+      allow read, write: if false;
+    }
+    // Punto de serialización pseudónimo de la cuota de 20 negocios por cuenta. No contiene UID
+    // ni email y solo las Functions lo crean, ajustan o eliminan junto con members/{uid}.
+    match /membershipQuotaCounters/{counterId} {
+      allow read, write: if false;
+    }
+    // Cuotas fixed-window pseudonimas de ventas por actor/negocio y por negocio. Solo Functions
+    // puede consumirlas; el cliente no inspecciona uso ni puede reiniciar la ventana.
+    match /syncMutationRateLimits/{counterId} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

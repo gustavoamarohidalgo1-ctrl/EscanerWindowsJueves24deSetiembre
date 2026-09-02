@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es-PE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow">
+  <title>Eliminar una cuenta de FacturaStock</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.55; }
+    body { margin: 0 auto; max-width: 44rem; padding: 1.5rem; }
+    label { display: block; font-weight: 650; margin-top: 1rem; }
+    input[type="email"] { box-sizing: border-box; font: inherit; min-height: 3rem; width: 100%; }
+    button { font: inherit; margin-top: 1rem; min-height: 3rem; padding: .5rem 1rem; }
+    .draft { border: 3px solid #9b4d00; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <!--
+    NO PUBLICAR mientras exista un marcador de plantilla. El endpoint debe verificar control del
+    correo con un enlace de un solo uso; nunca debe pedir contraseña, factura o documento fiscal.
+  -->
+  <header>
+    <h1>Eliminar una cuenta de FacturaStock</h1>
+    <p>
+      Esta página permite iniciar la eliminación de una cuenta cloud de FacturaStock aunque la
+      aplicación ya no esté instalada.
+    </p>
+  </header>
+
+  <aside class="draft" role="note">
+    <strong>Plantilla no operativa.</strong> El formulario no debe publicarse hasta conectar y
+    probar el endpoint, el correo de verificación y la eliminación completa. Una página que solo
+    muestra instrucciones, pero no recibe solicitudes, no satisface el requisito de Google Play.
+  </aside>
+
+  <main>
+    <section>
+      <h2>Qué se elimina</h2>
+      <ul>
+        <li>la cuenta de Firebase Authentication y su acceso futuro;</li>
+        <li>las membresías y todas las invitaciones dirigidas al correo verificado;</li>
+        <li>los negocios cloud donde la cuenta sea propietaria y la única integrante;</li>
+        <li>las invitaciones históricas donde la cuenta figure como quien aceptó o rechazó;</li>
+        <li>las referencias personales de autoría restantes en negocios compartidos, reemplazadas
+          por la etiqueta <code>deleted-account</code>.</li>
+      </ul>
+      <p>
+        Las compras, ventas, deudas y abonos comerciales de un negocio compartido se conservan para
+        los otros miembros, sin el UID de la cuenta eliminada. El UUID interno incluido en un registro canónico de
+        anulación y sus hashes se conservan porque no identifican la cuenta Firebase. La cuenta
+        deja de tener acceso.
+      </p>
+      <p>
+        Mientras una membresía está activa, las personas autorizadas del negocio pueden ver el
+        listado del equipo (correo y UID) y los datos comerciales respaldados según su rol. La
+        eliminación retira la membresía y anonimiza o borra las referencias personales descritas,
+        pero no borra la historia comercial que pertenece también a los demás miembros.
+      </p>
+      <p>
+        También se puede borrar una cuenta cuyo correo aún no fue verificado. Por seguridad, en
+        ese caso el proceso no usa el correo sin acreditar para localizar o eliminar invitaciones.
+      </p>
+      <p>
+        Las compras, ventas, deudas y abonos guardados localmente en un teléfono no pueden borrarse
+        a distancia. Para
+        eliminarlas, use Ajustes de Android → Aplicaciones → FacturaStock → Almacenamiento →
+        Borrar datos, o desinstale la app.
+      </p>
+      <p>
+        Para impedir que una sesión antigua recree datos, se conserva indefinidamente una huella
+        SHA-256 namespaced del UID, sin UID ni correo en claro y no accesible desde la app. La
+        huella temporal del correo usada para bloquear invitaciones concurrentes se intenta
+        eliminar al terminar y deja de bloquear a las 24 horas. Si ese borrado falla, Firestore
+        programa su purga física asíncrona mediante TTL.
+      </p>
+      <p>
+        Si la cuenta figura como propietaria de más de 480 negocios, el sistema se detiene antes
+        de consultar sus árboles o borrar y solicita contactar a soporte para reducir o segmentar el alcance. No
+        ejecuta una eliminación parcial.
+      </p>
+      <p>
+        El cierre de cuenta no elimina automáticamente el Firebase Installation ID ni los
+        tokens/metadatos técnicos de App Check o Play Integrity ya tratados. El plazo y control
+        aplicable deben publicarse aquí solo después de verificarlos externamente:
+        {{PLAZO_Y_CONTROL_FID_APP_CHECK_CONFIRMADO_EXTERNAMENTE}}.
+      </p>
+    </section>
+
+    <section>
+      <h2>Antes de solicitar</h2>
+      <p>
+        Si es propietario de un negocio cloud con más miembros, transfiera primero la propiedad
+        a otra persona. La eliminación se detiene sin borrar nada mientras un negocio compartido
+        dependa de su cuenta. El soporte puede ayudar a completar esta transferencia, pero no debe
+        recibir contraseñas ni comprobantes.
+      </p>
+    </section>
+
+    <section>
+      <h2>Enviar solicitud</h2>
+      <form action="{{URL_ENDPOINT_SOLICITUD_ELIMINACION_HTTPS}}" method="post">
+        <input type="hidden" name="product" value="facturastock">
+        <label for="account-email">Correo de la cuenta</label>
+        <input id="account-email" name="email" type="email" autocomplete="email" required
+               maxlength="254">
+        <label>
+          <input name="confirmation" type="checkbox" value="delete-account" required>
+          Solicito eliminar mi cuenta de FacturaStock y tratar los datos cloud como se describe
+          arriba, incluidas las retenciones de seguridad y comerciales indicadas.
+        </label>
+        <button type="submit">Solicitar eliminación</button>
+      </form>
+      <p>
+        Enviaremos una verificación de un solo uso al correo de la cuenta. No incluya contraseña,
+        RUC, factura, foto ni información de pago. Si el formulario falla, escriba a
+        <a href="mailto:{{CORREO_PRIVACIDAD}}?subject=Eliminar%20cuenta%20FacturaStock">
+        {{CORREO_PRIVACIDAD}}</a> desde el correo de la cuenta.
+      </p>
+    </section>
+
+    <section>
+      <h2>Plazo y resultado</h2>
+      <p>
+        Confirmaremos la recepción y completaremos o responderemos la solicitud en
+        {{PLAZO_OPERATIVO_DE_ELIMINACION}}. Si existe un bloqueo de propiedad, indicaremos los
+        pasos necesarios. Una vez concluido el proceso, el correo recibirá una confirmación sin
+        incluir contenido comercial.
+      </p>
+      <p>
+        Los sistemas y copias de seguridad de proveedores pueden necesitar un periodo adicional
+        para purgar datos; la política de privacidad explica los plazos verificados. Las
+        estadísticas Analytics ya agregadas no se pueden borrar selectivamente desde la cuenta.
+      </p>
+    </section>
+
+    <footer>
+      <p>
+        Consulte la <a href="{{URL_POLITICA_PRIVACIDAD_HTTPS}}">política de privacidad de
+        FacturaStock</a> o contacte a {{NOMBRE_LEGAL_DEL_DESARROLLADOR}} en
+        <a href="mailto:{{CORREO_PRIVACIDAD}}">{{CORREO_PRIVACIDAD}}</a>.
+      </p>
+    </footer>
+  </main>
+</body>
+</html>

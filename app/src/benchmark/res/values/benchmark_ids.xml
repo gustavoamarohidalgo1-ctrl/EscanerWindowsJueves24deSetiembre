@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="performance_camera_ready" type="id" />
+    <item name="performance_camera_capture" type="id" />
+    <item name="performance_camera_capture_ready" type="id" />
+    <item name="performance_camera_failure" type="id" />
+    <item name="performance_camera_strict_mode_clean" type="id" />
+    <item name="performance_camera_strict_mode_violation" type="id" />
+    <item name="performance_list_strict_mode_clean" type="id" />
+    <item name="performance_list_strict_mode_violation" type="id" />
+    <item name="performance_list_to_first" type="id" />
+    <item name="performance_list_to_last" type="id" />
+    <item name="performance_list_first_settled" type="id" />
+    <item name="performance_list_last_settled" type="id" />
+</resources>

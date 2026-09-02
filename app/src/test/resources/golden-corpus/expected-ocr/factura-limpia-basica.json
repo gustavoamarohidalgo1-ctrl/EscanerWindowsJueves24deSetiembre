@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "source": "SYNTHETIC_EXPECTATION",
+  "pageWidthPx": 1200,
+  "pageHeightPx": 1600,
+  "clockwiseAngleTenths": 0,
+  "cells": [
+    { "text": "COMERCIAL ANDINA S.A.C.", "box": [40, 35, 560, 70] },
+    { "text": "RUC: 20131312955", "box": [40, 80, 370, 115] },
+    { "text": "FACTURA ELECTRÓNICA", "box": [650, 35, 1160, 70] },
+    { "text": "F001-12345", "box": [760, 85, 1050, 120] },
+    { "text": "Fecha de emisión: 17/08/2026", "box": [650, 140, 1160, 175] },
+    { "text": "Moneda: PEN", "box": [650, 190, 1000, 225] },
+    { "text": "DESCRIPCIÓN", "box": [60, 300, 650, 335] },
+    { "text": "CANTIDAD", "box": [680, 300, 800, 335] },
+    { "text": "IMPORTE", "box": [900, 300, 1150, 335] },
+    { "text": "ARROZ EXTRA 5 KG", "box": [60, 365, 650, 400] },
+    { "text": "2", "box": [680, 365, 800, 400] },
+    { "text": "S/ 100.00", "box": [900, 365, 1150, 400] },
+    { "text": "OP. GRAVADA", "box": [650, 900, 930, 935] },
+    { "text": "S/ 100.00", "box": [960, 900, 1160, 935] },
+    { "text": "OP. EXONERADA", "box": [650, 960, 930, 995] },
+    { "text": "S/ 0.00", "box": [960, 960, 1160, 995] },
+    { "text": "OP. INAFECTA", "box": [650, 1020, 930, 1055] },
+    { "text": "S/ 0.00", "box": [960, 1020, 1160, 1055] },
+    { "text": "IGV 18%", "box": [650, 1080, 930, 1115] },
+    { "text": "S/ 18.00", "box": [960, 1080, 1160, 1115] },
+    { "text": "TOTAL A PAGAR", "box": [650, 1140, 930, 1175] },
+    { "text": "S/ 118.00", "box": [960, 1140, 1160, 1175] }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "captura-inclinada",
+  "title": "Captura inclinada con geometría solo de esquinas",
+  "category": "calidad",
+  "buyerRuc": null,
+  "inputImage": {
+    "textLayerResource": "expected-ocr/factura-limpia-basica.json",
+    "outputFileName": "captura-inclinada.png",
+    "profile": "SKEWED",
+    "blurRadiusPx": 0,
+    "horizontalSkewPermille": 90
+  },
+  "expectedOcrResource": "expected-ocr/captura-inclinada.json",
+  "expectedResultResource": "expected-results/captura-inclinada.json"
+}

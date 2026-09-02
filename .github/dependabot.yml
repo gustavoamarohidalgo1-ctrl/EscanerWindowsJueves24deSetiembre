@@ -1,0 +1,35 @@
+version: 2
+
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:17"
+      timezone: America/Lima
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-gradle
+
+  - package-ecosystem: npm
+    directory: "/functions"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:27"
+      timezone: America/Lima
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-functions
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:37"
+      timezone: America/Lima
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps-actions

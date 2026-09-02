@@ -1,0 +1,36 @@
+.gradle/
+.kotlin/
+.idea/
+node_modules/
+build/
+app/build/
+local.properties
+*.iml
+.DS_Store
+# Evidencia manual local: puede contener capturas de pantalla del teléfono y nunca se publica.
+evidence/
+
+# Salidas locales de Firebase/escáneres y staging de CI. Los artefactos publicados se crean
+# desde una allowlist sanitizada; estos archivos crudos pueden contener rutas del runner.
+.firebase/
+**/*-debug.log
+ci-artifacts/
+ci-summaries/
+security-results/
+
+# Reportes crudos y reproducciones temporales de Functions. Nunca se versionan ni deben
+# viajar en el paquete de despliegue (ver el `ignore` de firebase.json).
+functions/firebase-junit.xml
+functions/.tmp*
+
+# Credenciales y material de firma nunca se versionan ni se incorporan a artefactos.
+.env
+.env.*
+google-services.json
+**/google-services.json
+service-account*.json
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem

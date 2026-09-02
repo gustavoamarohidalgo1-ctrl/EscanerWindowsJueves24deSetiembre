@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "header": {
+    "issuerRuc": "20131312955",
+    "issuerLegalName": "COMERCIAL ANDINA S.A.C.",
+    "documentType": "INVOICE",
+    "documentNumber": "F001-12345",
+    "issueDate": "2026-08-17",
+    "currency": "PEN"
+  },
+  "lineCount": 1,
+  "lines": [
+    {
+      "description": "ACEITE VEGETAL 1 L",
+      "quantity": "10",
+      "totalMinorUnits": 105000
+    }
+  ],
+  "totals": {
+    "taxableMinorUnits": 105000,
+    "exemptMinorUnits": 0,
+    "unaffectedMinorUnits": 0,
+    "subtotalMinorUnits": null,
+    "igvMinorUnits": 18900,
+    "totalMinorUnits": 123900
+  },
+  "confidence": "HIGH",
+  "warningCodes": [
+    "FIELD_REQUIRES_REVIEW",
+    "LOW_CONFIDENCE_REQUIRES_CONFIRMATION"
+  ]
+}

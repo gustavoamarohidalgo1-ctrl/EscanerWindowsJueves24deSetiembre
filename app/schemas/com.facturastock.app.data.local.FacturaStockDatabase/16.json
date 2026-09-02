@@ -1,0 +1,2695 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 16,
+    "identityHash": "50e184b77c32dd1dfe6125fbaa51161c",
+    "entities": [
+      {
+        "tableName": "businesses",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`businessId` TEXT NOT NULL, `legalName` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `ruc` TEXT, `tradeName` TEXT, `status` TEXT NOT NULL, PRIMARY KEY(`businessId`))",
+        "fields": [
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "legalName",
+            "columnName": "legalName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruc",
+            "columnName": "ruc",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tradeName",
+            "columnName": "tradeName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "businessId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_businesses_ruc",
+            "unique": true,
+            "columnNames": [
+              "ruc"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_businesses_ruc` ON `${TABLE_NAME}` (`ruc`)"
+          }
+        ]
+      },
+      {
+        "tableName": "suppliers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`supplierId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `legalName` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `ruc` TEXT, `tradeName` TEXT, `status` TEXT NOT NULL, `version` INTEGER NOT NULL, PRIMARY KEY(`supplierId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "supplierId",
+            "columnName": "supplierId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "legalName",
+            "columnName": "legalName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruc",
+            "columnName": "ruc",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tradeName",
+            "columnName": "tradeName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "supplierId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_suppliers_businessId_ruc",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "ruc"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_suppliers_businessId_ruc` ON `${TABLE_NAME}` (`businessId`, `ruc`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "units",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`unitId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `code` TEXT NOT NULL, `name` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `symbol` TEXT, `status` TEXT NOT NULL, PRIMARY KEY(`unitId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "unitId",
+            "columnName": "unitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "symbol",
+            "columnName": "symbol",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "unitId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_units_businessId_code",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_units_businessId_code` ON `${TABLE_NAME}` (`businessId`, `code`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "inventory_locations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`locationId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `name` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`locationId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "locationId",
+            "columnName": "locationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "locationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_inventory_locations_businessId_name",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_inventory_locations_businessId_name` ON `${TABLE_NAME}` (`businessId`, `name`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "products",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`productId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `unitId` TEXT NOT NULL, `name` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `locationId` TEXT, `sku` TEXT, `barcode` TEXT, `normalizedName` TEXT NOT NULL, `purchaseUnitId` TEXT, `purchaseFactor` TEXT, `status` TEXT NOT NULL, `version` INTEGER NOT NULL, PRIMARY KEY(`productId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`unitId`) REFERENCES `units`(`unitId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`locationId`) REFERENCES `inventory_locations`(`locationId`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`purchaseUnitId`) REFERENCES `units`(`unitId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitId",
+            "columnName": "unitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locationId",
+            "columnName": "locationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sku",
+            "columnName": "sku",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "barcode",
+            "columnName": "barcode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "normalizedName",
+            "columnName": "normalizedName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purchaseUnitId",
+            "columnName": "purchaseUnitId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "purchaseFactor",
+            "columnName": "purchaseFactor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "productId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_products_businessId_sku",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "sku"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_products_businessId_sku` ON `${TABLE_NAME}` (`businessId`, `sku`)"
+          },
+          {
+            "name": "index_products_businessId_barcode",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "barcode"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_products_businessId_barcode` ON `${TABLE_NAME}` (`businessId`, `barcode`)"
+          },
+          {
+            "name": "index_products_businessId_normalizedName",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "normalizedName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_products_businessId_normalizedName` ON `${TABLE_NAME}` (`businessId`, `normalizedName`)"
+          },
+          {
+            "name": "index_products_unitId",
+            "unique": false,
+            "columnNames": [
+              "unitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_products_unitId` ON `${TABLE_NAME}` (`unitId`)"
+          },
+          {
+            "name": "index_products_locationId",
+            "unique": false,
+            "columnNames": [
+              "locationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_products_locationId` ON `${TABLE_NAME}` (`locationId`)"
+          },
+          {
+            "name": "index_products_purchaseUnitId",
+            "unique": false,
+            "columnNames": [
+              "purchaseUnitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_products_purchaseUnitId` ON `${TABLE_NAME}` (`purchaseUnitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "units",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "unitId"
+            ],
+            "referencedColumns": [
+              "unitId"
+            ]
+          },
+          {
+            "table": "inventory_locations",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "locationId"
+            ],
+            "referencedColumns": [
+              "locationId"
+            ]
+          },
+          {
+            "table": "units",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "purchaseUnitId"
+            ],
+            "referencedColumns": [
+              "unitId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "supplier_product_aliases",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`aliasId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `supplierId` TEXT NOT NULL, `productId` TEXT NOT NULL, `alias` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `aliasNormalized` TEXT NOT NULL, PRIMARY KEY(`aliasId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`supplierId`) REFERENCES `suppliers`(`supplierId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`productId`) REFERENCES `products`(`productId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "aliasId",
+            "columnName": "aliasId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supplierId",
+            "columnName": "supplierId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aliasNormalized",
+            "columnName": "aliasNormalized",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "aliasId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_supplier_product_aliases_businessId_supplierId_aliasNormalized",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "supplierId",
+              "aliasNormalized"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_supplier_product_aliases_businessId_supplierId_aliasNormalized` ON `${TABLE_NAME}` (`businessId`, `supplierId`, `aliasNormalized`)"
+          },
+          {
+            "name": "index_supplier_product_aliases_businessId_aliasNormalized",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "aliasNormalized"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_supplier_product_aliases_businessId_aliasNormalized` ON `${TABLE_NAME}` (`businessId`, `aliasNormalized`)"
+          },
+          {
+            "name": "index_supplier_product_aliases_supplierId",
+            "unique": false,
+            "columnNames": [
+              "supplierId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_supplier_product_aliases_supplierId` ON `${TABLE_NAME}` (`supplierId`)"
+          },
+          {
+            "name": "index_supplier_product_aliases_productId",
+            "unique": false,
+            "columnNames": [
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_supplier_product_aliases_productId` ON `${TABLE_NAME}` (`productId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "suppliers",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "supplierId"
+            ],
+            "referencedColumns": [
+              "supplierId"
+            ]
+          },
+          {
+            "table": "products",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productId"
+            ],
+            "referencedColumns": [
+              "productId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_drafts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `status` TEXT NOT NULL, `supplierId` TEXT, `supplierRucRaw` TEXT, `supplierRucNormalized` TEXT, `supplierLegalNameRaw` TEXT, `supplierLegalNameNormalized` TEXT, `documentType` TEXT, `documentNumberRaw` TEXT, `documentNumberNormalized` TEXT, `issueDateRaw` TEXT, `issueDateNormalized` TEXT, `currencyCode` TEXT, `subtotalMinorUnits` INTEGER, `taxMinorUnits` INTEGER, `otherChargesMinorUnits` INTEGER, `totalMinorUnits` INTEGER, `headerConfidence` INTEGER, `activeOcrRunId` TEXT, `confirmedPurchaseId` TEXT, `lastError` TEXT, PRIMARY KEY(`draftId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`supplierId`) REFERENCES `suppliers`(`supplierId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supplierId",
+            "columnName": "supplierId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supplierRucRaw",
+            "columnName": "supplierRucRaw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supplierRucNormalized",
+            "columnName": "supplierRucNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supplierLegalNameRaw",
+            "columnName": "supplierLegalNameRaw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supplierLegalNameNormalized",
+            "columnName": "supplierLegalNameNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "documentType",
+            "columnName": "documentType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "documentNumberRaw",
+            "columnName": "documentNumberRaw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "documentNumberNormalized",
+            "columnName": "documentNumberNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "issueDateRaw",
+            "columnName": "issueDateRaw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "issueDateNormalized",
+            "columnName": "issueDateNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subtotalMinorUnits",
+            "columnName": "subtotalMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "taxMinorUnits",
+            "columnName": "taxMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "otherChargesMinorUnits",
+            "columnName": "otherChargesMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "totalMinorUnits",
+            "columnName": "totalMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "headerConfidence",
+            "columnName": "headerConfidence",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "activeOcrRunId",
+            "columnName": "activeOcrRunId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confirmedPurchaseId",
+            "columnName": "confirmedPurchaseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_drafts_businessId",
+            "unique": false,
+            "columnNames": [
+              "businessId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_drafts_businessId` ON `${TABLE_NAME}` (`businessId`)"
+          },
+          {
+            "name": "index_invoice_drafts_supplierId",
+            "unique": false,
+            "columnNames": [
+              "supplierId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_drafts_supplierId` ON `${TABLE_NAME}` (`supplierId`)"
+          },
+          {
+            "name": "index_invoice_drafts_businessId_status",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_drafts_businessId_status` ON `${TABLE_NAME}` (`businessId`, `status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "suppliers",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "supplierId"
+            ],
+            "referencedColumns": [
+              "supplierId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_images",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`imageId` TEXT NOT NULL, `draftId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `pageIndex` INTEGER NOT NULL, `filePath` TEXT NOT NULL, `sha256` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `widthPx` INTEGER NOT NULL, `heightPx` INTEGER NOT NULL, `fileSizeBytes` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `rotationDegrees` INTEGER NOT NULL, `cropLeftFraction` INTEGER, `cropTopFraction` INTEGER, `cropRightFraction` INTEGER, `cropBottomFraction` INTEGER, PRIMARY KEY(`imageId`), FOREIGN KEY(`draftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "imageId",
+            "columnName": "imageId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pageIndex",
+            "columnName": "pageIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filePath",
+            "columnName": "filePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "widthPx",
+            "columnName": "widthPx",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "heightPx",
+            "columnName": "heightPx",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileSizeBytes",
+            "columnName": "fileSizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rotationDegrees",
+            "columnName": "rotationDegrees",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropLeftFraction",
+            "columnName": "cropLeftFraction",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cropTopFraction",
+            "columnName": "cropTopFraction",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cropRightFraction",
+            "columnName": "cropRightFraction",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cropBottomFraction",
+            "columnName": "cropBottomFraction",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "imageId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_images_draftId_pageIndex",
+            "unique": true,
+            "columnNames": [
+              "draftId",
+              "pageIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_invoice_images_draftId_pageIndex` ON `${TABLE_NAME}` (`draftId`, `pageIndex`)"
+          },
+          {
+            "name": "index_invoice_images_businessId",
+            "unique": false,
+            "columnNames": [
+              "businessId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_images_businessId` ON `${TABLE_NAME}` (`businessId`)"
+          },
+          {
+            "name": "index_invoice_images_businessId_sha256",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "sha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_images_businessId_sha256` ON `${TABLE_NAME}` (`businessId`, `sha256`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "invoice_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          },
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_lines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`lineId` TEXT NOT NULL, `draftId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `position` INTEGER NOT NULL, `descriptionRaw` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `descriptionNormalized` TEXT, `codeRaw` TEXT, `codeNormalized` TEXT, `quantity` TEXT, `unitRaw` TEXT, `unitCodeNormalized` TEXT, `unitCost` TEXT, `unitCostCurrency` TEXT, `discountMinorUnits` INTEGER, `taxMinorUnits` INTEGER, `unitId` TEXT, `productId` TEXT, `lineTotalMinorUnits` INTEGER, `ocrConfidence` INTEGER, `linkConfidence` INTEGER, PRIMARY KEY(`lineId`), FOREIGN KEY(`draftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`productId`) REFERENCES `products`(`productId`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`unitId`) REFERENCES `units`(`unitId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "lineId",
+            "columnName": "lineId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "descriptionRaw",
+            "columnName": "descriptionRaw",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "descriptionNormalized",
+            "columnName": "descriptionNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "codeRaw",
+            "columnName": "codeRaw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "codeNormalized",
+            "columnName": "codeNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unitRaw",
+            "columnName": "unitRaw",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unitCodeNormalized",
+            "columnName": "unitCodeNormalized",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unitCost",
+            "columnName": "unitCost",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unitCostCurrency",
+            "columnName": "unitCostCurrency",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "discountMinorUnits",
+            "columnName": "discountMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "taxMinorUnits",
+            "columnName": "taxMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "unitId",
+            "columnName": "unitId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lineTotalMinorUnits",
+            "columnName": "lineTotalMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "ocrConfidence",
+            "columnName": "ocrConfidence",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "linkConfidence",
+            "columnName": "linkConfidence",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "lineId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_lines_draftId_position",
+            "unique": true,
+            "columnNames": [
+              "draftId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_invoice_lines_draftId_position` ON `${TABLE_NAME}` (`draftId`, `position`)"
+          },
+          {
+            "name": "index_invoice_lines_businessId",
+            "unique": false,
+            "columnNames": [
+              "businessId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_businessId` ON `${TABLE_NAME}` (`businessId`)"
+          },
+          {
+            "name": "index_invoice_lines_productId",
+            "unique": false,
+            "columnNames": [
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_productId` ON `${TABLE_NAME}` (`productId`)"
+          },
+          {
+            "name": "index_invoice_lines_unitId",
+            "unique": false,
+            "columnNames": [
+              "unitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_invoice_lines_unitId` ON `${TABLE_NAME}` (`unitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "invoice_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          },
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "products",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productId"
+            ],
+            "referencedColumns": [
+              "productId"
+            ]
+          },
+          {
+            "table": "units",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "unitId"
+            ],
+            "referencedColumns": [
+              "unitId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_ocr_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `runId` TEXT NOT NULL, `completedAt` INTEGER NOT NULL, `codecVersion` INTEGER NOT NULL, `pageCount` INTEGER NOT NULL, PRIMARY KEY(`draftId`), FOREIGN KEY(`draftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runId",
+            "columnName": "runId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "codecVersion",
+            "columnName": "codecVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pageCount",
+            "columnName": "pageCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_ocr_snapshots_runId",
+            "unique": true,
+            "columnNames": [
+              "runId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_invoice_ocr_snapshots_runId` ON `${TABLE_NAME}` (`runId`)"
+          },
+          {
+            "name": "index_invoice_ocr_snapshots_draftId_runId",
+            "unique": true,
+            "columnNames": [
+              "draftId",
+              "runId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_invoice_ocr_snapshots_draftId_runId` ON `${TABLE_NAME}` (`draftId`, `runId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "invoice_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_ocr_snapshot_pages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `pageIndex` INTEGER NOT NULL, `sourceImageId` TEXT NOT NULL, `widthPx` INTEGER NOT NULL, `heightPx` INTEGER NOT NULL, `payloadSha256` TEXT NOT NULL, `payload` BLOB NOT NULL, PRIMARY KEY(`draftId`, `pageIndex`), FOREIGN KEY(`draftId`) REFERENCES `invoice_ocr_snapshots`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pageIndex",
+            "columnName": "pageIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceImageId",
+            "columnName": "sourceImageId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "widthPx",
+            "columnName": "widthPx",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "heightPx",
+            "columnName": "heightPx",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadSha256",
+            "columnName": "payloadSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId",
+            "pageIndex"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "invoice_ocr_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_parsed_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `runId` TEXT NOT NULL, `parserVersion` INTEGER NOT NULL, `contextFingerprint` TEXT NOT NULL, `payloadCodecVersion` INTEGER NOT NULL, `payloadSha256` TEXT NOT NULL, `payload` BLOB NOT NULL, `parsedAt` INTEGER NOT NULL, PRIMARY KEY(`draftId`), FOREIGN KEY(`draftId`, `runId`) REFERENCES `invoice_ocr_snapshots`(`draftId`, `runId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runId",
+            "columnName": "runId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parserVersion",
+            "columnName": "parserVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contextFingerprint",
+            "columnName": "contextFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadCodecVersion",
+            "columnName": "payloadCodecVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadSha256",
+            "columnName": "payloadSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parsedAt",
+            "columnName": "parsedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_invoice_parsed_results_draftId_runId",
+            "unique": true,
+            "columnNames": [
+              "draftId",
+              "runId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_invoice_parsed_results_draftId_runId` ON `${TABLE_NAME}` (`draftId`, `runId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "invoice_ocr_snapshots",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId",
+              "runId"
+            ],
+            "referencedColumns": [
+              "draftId",
+              "runId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_header_edits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `payloadCodecVersion` INTEGER NOT NULL, `payloadSha256` TEXT NOT NULL, `payload` BLOB NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`draftId`), FOREIGN KEY(`draftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadCodecVersion",
+            "columnName": "payloadCodecVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadSha256",
+            "columnName": "payloadSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "invoice_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "invoice_line_edits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `payloadCodecVersion` INTEGER NOT NULL, `payloadSha256` TEXT NOT NULL, `payload` BLOB NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`draftId`), FOREIGN KEY(`draftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadCodecVersion",
+            "columnName": "payloadCodecVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadSha256",
+            "columnName": "payloadSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "invoice_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "prepared_purchases",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `logicalHash` TEXT NOT NULL, `payloadCodecVersion` INTEGER NOT NULL, `payloadSha256` TEXT NOT NULL, `payload` BLOB NOT NULL, `preparedAt` INTEGER NOT NULL, PRIMARY KEY(`draftId`), FOREIGN KEY(`draftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "logicalHash",
+            "columnName": "logicalHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadCodecVersion",
+            "columnName": "payloadCodecVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadSha256",
+            "columnName": "payloadSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preparedAt",
+            "columnName": "preparedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "invoice_drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "purchases",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`purchaseId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `sourceDraftId` TEXT NOT NULL, `supplierId` TEXT NOT NULL, `documentType` TEXT NOT NULL, `documentSeries` TEXT NOT NULL, `documentNumber` TEXT NOT NULL, `issueDate` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `subtotalMinorUnits` INTEGER NOT NULL, `taxMinorUnits` INTEGER NOT NULL, `otherChargesMinorUnits` INTEGER NOT NULL, `totalMinorUnits` INTEGER NOT NULL, `status` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `postedAt` INTEGER, `voidedAt` INTEGER, `documentIdentitySlot` TEXT NOT NULL DEFAULT 'PRIMARY', `duplicateOverrideOfPurchaseId` TEXT, `duplicateOverrideReason` TEXT, `duplicateOverrideActorId` TEXT, `duplicateOverrideRole` TEXT, PRIMARY KEY(`purchaseId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`sourceDraftId`) REFERENCES `invoice_drafts`(`draftId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`supplierId`) REFERENCES `suppliers`(`supplierId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "purchaseId",
+            "columnName": "purchaseId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceDraftId",
+            "columnName": "sourceDraftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supplierId",
+            "columnName": "supplierId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentType",
+            "columnName": "documentType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentSeries",
+            "columnName": "documentSeries",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "documentNumber",
+            "columnName": "documentNumber",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issueDate",
+            "columnName": "issueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subtotalMinorUnits",
+            "columnName": "subtotalMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taxMinorUnits",
+            "columnName": "taxMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "otherChargesMinorUnits",
+            "columnName": "otherChargesMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalMinorUnits",
+            "columnName": "totalMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "postedAt",
+            "columnName": "postedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "voidedAt",
+            "columnName": "voidedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "documentIdentitySlot",
+            "columnName": "documentIdentitySlot",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PRIMARY'"
+          },
+          {
+            "fieldPath": "duplicateOverrideOfPurchaseId",
+            "columnName": "duplicateOverrideOfPurchaseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "duplicateOverrideReason",
+            "columnName": "duplicateOverrideReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "duplicateOverrideActorId",
+            "columnName": "duplicateOverrideActorId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "duplicateOverrideRole",
+            "columnName": "duplicateOverrideRole",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "purchaseId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_purchases_sourceDraftId",
+            "unique": true,
+            "columnNames": [
+              "sourceDraftId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_purchases_sourceDraftId` ON `${TABLE_NAME}` (`sourceDraftId`)"
+          },
+          {
+            "name": "index_purchases_idempotencyKey",
+            "unique": true,
+            "columnNames": [
+              "idempotencyKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_purchases_idempotencyKey` ON `${TABLE_NAME}` (`idempotencyKey`)"
+          },
+          {
+            "name": "index_purchases_businessId_supplierId_documentType_documentSeries_documentNumber_documentIdentitySlot",
+            "unique": true,
+            "columnNames": [
+              "businessId",
+              "supplierId",
+              "documentType",
+              "documentSeries",
+              "documentNumber",
+              "documentIdentitySlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_purchases_businessId_supplierId_documentType_documentSeries_documentNumber_documentIdentitySlot` ON `${TABLE_NAME}` (`businessId`, `supplierId`, `documentType`, `documentSeries`, `documentNumber`, `documentIdentitySlot`)"
+          },
+          {
+            "name": "index_purchases_businessId_status",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_purchases_businessId_status` ON `${TABLE_NAME}` (`businessId`, `status`)"
+          },
+          {
+            "name": "index_purchases_supplierId",
+            "unique": false,
+            "columnNames": [
+              "supplierId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_purchases_supplierId` ON `${TABLE_NAME}` (`supplierId`)"
+          },
+          {
+            "name": "index_purchases_duplicateOverrideOfPurchaseId",
+            "unique": false,
+            "columnNames": [
+              "duplicateOverrideOfPurchaseId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_purchases_duplicateOverrideOfPurchaseId` ON `${TABLE_NAME}` (`duplicateOverrideOfPurchaseId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "invoice_drafts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sourceDraftId"
+            ],
+            "referencedColumns": [
+              "draftId"
+            ]
+          },
+          {
+            "table": "suppliers",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "supplierId"
+            ],
+            "referencedColumns": [
+              "supplierId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "purchase_lines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`purchaseLineId` TEXT NOT NULL, `purchaseId` TEXT NOT NULL, `productId` TEXT NOT NULL, `unitId` TEXT NOT NULL, `position` INTEGER NOT NULL, `rawText` TEXT NOT NULL, `description` TEXT NOT NULL, `quantity` TEXT NOT NULL, `unitCost` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `taxMinorUnits` INTEGER NOT NULL, `totalMinorUnits` INTEGER NOT NULL, `confidence` INTEGER, `appliedUnitCost` TEXT, `purchaseUnitFactor` TEXT, `inventoryQuantity` TEXT, `discount` TEXT, `taxTreatment` TEXT, `costPolicy` TEXT, `appliedCostTotal` TEXT, `taxEvidenceType` TEXT, `taxEvidenceValue` TEXT, `roundingScale` INTEGER, `roundingMode` TEXT, `costingWarnings` TEXT, PRIMARY KEY(`purchaseLineId`), FOREIGN KEY(`purchaseId`) REFERENCES `purchases`(`purchaseId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`productId`) REFERENCES `products`(`productId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`unitId`) REFERENCES `units`(`unitId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "purchaseLineId",
+            "columnName": "purchaseLineId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purchaseId",
+            "columnName": "purchaseId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitId",
+            "columnName": "unitId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawText",
+            "columnName": "rawText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readUnitCost",
+            "columnName": "unitCost",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taxMinorUnits",
+            "columnName": "taxMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalMinorUnits",
+            "columnName": "totalMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "appliedUnitCost",
+            "columnName": "appliedUnitCost",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "purchaseUnitFactor",
+            "columnName": "purchaseUnitFactor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "inventoryQuantity",
+            "columnName": "inventoryQuantity",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "discount",
+            "columnName": "discount",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "taxTreatment",
+            "columnName": "taxTreatment",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "costPolicy",
+            "columnName": "costPolicy",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appliedCostTotal",
+            "columnName": "appliedCostTotal",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "taxEvidenceType",
+            "columnName": "taxEvidenceType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "taxEvidenceValue",
+            "columnName": "taxEvidenceValue",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "roundingScale",
+            "columnName": "roundingScale",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "roundingMode",
+            "columnName": "roundingMode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "costingWarnings",
+            "columnName": "costingWarnings",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "purchaseLineId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_purchase_lines_purchaseId_position",
+            "unique": true,
+            "columnNames": [
+              "purchaseId",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_purchase_lines_purchaseId_position` ON `${TABLE_NAME}` (`purchaseId`, `position`)"
+          },
+          {
+            "name": "index_purchase_lines_productId",
+            "unique": false,
+            "columnNames": [
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_purchase_lines_productId` ON `${TABLE_NAME}` (`productId`)"
+          },
+          {
+            "name": "index_purchase_lines_unitId",
+            "unique": false,
+            "columnNames": [
+              "unitId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_purchase_lines_unitId` ON `${TABLE_NAME}` (`unitId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "purchases",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "purchaseId"
+            ],
+            "referencedColumns": [
+              "purchaseId"
+            ]
+          },
+          {
+            "table": "products",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productId"
+            ],
+            "referencedColumns": [
+              "productId"
+            ]
+          },
+          {
+            "table": "units",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "unitId"
+            ],
+            "referencedColumns": [
+              "unitId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "inventory_balances",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`businessId` TEXT NOT NULL, `productId` TEXT NOT NULL, `locationId` TEXT NOT NULL, `quantityOnHand` TEXT NOT NULL, `averageUnitCost` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `version` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`businessId`, `productId`, `locationId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`productId`) REFERENCES `products`(`productId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`locationId`) REFERENCES `inventory_locations`(`locationId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locationId",
+            "columnName": "locationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantityOnHand",
+            "columnName": "quantityOnHand",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "averageUnitCost",
+            "columnName": "averageUnitCost",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "businessId",
+            "productId",
+            "locationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_inventory_balances_productId",
+            "unique": false,
+            "columnNames": [
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_balances_productId` ON `${TABLE_NAME}` (`productId`)"
+          },
+          {
+            "name": "index_inventory_balances_locationId",
+            "unique": false,
+            "columnNames": [
+              "locationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_balances_locationId` ON `${TABLE_NAME}` (`locationId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "products",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productId"
+            ],
+            "referencedColumns": [
+              "productId"
+            ]
+          },
+          {
+            "table": "inventory_locations",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "locationId"
+            ],
+            "referencedColumns": [
+              "locationId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "stock_movements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`movementId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `purchaseId` TEXT, `purchaseLineId` TEXT, `productId` TEXT NOT NULL, `locationId` TEXT NOT NULL, `type` TEXT NOT NULL, `quantityDelta` TEXT NOT NULL, `unitCost` TEXT, `currencyCode` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`movementId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`purchaseId`) REFERENCES `purchases`(`purchaseId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`purchaseLineId`) REFERENCES `purchase_lines`(`purchaseLineId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`productId`) REFERENCES `products`(`productId`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`locationId`) REFERENCES `inventory_locations`(`locationId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "movementId",
+            "columnName": "movementId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purchaseId",
+            "columnName": "purchaseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "purchaseLineId",
+            "columnName": "purchaseLineId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locationId",
+            "columnName": "locationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantityDelta",
+            "columnName": "quantityDelta",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitCost",
+            "columnName": "unitCost",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAt",
+            "columnName": "occurredAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "movementId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stock_movements_idempotencyKey",
+            "unique": true,
+            "columnNames": [
+              "idempotencyKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_stock_movements_idempotencyKey` ON `${TABLE_NAME}` (`idempotencyKey`)"
+          },
+          {
+            "name": "index_stock_movements_businessId_productId_locationId_occurredAt",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "productId",
+              "locationId",
+              "occurredAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_businessId_productId_locationId_occurredAt` ON `${TABLE_NAME}` (`businessId`, `productId`, `locationId`, `occurredAt`)"
+          },
+          {
+            "name": "index_stock_movements_purchaseId",
+            "unique": false,
+            "columnNames": [
+              "purchaseId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_purchaseId` ON `${TABLE_NAME}` (`purchaseId`)"
+          },
+          {
+            "name": "index_stock_movements_purchaseLineId",
+            "unique": false,
+            "columnNames": [
+              "purchaseLineId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_purchaseLineId` ON `${TABLE_NAME}` (`purchaseLineId`)"
+          },
+          {
+            "name": "index_stock_movements_productId",
+            "unique": false,
+            "columnNames": [
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_productId` ON `${TABLE_NAME}` (`productId`)"
+          },
+          {
+            "name": "index_stock_movements_locationId",
+            "unique": false,
+            "columnNames": [
+              "locationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_movements_locationId` ON `${TABLE_NAME}` (`locationId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "purchases",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "purchaseId"
+            ],
+            "referencedColumns": [
+              "purchaseId"
+            ]
+          },
+          {
+            "table": "purchase_lines",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "purchaseLineId"
+            ],
+            "referencedColumns": [
+              "purchaseLineId"
+            ]
+          },
+          {
+            "table": "products",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productId"
+            ],
+            "referencedColumns": [
+              "productId"
+            ]
+          },
+          {
+            "table": "inventory_locations",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "locationId"
+            ],
+            "referencedColumns": [
+              "locationId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "audit_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`auditEventId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `purchaseId` TEXT, `eventType` TEXT NOT NULL, `entityType` TEXT NOT NULL, `entityId` TEXT NOT NULL, `payload` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, PRIMARY KEY(`auditEventId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`purchaseId`) REFERENCES `purchases`(`purchaseId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "auditEventId",
+            "columnName": "auditEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purchaseId",
+            "columnName": "purchaseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityId",
+            "columnName": "entityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAt",
+            "columnName": "occurredAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "auditEventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_audit_events_businessId_occurredAt",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "occurredAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_businessId_occurredAt` ON `${TABLE_NAME}` (`businessId`, `occurredAt`)"
+          },
+          {
+            "name": "index_audit_events_purchaseId",
+            "unique": false,
+            "columnNames": [
+              "purchaseId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_purchaseId` ON `${TABLE_NAME}` (`purchaseId`)"
+          },
+          {
+            "name": "index_audit_events_entityType_entityId",
+            "unique": false,
+            "columnNames": [
+              "entityType",
+              "entityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_entityType_entityId` ON `${TABLE_NAME}` (`entityType`, `entityId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "purchases",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "purchaseId"
+            ],
+            "referencedColumns": [
+              "purchaseId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "outbox_operations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operationId` TEXT NOT NULL, `businessId` TEXT NOT NULL, `purchaseId` TEXT, `idempotencyKey` TEXT NOT NULL, `operationType` TEXT NOT NULL, `payload` TEXT NOT NULL, `status` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `nextAttemptAt` INTEGER, `completedAt` INTEGER, `lastError` TEXT, `payloadVersion` INTEGER NOT NULL, `claimToken` TEXT, `claimLeaseUntil` INTEGER, `conflictRemotePurchaseId` TEXT, `conflictReceiptId` TEXT, PRIMARY KEY(`operationId`), FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`purchaseId`) REFERENCES `purchases`(`purchaseId`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "businessId",
+            "columnName": "businessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purchaseId",
+            "columnName": "purchaseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationType",
+            "columnName": "operationType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAt",
+            "columnName": "nextAttemptAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "payloadVersion",
+            "columnName": "payloadVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimToken",
+            "columnName": "claimToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "claimLeaseUntil",
+            "columnName": "claimLeaseUntil",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "conflictRemotePurchaseId",
+            "columnName": "conflictRemotePurchaseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "conflictReceiptId",
+            "columnName": "conflictReceiptId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "operationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_operations_idempotencyKey",
+            "unique": true,
+            "columnNames": [
+              "idempotencyKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_operations_idempotencyKey` ON `${TABLE_NAME}` (`idempotencyKey`)"
+          },
+          {
+            "name": "index_outbox_operations_businessId_status_nextAttemptAt",
+            "unique": false,
+            "columnNames": [
+              "businessId",
+              "status",
+              "nextAttemptAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_operations_businessId_status_nextAttemptAt` ON `${TABLE_NAME}` (`businessId`, `status`, `nextAttemptAt`)"
+          },
+          {
+            "name": "index_outbox_operations_purchaseId",
+            "unique": false,
+            "columnNames": [
+              "purchaseId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_operations_purchaseId` ON `${TABLE_NAME}` (`purchaseId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "businesses",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "businessId"
+            ],
+            "referencedColumns": [
+              "businessId"
+            ]
+          },
+          {
+            "table": "purchases",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "purchaseId"
+            ],
+            "referencedColumns": [
+              "purchaseId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '50e184b77c32dd1dfe6125fbaa51161c')"
+    ]
+  }
+}

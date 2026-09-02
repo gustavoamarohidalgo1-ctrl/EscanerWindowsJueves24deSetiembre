@@ -1,0 +1,31 @@
+{
+  "name": "facturastock-backup-functions",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Respaldo opcional de FacturaStock: callable postPurchase con validación, idempotencia y escritura atómica.",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "14.3.0",
+    "firebase-functions": "7.3.2",
+    "sharp": "0.35.3"
+  },
+  "devDependencies": {
+    "firebase": "12.17.1",
+    "firebase-tools": "15.27.0"
+  },
+  "overrides": {
+    "firebase-admin": {
+      "@google-cloud/storage": "8.0.1"
+    },
+    "gaxios": {
+      "uuid": "11.1.1"
+    }
+  }
+}

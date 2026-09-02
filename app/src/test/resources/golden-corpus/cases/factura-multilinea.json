@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "factura-multilinea",
+  "title": "Factura con descripción de producto en dos líneas",
+  "category": "multilinea",
+  "buyerRuc": null,
+  "inputImage": {
+    "textLayerResource": "expected-ocr/factura-multilinea.json",
+    "outputFileName": "factura-multilinea.png",
+    "profile": "CLEAN",
+    "blurRadiusPx": 0,
+    "horizontalSkewPermille": 0
+  },
+  "expectedOcrResource": "expected-ocr/factura-multilinea.json",
+  "expectedResultResource": "expected-results/factura-multilinea.json"
+}

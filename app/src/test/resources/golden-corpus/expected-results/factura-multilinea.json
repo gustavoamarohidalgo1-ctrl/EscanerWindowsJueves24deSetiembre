@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "header": {
+    "issuerRuc": "20131312955",
+    "issuerLegalName": "COMERCIAL ANDINA S.A.C.",
+    "documentType": "INVOICE",
+    "documentNumber": "F001-12345",
+    "issueDate": "2026-08-17",
+    "currency": "PEN"
+  },
+  "lineCount": 2,
+  "lines": [
+    {
+      "description": "DETERGENTE EN POLVO BOLSA DE 4.5 KG",
+      "quantity": "2",
+      "totalMinorUnits": 6000
+    },
+    {
+      "description": "JABÓN DE TOCADOR",
+      "quantity": "3",
+      "totalMinorUnits": 1200
+    }
+  ],
+  "totals": {
+    "taxableMinorUnits": 7200,
+    "exemptMinorUnits": null,
+    "unaffectedMinorUnits": null,
+    "subtotalMinorUnits": null,
+    "igvMinorUnits": 1296,
+    "totalMinorUnits": 8496
+  },
+  "confidence": "HIGH",
+  "warningCodes": [
+    "FIELD_REQUIRES_REVIEW",
+    "LOW_CONFIDENCE_REQUIRES_CONFIRMATION",
+    "PARSER_WARNING"
+  ]
+}

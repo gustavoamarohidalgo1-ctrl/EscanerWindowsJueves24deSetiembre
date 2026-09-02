@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_primary">#365C9D</color>
+    <color name="launcher_foreground">#FFFFFF</color>
+    <color name="icon_source">#FF000000</color>
+    <color name="window_background_light">#F8F9FD</color>
+    <color name="window_background_dark">#101218</color>
+    <color name="system_bar_transparent">#00000000</color>
+</resources>
