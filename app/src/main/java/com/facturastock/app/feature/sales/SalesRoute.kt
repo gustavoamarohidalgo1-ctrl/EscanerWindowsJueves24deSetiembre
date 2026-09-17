@@ -2,25 +2,37 @@ package com.facturastock.app.feature.sales
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.facturastock.app.R
+import com.facturastock.app.core.input.KeyboardWedgeReadError
+import com.facturastock.app.core.input.KeyboardWedgeRouter
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.PhysicalScannerRegistration
+import com.facturastock.app.feature.common.ScannerCodeInput
+import com.facturastock.app.ui.theme.FacturaStockDesign
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun SalesRoute(
@@ -29,8 +41,12 @@ fun SalesRoute(
     entryKind: SalesContract.EntryKind = SalesContract.EntryKind.CASH,
     allowEntryKindSelection: Boolean = true,
     onCreditSalePosted: () -> Unit = {},
+    onOpenDebtors: () -> Unit = {},
     onExitCancelled: () -> Unit = {},
     onExitRequestAvailable: ((() -> Unit)?) -> Unit = {},
+    onRegisterProduct: (SalesContract.ProductRegistrationRequest) -> Unit = {},
+    registrationResult: SalesContract.ProductRegistrationResult? = null,
+    onRegistrationResultConsumed: () -> Unit = {},
     viewModel: SalesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -39,9 +55,24 @@ fun SalesRoute(
     val associatedMessage = stringResource(R.string.sales_message_barcode_associated)
     val postedMessage = stringResource(R.string.sales_message_posted)
     val currentExitRegistration by rememberUpdatedState(onExitRequestAvailable)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val consumeRegistrationResult by rememberUpdatedState(onRegistrationResultConsumed)
+    var physicalInput by remember(viewModel) { mutableStateOf("") }
+    val clearScannerInput = {
+        KeyboardWedgeRouter.reset()
+        physicalInput = ""
+        viewModel.onAction(SalesContract.Action.ScannerReadReset)
+    }
 
-    LaunchedEffect(viewModel, entryKind) {
-        viewModel.onAction(SalesContract.Action.EntryKindChanged(entryKind))
+    LaunchedEffect(viewModel, entryKind, allowEntryKindSelection) {
+        viewModel.onAction(SalesContract.Action.InitializeEntry(entryKind, allowEntryKindSelection, unifiedInput = true))
+    }
+
+    LaunchedEffect(viewModel, lifecycleOwner, registrationResult) {
+        val result = registrationResult ?: return@LaunchedEffect
+        lifecycleOwner.lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
+        viewModel.onAction(SalesContract.Action.ProductRegistrationFinished(result))
+        consumeRegistrationResult()
     }
 
     DisposableEffect(viewModel) {
@@ -51,35 +82,94 @@ fun SalesRoute(
         onDispose { currentExitRegistration(null) }
     }
 
+    DisposableEffect(viewModel, lifecycleOwner) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                    viewModel.onAction(SalesContract.Action.ScannerSessionStopped)
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onAction(SalesContract.Action.ScannerSessionStopped)
+        }
+    }
+
     BackHandler {
         when {
-            state.isMutating -> viewModel.onAction(SalesContract.Action.BackSelected)
+            state.isProcessingBarcode && state.entryStep == SalesContract.EntryStep.SELL -> {
+                viewModel.onAction(SalesContract.Action.StepBackSelected)
+            }
+
+            state.isMutating -> {
+                viewModel.onAction(SalesContract.Action.BackSelected)
+            }
+
             state.discardEditsReview -> {
                 onExitCancelled()
                 viewModel.onAction(SalesContract.Action.DiscardEditsDismissed)
             }
-            state.checkoutReview != null ->
+
+            state.checkoutReview != null -> {
                 viewModel.onAction(SalesContract.Action.CheckoutDismissed)
-            state.pendingReplacement != null ->
+            }
+
+            state.weightSaleEditor != null -> {
+                viewModel.onAction(SalesContract.Action.WeightSaleDismissed)
+            }
+
+            state.pendingReplacement != null -> {
                 viewModel.onAction(SalesContract.Action.BarcodeReplacementDismissed)
-            state.pendingLocations.isNotEmpty() ->
+            }
+
+            state.pendingLocations.isNotEmpty() -> {
                 viewModel.onAction(SalesContract.Action.LocationSelectionDismissed)
-            state.isAssociating -> viewModel.onAction(SalesContract.Action.AssociationDismissed)
-            else -> viewModel.onAction(SalesContract.Action.BackSelected)
+            }
+
+            state.isAssociating -> {
+                viewModel.onAction(SalesContract.Action.AssociationDismissed)
+            }
+
+            state.entryStep == SalesContract.EntryStep.SELL ||
+                (allowEntryKindSelection && state.entryStep == SalesContract.EntryStep.SELECT_MODE) -> {
+                viewModel.onAction(SalesContract.Action.StepBackSelected)
+            }
+
+            else -> {
+                viewModel.onAction(SalesContract.Action.BackSelected)
+            }
         }
     }
 
     CollectUiEffects(viewModel.effects) { effect ->
         when (effect) {
-            SalesContract.Effect.Back -> onBack()
-            SalesContract.Effect.CreditSalePosted -> onCreditSalePosted()
-            is SalesContract.Effect.ShowMessage -> scope.launch {
-                snackbarHostState.showSnackbar(
-                    when (effect.message) {
-                        SalesContract.Message.BARCODE_ASSOCIATED -> associatedMessage
-                        SalesContract.Message.SALE_POSTED -> postedMessage
-                    },
-                )
+            is SalesContract.Effect.RegisterProduct -> {
+                if (viewModel.uiState.value.productRegistration == effect.request) {
+                    onRegisterProduct(effect.request)
+                }
+            }
+            SalesContract.Effect.OpenDebtors -> {
+                onOpenDebtors()
+            }
+
+            SalesContract.Effect.Back -> {
+                onBack()
+            }
+
+            SalesContract.Effect.CreditSalePosted -> {
+                onCreditSalePosted()
+            }
+
+            is SalesContract.Effect.ShowMessage -> {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        when (effect.message) {
+                            SalesContract.Message.BARCODE_ASSOCIATED -> associatedMessage
+                            SalesContract.Message.SALE_POSTED -> postedMessage
+                        },
+                    )
+                }
             }
         }
     }
@@ -92,20 +182,78 @@ fun SalesRoute(
         onScan = { value ->
             viewModel.onAction(SalesContract.Action.BarcodeScanned(value))
         },
+        onInputChanged = { physicalInput = it },
+        onReadError = { error ->
+            viewModel.onAction(
+                SalesContract.Action.ScannerReadFailed(
+                    when (error) {
+                        KeyboardWedgeReadError.INCOMPLETE -> {
+                            SalesContract.ScannerFailure.INCOMPLETE
+                        }
+
+                        KeyboardWedgeReadError.TOO_LONG -> {
+                            SalesContract.ScannerFailure.TOO_LONG
+                        }
+
+                        KeyboardWedgeReadError.INVALID_CHARACTER -> {
+                            SalesContract.ScannerFailure.INVALID_CHARACTER
+                        }
+                    },
+                ),
+            )
+        },
     )
 
     Box(modifier = modifier.fillMaxSize()) {
-        SalesScreen(
-            state = state,
-            onAction = { action ->
-                if (action == SalesContract.Action.DiscardEditsDismissed) {
-                    onExitCancelled()
-                }
-                viewModel.onAction(action)
-            },
-            modifier = Modifier.fillMaxSize(),
-            allowEntryKindSelection = allowEntryKindSelection,
-        )
+        Column(Modifier.fillMaxSize()) {
+            // El receptor IME permanece compuesto aunque se desplace el carrito.
+            if (state.entryStep == SalesContract.EntryStep.SELL &&
+                state.mode == SalesContract.EntryMode.SCANNER
+            ) {
+                ScannerCodeInput(
+                    // Permanece tocable al editar el deudor; el registro HID conserva arriba
+                    // todos sus guards. Al recuperar foco, el otro campo publica su pérdida.
+                    enabled = if (state.unifiedInput) state.copy(isTextInputFocused = false).canRouteScannerInput
+                        else state.canRouteScannerInput,
+                    physicalInput = physicalInput,
+                    onClearPhysicalInput = clearScannerInput,
+                    onCode = { value ->
+                        viewModel.onAction(SalesContract.Action.BarcodeScanned(value))
+                    },
+                    submitLabelRes = if (state.unifiedInput) R.string.sales_unified_add_code else R.string.sales_scanner_add_product,
+                    searchQuery = state.query.takeIf { state.unifiedInput },
+                    onSearchQueryChange = if (state.unifiedInput) {
+                        { value -> viewModel.onAction(SalesContract.Action.SearchChanged(value)) }
+                    } else null,
+                    isOtherTextInputFocused = state.unifiedInput && state.isTextInputFocused,
+                    labelRes = if (state.unifiedInput) R.string.sales_unified_input_label else R.string.scanner_code_label,
+                    hintRes = if (state.unifiedInput) R.string.sales_unified_input_hint else R.string.scanner_code_hint,
+                    modifier = Modifier.padding(FacturaStockDesign.spacing.md),
+                )
+                SalesScannerFeedback(
+                    state = state,
+                    modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),
+                )
+            }
+            SalesScreen(
+                state = state,
+                onAction = { action ->
+                    if (action == SalesContract.Action.DiscardEditsDismissed) {
+                        onExitCancelled()
+                    }
+                    if (action == SalesContract.Action.StepBackSelected &&
+                        !allowEntryKindSelection && state.entryStep == SalesContract.EntryStep.SELECT_MODE
+                    ) {
+                        viewModel.onAction(SalesContract.Action.BackSelected)
+                    } else {
+                        viewModel.onAction(action)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                allowEntryKindSelection = allowEntryKindSelection,
+                showScannerStatus = false,
+            )
+        }
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),

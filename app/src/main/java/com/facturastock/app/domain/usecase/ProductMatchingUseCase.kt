@@ -107,8 +107,9 @@ class ProductMatchingUseCase(
     ): List<ProductMatchCandidate> {
         val trimmed = lookupText(rawQuery) ?: return emptyList()
         val exacts = mutableListOf<ProductMatchCandidate>()
+        val exactIds = mutableSetOf<ProductId>()
         fun add(candidate: ProductMatchCandidate?) {
-            if (candidate != null && exacts.none { it.product.productId == candidate.product.productId }) {
+            if (candidate != null && exactIds.add(candidate.product.productId)) {
                 exacts += candidate
             }
         }
@@ -125,8 +126,9 @@ class ProductMatchingUseCase(
             .mapNotNull { it.activeForBusinessOrNull(businessId) }
             .sortedBy { it.productId.value }
             .forEach { add(ProductMatchCandidate(it, ProductMatchReason.EXACT_NAME, CONFIDENCE_EXACT_NAME)) }
+        if (exacts.size >= MAX_CANDIDATES) return exacts.take(MAX_CANDIDATES)
         val fuzzy = fuzzyCandidates(businessId, trimmed)
-            .filter { candidate -> exacts.none { it.product.productId == candidate.product.productId } }
+            .filterNot { it.product.productId in exactIds }
         return (exacts + fuzzy).take(MAX_CANDIDATES)
     }
 
@@ -134,11 +136,14 @@ class ProductMatchingUseCase(
      * Búsqueda manual deliberadamente limitada al nombre del producto. Devuelve primero las
      * coincidencias exactas y luego sugerencias difusas; nunca interpreta el texto como código de
      * barras, SKU o alias de proveedor y nunca selecciona un producto automáticamente.
+     * Ventas puede solicitar prefijos de dos letras; vinculación conserva tres por defecto.
      */
     suspend fun searchByName(
         businessId: BusinessId,
         rawName: String,
+        minimumPrefixLength: Int = 3,
     ): List<ProductMatchCandidate> {
+        require(minimumPrefixLength in 2..MAX_MATCH_TEXT_LENGTH)
         val name = lookupText(rawName) ?: return emptyList()
         val exacts = productRepository.findByNormalizedName(businessId, name)
             .mapNotNull { it.activeForBusinessOrNull(businessId) }
@@ -146,8 +151,9 @@ class ProductMatchingUseCase(
             .map { product ->
                 ProductMatchCandidate(product, ProductMatchReason.EXACT_NAME, CONFIDENCE_EXACT_NAME)
             }
+        if (exacts.size >= MAX_CANDIDATES) return exacts.take(MAX_CANDIDATES)
         val exactIds = exacts.mapTo(mutableSetOf()) { it.product.productId }
-        val fuzzy = fuzzyNameCandidates(businessId, name)
+        val fuzzy = fuzzyNameCandidates(businessId, name, minimumPrefixLength)
             .filterNot { it.product.productId in exactIds }
         return (exacts + fuzzy).take(MAX_CANDIDATES)
     }
@@ -201,10 +207,13 @@ class ProductMatchingUseCase(
         } else {
             CONFIDENCE_CONFIRMED_ALIAS
         }
-        return supplierProductAliasRepository.findByNormalizedAlias(businessId, aliasText)
+        val aliases = supplierProductAliasRepository.findByNormalizedAlias(businessId, aliasText)
             .filter { alias -> alias.businessId == businessId }
+        if (aliases.isEmpty()) return emptyList()
+        val productsById = productRepository.findByIds(aliases.map { it.productId })
+        return aliases
             .mapNotNull { alias ->
-                productRepository.findById(alias.productId)
+                productsById[alias.productId]
                     ?.activeForBusinessOrNull(businessId)
                     ?.let { product ->
                         AliasMatch(
@@ -281,6 +290,7 @@ class ProductMatchingUseCase(
     private suspend fun fuzzyNameCandidates(
         businessId: BusinessId,
         description: String,
+        minimumPrefixLength: Int,
     ): List<ProductMatchCandidate> {
         val boundedDescription = lookupText(description) ?: return emptyList()
         val preselected = linkedMapOf<ProductId, Product>()
@@ -300,45 +310,61 @@ class ProductMatchingUseCase(
                 limit = MAX_CATALOG_PAGE_SIZE,
             ).forEach { product -> preselected.putIfAbsent(product.productId, product) }
         }
-        return rankFuzzyCandidates(businessId, boundedDescription, preselected.values)
+        return rankFuzzyCandidates(businessId, boundedDescription, preselected.values, minimumPrefixLength)
     }
 
     private fun rankFuzzyCandidates(
         businessId: BusinessId,
         description: String,
         products: Collection<Product>,
+        minimumPrefixLength: Int = 3,
     ): List<ProductMatchCandidate> {
-        val scorer = ProductNameSimilarity.scorer(description) ?: return emptyList()
-        return products
-            .asSequence()
-            .mapNotNull { it.activeForBusinessOrNull(businessId) }
-            // Revalida tenant/estado primero, pero nunca entrega más de una página al cálculo
-            // cuadrático de Levenshtein aunque un repositorio defectuoso ignore su propio límite.
-            .take(MAX_CATALOG_PAGE_SIZE)
-            .map { product -> product to scorer.similarityPermille(product.name) }
-            .filter { (_, score) -> score >= MIN_FUZZY_SCORE_PERMILLE }
-            .sortedWith(
-                compareByDescending<Pair<Product, Int>> { it.second }
-                    .thenBy { it.first.name }
-                    .thenBy { it.first.productId.value },
-            )
-            .take(MAX_CANDIDATES)
-            .map { (product, score) ->
-                ProductMatchCandidate(product, ProductMatchReason.SIMILAR_NAME, score)
+        val scorer = ProductNameSimilarity.scorer(description, minimumPrefixLength) ?: return emptyList()
+        val best = ArrayList<ProductMatchCandidate>(MAX_CANDIDATES)
+        var scoredProducts = 0
+        for (candidate in products) {
+            if (scoredProducts == MAX_CATALOG_PAGE_SIZE) break
+            val product = candidate.activeForBusinessOrNull(businessId) ?: continue
+            // El corte sigue contando productos válidos, antes de puntuar: un repositorio que
+            // ignore el límite no amplía la ventana de comparación ni cambia su selección.
+            scoredProducts++
+            val score = scorer.similarityPermille(product.name)
+            if (score < MIN_FUZZY_SCORE_PERMILLE) continue
+            var position = 0
+            while (position < best.size) {
+                val current = best[position]
+                val comparison = when {
+                    score != current.confidencePermille -> current.confidencePermille.compareTo(score)
+                    product.name != current.product.name -> product.name.compareTo(current.product.name)
+                    else -> product.productId.value.compareTo(current.product.productId.value)
+                }
+                if (comparison < 0) break
+                position++
             }
-            .toList()
+            if (position == MAX_CANDIDATES) continue
+            // Solo se retienen cinco entradas y los empates se insertan después de las ya
+            // vistas, igual que el ordenamiento estable por score, nombre y UUID anterior.
+            if (best.size == MAX_CANDIDATES) best.removeAt(MAX_CANDIDATES - 1)
+            best.add(position, ProductMatchCandidate(product, ProductMatchReason.SIMILAR_NAME, score))
+        }
+        return best
     }
 
     private fun nameOnlySearchSeeds(description: String): List<String> {
         val base = fuzzySearchSeeds(description)
-        val accentVariants = base.flatMap { seed ->
-            seed.lowercase(Locale.ROOT).mapIndexedNotNull { index, character ->
-                val replacement = SPANISH_SEARCH_VARIANTS[character]
-                    ?: return@mapIndexedNotNull null
-                seed.replaceRange(index, index + 1, replacement.toString())
+        val seeds = linkedSetOf<String>()
+        for (seed in base) {
+            seeds += seed
+            if (seeds.size == MAX_FUZZY_SQL_SEEDS) return seeds.toList()
+        }
+        for (seed in base) {
+            seed.lowercase(Locale.ROOT).forEachIndexed { index, character ->
+                val replacement = SPANISH_SEARCH_VARIANTS[character] ?: return@forEachIndexed
+                seeds += seed.replaceRange(index, index + 1, replacement.toString())
+                if (seeds.size == MAX_FUZZY_SQL_SEEDS) return seeds.toList()
             }
         }
-        return (base + accentVariants).distinct().take(MAX_FUZZY_SQL_SEEDS)
+        return seeds.toList()
     }
 
     /** Reduce la preselección SQL a pocos tokens informativos y evita escanear 5.000+ filas. */
@@ -360,7 +386,7 @@ class ProductMatchingUseCase(
      */
     private fun lookupText(raw: String): String? =
         boundedTrimmedText(raw)
-            ?.replace(Regex("\\s+"), " ")
+            ?.let(::collapseMatchWhitespace)
 
     /**
      * Acota entrada no confiable antes de normalización, SQL LIKE o Levenshtein. Los nombres de
@@ -412,21 +438,23 @@ internal object ProductNameSimilarity {
      * Prepara una búsqueda completa una sola vez. El objeto se usa secuencialmente dentro de una
      * invocación de matching y reutiliza dos filas de Levenshtein acotadas a 200 caracteres.
      */
-    fun scorer(query: String): Scorer? {
+    fun scorer(query: String, minimumPrefixLength: Int = MIN_PREFIX_LENGTH): Scorer? {
+        require(minimumPrefixLength in 2..ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH)
         if (query.length > ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH) return null
         // NFD puede expandir caracteres acentuados; el corte mantiene también acotados los
         // arreglos de Levenshtein. Esta ruta solo sugiere y nunca auto-vincula.
         val foldedQuery = fold(query).take(ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH)
         if (foldedQuery.isEmpty()) return null
-        return Scorer(foldedQuery, tokens(foldedQuery))
+        return Scorer(foldedQuery, tokens(foldedQuery), minimumPrefixLength)
     }
 
     internal class Scorer internal constructor(
         private val foldedQuery: String,
         private val queryTokens: Set<String>,
+        private val minimumPrefixLength: Int,
     ) {
-        private val previousScratch = IntArray(ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH + 1)
-        private val currentScratch = IntArray(ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH + 1)
+        private var previousScratch: IntArray? = null
+        private var currentScratch: IntArray? = null
 
         fun similarityPermille(candidate: String): Int {
             if (candidate.length > ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH) return 0
@@ -447,17 +475,28 @@ internal object ProductNameSimilarity {
             } else {
                 smallerTokens.count(largerTokens::contains).toDouble() / smallerTokens.size
             }
-            val levenshteinRatio = 1.0 -
-                levenshtein(foldedQuery, foldedCandidate).toDouble() /
-                maxOf(foldedQuery.length, foldedCandidate.length)
-            val baseScore = ((overlap + levenshteinRatio) * 500.0).roundToInt()
             // La puntuación pública conserva su contrato simétrico. En la búsqueda name-only el
             // primer lado suele ser el fragmento; aceptar también la dirección inversa mantiene
             // la misma puntuación si un llamador intercambia los argumentos.
             val allTokensMatchByPrefix =
-                tokensMatchByPrefix(queryTokens, candidateTokens) ||
-                    tokensMatchByPrefix(candidateTokens, queryTokens)
+                tokensMatchByPrefix(queryTokens, candidateTokens, minimumPrefixLength) ||
+                    tokensMatchByPrefix(candidateTokens, queryTokens, minimumPrefixLength)
             val prefixScore = if (allTokensMatchByPrefix) PREFIX_MATCH_SCORE else 0
+            if (allTokensMatchByPrefix) {
+                // Toda distancia de edición es al menos la diferencia de longitudes. Si ni
+                // siquiera esa mejor base posible supera 850, el prefijo ya fija el resultado
+                // exacto y no hace falta construir la matriz de Levenshtein.
+                val maximumLength = maxOf(foldedQuery.length, foldedCandidate.length)
+                val minimumDistance = maximumLength - minOf(foldedQuery.length, foldedCandidate.length)
+                val maximumRatio = 1.0 - minimumDistance.toDouble() / maximumLength
+                if (((overlap + maximumRatio) * 500.0).roundToInt() <= prefixScore) {
+                    return prefixScore
+                }
+            }
+            val levenshteinRatio = 1.0 -
+                levenshtein(foldedQuery, foldedCandidate).toDouble() /
+                maxOf(foldedQuery.length, foldedCandidate.length)
+            val baseScore = ((overlap + levenshteinRatio) * 500.0).roundToInt()
             return maxOf(baseScore, prefixScore).coerceIn(0, 1_000)
         }
 
@@ -484,8 +523,10 @@ internal object ProductNameSimilarity {
             val bLength = bEnd - sharedStart
             if (aLength == 0) return bLength
             if (bLength == 0) return aLength
-            var previous = previousScratch
-            var current = currentScratch
+            var previous = previousScratch ?: IntArray(ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH + 1)
+                .also { previousScratch = it }
+            var current = currentScratch ?: IntArray(ProductMatchingUseCase.MAX_MATCH_TEXT_LENGTH + 1)
+                .also { currentScratch = it }
             for (index in 0..bLength) previous[index] = index
             for (i in 1..aLength) {
                 current[0] = i
@@ -506,26 +547,61 @@ internal object ProductNameSimilarity {
     private fun tokensMatchByPrefix(
         fragments: Set<String>,
         candidates: Set<String>,
+        minimumPrefixLength: Int,
     ): Boolean = fragments.isNotEmpty() && fragments.all { fragment ->
-        fragment.length >= MIN_PREFIX_LENGTH && candidates.any { candidate ->
+        fragment.length >= minimumPrefixLength && candidates.any { candidate ->
             candidate.startsWith(fragment)
         }
     }
 
     private fun fold(raw: String): String {
-        val withoutMarks = Normalizer.normalize(raw, Normalizer.Form.NFD)
-            .replace(COMBINING_MARKS, "")
+        val withoutMarks = if (raw.all { it < '\u0080' }) {
+            raw
+        } else {
+            Normalizer.normalize(raw, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
+        }
         return withoutMarks
             .lowercase(Locale.ROOT)
-            .replace(WHITESPACE, " ")
+            .let(::collapseMatchWhitespace)
             .trim()
     }
 
-    private fun tokens(folded: String): Set<String> =
-        folded.split(' ').filter { it.length >= 2 }.toSet()
+    private fun tokens(folded: String): Set<String> {
+        if (' ' !in folded) return if (folded.length >= 2) setOf(folded) else emptySet()
+        val tokens = linkedSetOf<String>()
+        var start = 0
+        for (index in 0..folded.length) {
+            if (index == folded.length || folded[index] == ' ') {
+                if (index - start >= 2) tokens += folded.substring(start, index)
+                start = index + 1
+            }
+        }
+        return tokens
+    }
 
     private val COMBINING_MARKS = Regex("\\p{M}+")
-    private val WHITESPACE = Regex("\\s+")
     private const val MIN_PREFIX_LENGTH = 3
     private const val PREFIX_MATCH_SCORE = 850
 }
+
+/**
+ * Evita el matcher solo para ASCII con espacios simples. Android y JVM no usan la misma clase
+ * Unicode para \\s: cualquier carácter no ASCII conserva el regex original de su plataforma.
+ */
+private fun collapseMatchWhitespace(raw: String): String {
+    var previousWasSpace = false
+    for (character in raw) {
+        if (
+            character >= '\u0080' ||
+            character == '\t' || character == '\n' || character == '\u000B' ||
+            character == '\u000C' || character == '\r' ||
+            (character == ' ' && previousWasSpace)
+        ) {
+            return raw.replace(MATCH_WHITESPACE, " ")
+        }
+        previousWasSpace = character == ' '
+    }
+    return raw
+}
+
+private val MATCH_WHITESPACE = Regex("\\s+")

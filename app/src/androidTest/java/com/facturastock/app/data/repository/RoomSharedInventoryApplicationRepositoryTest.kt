@@ -1,5 +1,6 @@
 package com.facturastock.app.data.repository
 
+import com.facturastock.app.data.local.entity.PendingSaleCheckoutEntity
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -75,6 +76,13 @@ class RoomSharedInventoryApplicationRepositoryTest {
     @Test
     fun exactNormalDraftIsRecoveredAfterRemoteAck() = runBlocking {
         val page = seedNormalDraftAndRemotePage()
+        val before = requireNotNull(database.saleDao().findSale(SALE.value))
+        database.saleDao().insertPendingCheckout(PendingSaleCheckoutEntity(
+            saleId = before.saleId, businessId = before.businessId,
+            expectedVersion = before.version, contentHash = before.contentHash,
+            checkoutIdempotencyKey = "sale-checkout:v1:${before.saleId}:${before.version}:${before.contentHash}",
+            debtorName = null, debtDueAt = null, cloudBusinessId = CLOUD_BUSINESS.value, createdAt = 250L,
+        ))
 
         val result = repository.applyPage(
             localBusinessId = BUSINESS,
@@ -85,6 +93,7 @@ class RoomSharedInventoryApplicationRepositoryTest {
         )
 
         assertEquals(DomainResult.Success(1), result)
+        assertNull(database.saleDao().findPendingCheckout(SALE.value))
         val sale = requireNotNull(database.saleDao().findSale(SALE.value))
         assertEquals(SaleStatus.POSTED.name, sale.status)
         assertNull(sale.draftSlot)
@@ -347,6 +356,94 @@ class RoomSharedInventoryApplicationRepositoryTest {
     }
 
     @Test
+    fun purchaseBeforeAlreadyPostedSaleReplaysBalanceWithoutDuplicatingSaleGraph() = runBlocking {
+        val page = seedPostedSaleAheadOfPurchaseAndSaleFeed()
+        val saleBefore = database.saleDao().findSale(SALE.value)
+        val lineBefore = database.saleDao().findLine(SALE_LINE.value)
+        val movementsBefore = database.inventoryDao().listMovementsForSale(BUSINESS.value, SALE.value)
+        val auditBefore = database.auditEventDao().listForEntity(BUSINESS.value, "SALE", SALE.value)
+
+        val result = repository.applyPage(
+            localBusinessId = BUSINESS,
+            cloudBusinessId = CLOUD_BUSINESS,
+            expectedPreviousSeq = 0L,
+            page = page,
+            appliedAt = Instant.ofEpochMilli(500L),
+        )
+
+        assertEquals(DomainResult.Success(0), result)
+        val balance = requireNotNull(
+            database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value),
+        )
+        assertEquals("4", balance.quantityOnHand)
+        assertEquals("2.5", balance.averageUnitCost)
+        assertEquals(300L, balance.updatedAt)
+        assertEquals(2L, database.remoteSyncDao().findState(CLOUD_BUSINESS.value)?.inventorySeq)
+        assertEquals(saleBefore, database.saleDao().findSale(SALE.value))
+        assertEquals(lineBefore, database.saleDao().findLine(SALE_LINE.value))
+        assertEquals(1, movementsBefore.size)
+        assertEquals(1, auditBefore.size)
+        assertEquals(
+            movementsBefore,
+            database.inventoryDao().listMovementsForSale(BUSINESS.value, SALE.value),
+        )
+        assertEquals(
+            auditBefore,
+            database.auditEventDao().listForEntity(BUSINESS.value, "SALE", SALE.value),
+        )
+    }
+
+    @Test
+    fun alreadyPostedSaleRestoresBalanceAcrossPagesAndStalePageRetryDoesNotWrite() = runBlocking {
+        val page = seedPostedSaleAheadOfPurchaseAndSaleFeed()
+        val purchasePage = SharedInventoryPullPage(
+            changes = listOf(page.changes.first()),
+            nextCursor = 1L,
+            hasMore = true,
+        )
+        assertEquals(
+            DomainResult.Success(0),
+            repository.applyPage(BUSINESS, CLOUD_BUSINESS, 0L, purchasePage, Instant.ofEpochMilli(500L)),
+        )
+        assertEquals(
+            "5",
+            database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value)
+                ?.quantityOnHand,
+        )
+        val salePage = SharedInventoryPullPage(
+            changes = listOf(page.changes.last()),
+            nextCursor = 2L,
+            hasMore = false,
+        )
+        assertEquals(
+            DomainResult.Success(0),
+            repository.applyPage(BUSINESS, CLOUD_BUSINESS, 1L, salePage, Instant.ofEpochMilli(600L)),
+        )
+        val balance = requireNotNull(
+            database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value),
+        )
+        assertEquals("4", balance.quantityOnHand)
+        val state = database.remoteSyncDao().findState(CLOUD_BUSINESS.value)
+        val retry = repository.applyPage(
+            BUSINESS,
+            CLOUD_BUSINESS,
+            1L,
+            salePage,
+            Instant.ofEpochMilli(700L),
+        )
+
+        assertEquals(DomainResult.Failure(AccountError.Conflict), retry)
+        assertEquals(
+            balance,
+            database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value),
+        )
+        assertEquals(state, database.remoteSyncDao().findState(CLOUD_BUSINESS.value))
+        assertEquals(2L, state?.inventorySeq)
+        assertEquals(1, database.inventoryDao().listMovementsForSale(BUSINESS.value, SALE.value).size)
+        assertEquals(1, database.auditEventDao().listForEntity(BUSINESS.value, "SALE", SALE.value).size)
+    }
+
+    @Test
     fun creditSaleAndTwoLocalPaymentsAheadOfCursorReplayFromZeroInOrder() = runBlocking {
         val fixture = seedCreditSaleWithTwoLocalPayments()
         val state = requireNotNull(database.remoteSyncDao().findState(CLOUD_BUSINESS.value))
@@ -393,7 +490,7 @@ class RoomSharedInventoryApplicationRepositoryTest {
         assertEquals(50L, debt.balanceMinorUnits)
         assertEquals(2, database.debtDao().countPayments(fixture.debtId.value))
         assertEquals(
-            "3",
+            "4",
             database.inventoryDao()
                 .findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value)
                 ?.quantityOnHand,
@@ -436,6 +533,40 @@ class RoomSharedInventoryApplicationRepositoryTest {
         assertEquals(3L, database.debtDao().findDebt(fixture.debtId.value)?.version)
         assertEquals(2, database.debtDao().countPayments(fixture.debtId.value))
         assertEquals(1L, database.remoteSyncDao().findState(CLOUD_BUSINESS.value)?.inventorySeq)
+    }
+
+    private suspend fun seedPostedSaleAheadOfPurchaseAndSaleFeed(): SharedInventoryPullPage {
+        val salePage = seedNormalDraftAndRemotePage()
+        check(
+            repository.applyPage(
+                BUSINESS,
+                CLOUD_BUSINESS,
+                0L,
+                salePage,
+                Instant.ofEpochMilli(400L),
+            ) == DomainResult.Success(1),
+        )
+        // Mismo estado durable que un ACK de checkout: venta y saldo publicados, cursor atrasado.
+        val state = requireNotNull(database.remoteSyncDao().findState(CLOUD_BUSINESS.value))
+        database.remoteSyncDao().upsertState(state.copy(inventorySeq = 0L, inventoryPulledAt = null))
+        val saleChange = salePage.changes.single().copy(seq = 2L)
+        val purchaseChange = SharedInventoryChange(
+            seq = 1L,
+            kind = SharedInventoryChangeKind.PURCHASE,
+            balances = listOf(
+                saleChange.balances.single().copy(
+                    quantityOnHand = BigDecimal("5"),
+                    version = 7L,
+                    updatedAt = Instant.ofEpochMilli(250L),
+                ),
+            ),
+            sale = null,
+        )
+        return SharedInventoryPullPage(
+            changes = listOf(purchaseChange, saleChange),
+            nextCursor = 2L,
+            hasMore = false,
+        )
     }
 
     private suspend fun seedCreditSaleWithTwoLocalPayments(): CreditReplayFixture {

@@ -21,7 +21,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.facturastock.app.R
 import com.facturastock.app.core.id.UuidGenerator
-import com.facturastock.app.feature.home.HomeTestTags
+import com.facturastock.app.feature.debtors.DebtorsTestTags
+import com.facturastock.app.feature.inventory.InventoryTestTags
 import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.ui.theme.FacturaStockTheme
 import java.util.UUID
@@ -40,6 +41,45 @@ class AppNavigationTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
+    fun salesDebtorsShortcutOpensExistingListAndBackReturnsToTheSameSalesEntry() {
+        val discarded = mutableListOf<DraftId>()
+        lateinit var navController: NavHostController
+        var salesEntryId: String? = null
+        composeRule.setContent {
+            val controller = rememberNavController()
+            SideEffect { navController = controller }
+            FacturaStockTheme {
+                FacturaStockApp(
+                    navController = controller,
+                    useInjectedViewModels = false,
+                    onDiscardDraft = discarded::add,
+                )
+            }
+        }
+
+        assertRoute(navController, AppRoutes.SALES)
+        composeRule.runOnIdle { salesEntryId = navController.currentBackStackEntry?.id }
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+        assertRoute(navController, AppRoutes.DEBTORS)
+        composeRule.onNodeWithTag(DebtorsTestTags.LIST_SCREEN).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(salesEntryId, navController.previousBackStackEntry?.id)
+            assertTrue(discarded.isEmpty())
+        }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
+        composeRule.waitForIdle()
+        assertRoute(navController, AppRoutes.SALES)
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(salesEntryId, navController.currentBackStackEntry?.id)
+            assertEquals(null, navController.previousBackStackEntry)
+            assertTrue(discarded.isEmpty())
+        }
+    }
+
+    @Test
     fun invoiceProductScanNeedsOnlyCameraAndShutterBeforeOpeningProducts() {
         val draftUuid = uuid("10000000-0000-4000-8000-000000000001")
         lateinit var navController: NavHostController
@@ -56,8 +96,11 @@ class AppNavigationTest {
             }
         }
 
-        assertRoute(navController, AppRoutes.HOME)
-        click(R.string.action_scan_invoice)
+        assertRoute(navController, AppRoutes.SALES)
+        composeRule.runOnIdle {
+            navController.navigate(AppRoutes.camera(DraftId.from(draftUuid)))
+        }
+        composeRule.waitForIdle()
         assertRouteWithArguments(
             navController,
             AppRoutes.CAMERA,
@@ -70,17 +113,17 @@ class AppNavigationTest {
             AppRoutes.DRAFT_ID to draftUuid.toString(),
         )
         click(R.string.action_finish_processing)
-        assertRoute(navController, AppRoutes.PRODUCTS)
+        assertRoute(navController, AppRoutes.PRODUCTS_PATTERN)
         composeRule.runOnIdle {
             assertEquals(
-                AppRoutes.HOME,
+                AppRoutes.SALES,
                 navController.previousBackStackEntry?.destination?.route,
             )
         }
     }
 
     @Test
-    fun backRequiresExplicitDiscardAndInvokesItOnce() {
+    fun legacyDraftBackRequiresExplicitDiscardOnceAndReturnsToSales() {
         val draftUuid = uuid("50000000-0000-4000-8000-000000000005")
         val discarded = mutableListOf<DraftId>()
         lateinit var navController: NavHostController
@@ -98,7 +141,10 @@ class AppNavigationTest {
             }
         }
 
-        click(R.string.action_scan_invoice)
+        composeRule.runOnIdle {
+            navController.navigate(AppRoutes.camera(DraftId.from(draftUuid)))
+        }
+        composeRule.waitForIdle()
         assertRoute(navController, AppRoutes.CAMERA)
 
         composeRule
@@ -127,9 +173,16 @@ class AppNavigationTest {
             .onNodeWithText(context.getString(R.string.action_discard_draft))
             .performClick()
         composeRule.waitForIdle()
-        assertRoute(navController, AppRoutes.INVOICES)
+        assertRoute(navController, AppRoutes.SALES)
         composeRule.runOnIdle {
             assertEquals(listOf(DraftId.from(draftUuid)), discarded)
+        }
+
+        clickNavigation(R.string.navigation_sales)
+        assertRoute(navController, AppRoutes.SALES)
+        composeRule.onNodeWithTag(SalesTestTags.SCREEN).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(null, navController.previousBackStackEntry)
         }
     }
 
@@ -185,9 +238,9 @@ class AppNavigationTest {
             navController.currentDestination?.route == AppRoutes.PURCHASE_DETAIL
         }
         composeRule.runOnIdle {
-            navController.navigate(AppRoutes.HOME)
+            navController.navigate(AppRoutes.SALES)
         }
-        assertRoute(navController, AppRoutes.HOME)
+        assertRoute(navController, AppRoutes.SALES)
 
         composeRule.runOnIdle { requestId.longValue = 2L }
         composeRule.waitUntil(timeoutMillis = 5_000L) {
@@ -222,11 +275,10 @@ class AppNavigationTest {
         }
 
         listOf(
-            TopLevelDestination.SALES,
-            TopLevelDestination.INVOICES,
             TopLevelDestination.INVENTORY,
+            TopLevelDestination.SALES,
             TopLevelDestination.REPORTS,
-            TopLevelDestination.HOME,
+            TopLevelDestination.SALES,
         ).forEach { destination ->
             composeRule
                 .onNode(
@@ -237,10 +289,17 @@ class AppNavigationTest {
             composeRule.waitForIdle()
             assertRoute(navController, destination.route)
         }
+        clickNavigation(R.string.navigation_inventory)
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_PRODUCTS).performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertRoute(navController, AppRoutes.INVENTORY_REGISTER)
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTRATION_SCREEN).assertIsDisplayed()
+        click(R.string.action_return_inventory)
+        assertRoute(navController, AppRoutes.INVENTORY)
     }
 
     @Test
-    fun salesEntryIsReachableFromHomeAndRemainsAVisibleTopLevelArea() {
+    fun salesIsInitialDestinationAndRemovedSectionsRedirectWithoutVisibleTabs() {
         lateinit var navController: NavHostController
 
         composeRule.setContent {
@@ -254,14 +313,19 @@ class AppNavigationTest {
             }
         }
 
-        composeRule.onNodeWithTag(HomeTestTags.SALES_CTA).performClick()
-        composeRule.waitForIdle()
         assertRoute(navController, AppRoutes.SALES)
-        composeRule.onNodeWithTag(SalesTestTags.SCANNER_MODE).assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.CASH_ENTRY).assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.SCANNER_MODE).assertDoesNotExist()
 
-        composeRule.onNodeWithText(context.getString(R.string.navigation_home)).performClick()
-        composeRule.waitForIdle()
-        assertRoute(navController, AppRoutes.HOME)
+        listOf(AppRoutes.HOME, AppRoutes.INVOICES).forEach { legacyRoute ->
+            composeRule.runOnIdle { navController.navigate(legacyRoute) }
+            composeRule.waitForIdle()
+            assertRoute(navController, AppRoutes.SALES)
+            composeRule.onNodeWithTag(SalesTestTags.SCREEN).assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.navigation_home)).assertDoesNotExist()
+            composeRule.onNodeWithText(context.getString(R.string.navigation_invoices)).assertDoesNotExist()
+        }
     }
 
     @Test
@@ -325,7 +389,10 @@ class AppNavigationTest {
             }
         }
 
-        click(R.string.action_scan_invoice)
+        composeRule.runOnIdle {
+            navController.navigate(AppRoutes.camera(DraftId.from(draftUuid)))
+        }
+        composeRule.waitForIdle()
         assertRouteWithArguments(
             navController,
             AppRoutes.CAMERA,
@@ -373,15 +440,25 @@ class AppNavigationTest {
 
         assertRoute(navController, AppRoutes.PURCHASE_SUMMARY)
         composeRule.runOnIdle {
-            assertEquals(AppRoutes.HOME, navController.previousBackStackEntry?.destination?.route)
+            assertEquals(AppRoutes.SALES, navController.previousBackStackEntry?.destination?.route)
             navController.openLineReviewFromPrepared(draftId)
         }
         composeRule.waitForIdle()
 
         assertRoute(navController, AppRoutes.INVOICE_LINES)
         composeRule.runOnIdle {
-            assertEquals(AppRoutes.HOME, navController.previousBackStackEntry?.destination?.route)
+            assertEquals(AppRoutes.SALES, navController.previousBackStackEntry?.destination?.route)
         }
+    }
+
+    private fun clickNavigation(@StringRes labelRes: Int) {
+        composeRule
+            .onNode(
+                hasText(context.getString(labelRes)) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab),
+            )
+            .performClick()
+        composeRule.waitForIdle()
     }
 
     private fun click(@StringRes labelRes: Int) {

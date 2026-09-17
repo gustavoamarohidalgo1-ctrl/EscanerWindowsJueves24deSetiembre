@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="debt_delete_action">Eliminar deuda</string>
+    <string name="debt_delete_title">Eliminar deuda anotada por error</string>
+    <string name="debt_delete_message">Esta acción anula la venta asociada, repone sus productos y retira la deuda de Deudores y de los próximos PDF. Revisa el impacto antes de confirmar.</string>
+    <string name="debt_delete_debtor">Deudor: %1$s</string>
+    <string name="debt_delete_identity">Referencia de deuda: %1$s</string>
+    <string name="debt_delete_date">Fecha de la deuda: %1$s</string>
+    <string name="debt_delete_original">Total original de la venta: %1$s</string>
+    <string name="debt_delete_balance">Saldo pendiente que se cancelará: %1$s</string>
+    <string name="debt_delete_payment_alternative">Si la venta fue correcta y el cliente ya pagó, usa Registrar pago.</string>
+    <string name="debt_delete_stock">Productos que volverán al inventario</string>
+    <string name="debt_delete_line">%1$s · %2$s %3$s · Almacén: %4$s</string>
+    <string name="debt_delete_refund">Abonos recibidos que debes devolver manualmente al cliente: %1$s. La app no devuelve dinero automáticamente.</string>
+    <string name="debt_delete_history">La venta, la deuda, los abonos y la anulación se conservan en el historial. Los PDF ya guardados no se modifican.</string>
+    <string name="debt_delete_confirm">Eliminar deuda y anular venta</string>
+    <string name="debt_delete_cancel">Cancelar</string>
+    <string name="debt_delete_review">Revisar nuevamente</string>
+    <string name="debt_delete_loading">Revisando la venta…</string>
+    <string name="debt_delete_saving">Eliminando deuda…</string>
+    <string name="debt_delete_success">Deuda eliminada y venta anulada. Inventario repuesto; historial conservado.</string>
+    <string name="debt_delete_error_load">No se pudo cargar el impacto. Revisa nuevamente antes de confirmar.</string>
+    <string name="debt_delete_error_operation">No se pudo verificar el resultado de la anulación. Revisa nuevamente su estado antes de volver a confirmar.</string>
+    <string name="debt_delete_error_stale">La deuda, sus pagos o la venta cambiaron. Revisa nuevamente el impacto y vuelve a confirmar si corresponde.</string>
+    <string name="debt_delete_error_context">Cambió el negocio activo. Abre la deuda desde el negocio correspondiente.</string>
+    <string name="debt_delete_error_business">El negocio de esta deuda ya no está activo. Vuelve a seleccionarlo antes de continuar.</string>
+    <string name="debt_delete_error_not_found">No se encontró la venta o la deuda. Regresa a Deudores para revisar su estado.</string>
+    <string name="debt_delete_error_unauthorized">Solo el propietario o un administrador puede anular esta venta.</string>
+    <string name="debt_delete_error_shared">La anulación de ventas todavía no está disponible para negocios compartidos. La deuda se conserva.</string>
+    <string name="debt_delete_error_history">El historial de la venta y la deuda no permite una anulación segura. Revisa sus datos antes de continuar.</string>
+</resources>

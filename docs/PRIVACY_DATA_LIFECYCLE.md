@@ -11,7 +11,7 @@ verificar que la política pública configurada para el release coincide con est
 | Dato | Finalidad | Procesamiento | Retención | Cifrado |
 | --- | --- | --- | --- | --- |
 | Foto del comprobante | OCR local y evidencia de la compra | Original privado en `filesDir/draft_images/…` (`data/files/LocalDraftImageImporter.kt`). No sale por defecto. Solo en `cloud`, con respaldo comercial **y** documental activos y una compra publicada, se prepara una copia JPEG derivada y se transfiere por HTTPS; el texto OCR no acompaña al archivo | Política elegida por el usuario: tras OCR / tras confirmar / 30 / 90 días / conservar (defecto). Una intención de purga cloud, cuando aplica, queda durable antes de borrar la copia local | Local retenida: AES/GCM 256 con clave no exportable de AndroidKeyStore (`data/files/RetainedImageCipher.kt`). Tránsito remoto: HTTPS. Firebase Storage aplica cifrado administrado en reposo; no es cifrado de extremo a extremo |
-| Foto usada para importar productos | Detectar filas de producto con OCR local | Borrador privado del dispositivo; no se publica como compra ni documento remoto | Se elimina junto con el snapshot OCR y el borrador después de guardar o reconocer como existentes los productos seguros. Ante fallo se conserva para reintentar | Sandbox privado de Android durante el procesamiento |
+| Foto usada para importar productos | Detectar filas de producto con OCR local | Borrador privado del dispositivo; no se publica como compra ni documento remoto | Room elimina el borrador y los datos OCR tras guardar o reconocer los productos seguros; el archivo se intenta borrar de inmediato. Si el sistema de archivos no lo confirma, permanece privado como huérfano y el mantenimiento lo reintenta tras el intervalo de seguridad. Ante un fallo anterior al guardado se conserva para reintentar | Sandbox privado de Android durante el procesamiento |
 | Versiones de trabajo OCR (grises, ≤2048 px) | Mejorar la lectura ML Kit | Solo dispositivo: `draft_images/{draftId}/ocr/…` (`data/files/LocalInvoiceImagePreprocessor.kt`) | Se purgan al confirmar la compra y en cada mantenimiento | Sandbox privado; no son el artefacto documental remoto ni sobreviven como imagen retenida |
 | Datos de la compra (proveedor, RUC, comprobante, montos, líneas) | Registro contable e inventario | Local: Room (`data/local/`). Nube (opcional, flavor `cloud` con sesión verificada): Firestore vía `postPurchase` | **Nunca se borran automáticamente**: la normativa contable puede exigir conservarlos; la retención solo toca la foto | Local: sandbox de la app. Nube: TLS en tránsito + cifrado en reposo de Firestore |
 | Lectura cruda de un lector HID | Identificar un producto durante una venta o consultar su inventario | Solo memoria: el `KeyboardWedgeAssembler` ensambla eventos de teclado físico mientras hay un receptor explícito y la app está desbloqueada. No conserva la última lectura completa ni la envía a logs, Analytics, Crashlytics u outbox | Hasta completar, cancelar, pausar la app, cambiar de dispositivo o superar el timeout; una trama >128 se descarta completa | Memoria del proceso y sandbox de Android |
@@ -154,7 +154,8 @@ La opción "Conservar" está marcada en la app como la recomendada para respaldo
   retención/borrado del proyecto. Eliminar la cuenta de respaldo no debe interpretarse como
   borrado retroactivo de estadísticas operacionales ya agregadas.
 - **Eliminar cuenta y datos en la nube** (Ajustes → Cuenta y respaldo → Eliminar mi cuenta;
-  flavor `cloud`, sesión autenticada, incluso antes de verificar el correo): después de una
+  flavor `cloud` con backend de Functions, sesión autenticada, incluso antes de verificar el
+  correo; Spark no ofrece esta acción porque no dispone del servicio): después de una
   confirmación explícita solicita la contraseña solo para reautenticar con Firebase; no la guarda
   ni la incluye en el callable. El cliente fuerza un token nuevo y el servidor exige
   `auth_time` de como máximo cinco minutos antes de cualquier lectura o escritura destructiva;
@@ -187,17 +188,31 @@ La opción "Conservar" está marcada en la app como la recomendada para respaldo
      supresión permanece; las reglas directas dejan de autorizar al eliminar la membresía. El
      token deja de verificarse al expirar y no puede renovarse.
   6. Devuelve un resumen cerrado (`businessesDeleted`, `membershipsRemoved`) que la app usa para
-     verificar el éxito, sin mostrar identificadores internos. Luego guarda una marca restaurable
-     y cierra la sesión/enlace local; si esa limpieza falla, ofrece reintentarla sin repetir el
-     borrado remoto. Las compras, ventas, deudas, abonos y borradores del dispositivo **no** se borran. Las ventas
+     verificar el éxito, sin mostrar identificadores internos. Si el trabajo fue aceptado pero
+     aún no terminó y el cliente declaró `responseVersion: 2`, devuelve `status: PENDING` y la
+     app informa que el servidor continuará. Sin ese opt-in conserva el contrato publicado:
+     un éxito siempre significa completo; un trabajo pendiente se comunica como error reintentable.
+     El cliente guarda una marca restaurable antes de enviar y cierra la sesión/enlace local;
+     si esa limpieza falla, ofrece reintentarla sin repetir el borrado remoto. Las compras, ventas, deudas, abonos y borradores del dispositivo **no** se borran. Las ventas
      cloud permanecen con un negocio compartido que sobrevive, sin UID del autor; si era un negocio
      del único miembro, el árbol completo —incluidas ventas, deudas, abonos e inventario— se
      elimina. En un negocio compartido sobreviviente, las deudas y abonos permanecen como hechos
      comerciales sin UID del autor.
 
+  **Orden de actualización:** publicar primero el backend que admite `responseVersion: 2` y
+  después distribuir el cliente que lo envía. El backend conserva el formato de éxito completo
+  para clientes anteriores; un servidor anterior rechaza el campo nuevo y no debe interpretarse
+  como aceptación de un borrado. Este cambio de código no despliega automáticamente ningún servicio.
+
   Las escrituras de limpieza se fraccionan bajo el límite de lote de Firestore y Auth solo se
-  elimina al final. Si una consulta o lote falla, la cuenta de Auth se conserva para que el usuario
-  pueda reintentar; las eliminaciones y sustituciones ya aplicadas son idempotentes. La marca de
+  elimina al final. El lock y un trabajo durable `accountDeletionJobs/{hash}` se crean en la
+  misma transacción. Ese trabajo guarda temporalmente UID y email autorizado, sin tokens ni
+  contraseñas, con acceso exclusivo de Admin SDK y sin índices para la identidad. No expira por
+  TTL mientras esté pendiente. Un scheduler cada cinco minutos recupera los trabajos cuyo lease
+  de seis minutos venció; los fallos manejados se difieren al menos un minuto. Las eliminaciones
+  y sustituciones aplicadas son idempotentes. Una fase `AUTH` durable impide volver a barrer el
+  email después de eliminar Auth, incluso si se pierde su ACK y otra cuenta reutiliza el correo.
+  Al confirmar el cierre se eliminan el trabajo y su PII temporal de forma atómica. La marca de
   supresión se conserva indefinidamente por seguridad en `accountDeletionTombstones/{hash}`: su
   ruta es SHA-256 namespaced de un UID aleatorio, no contiene UID/email en claro y no es legible
   por clientes. Durante un reintento guarda IDs internos de negocios pendientes. Tras una segunda
@@ -207,10 +222,14 @@ La opción "Conservar" está marcada en la app como la recomendada para respaldo
   generación futura con la misma identidad.
   El checkpoint local es conservador ante respuestas ambiguas y no reenvía el callable. Una muerte
   de proceso en la ventana exacta entre persistirlo e iniciar la llamada puede cerrar la sesión sin
-  haber solicitado todavía el borrado remoto; un protocolo journalado por servidor queda como
-  límite conocido de esta versión.
-  El lock de email es distinto: se elimina best-effort después de completar Firestore y Auth y
-  deja de bloquear al cumplir 24 h. Si ese delete final falla, `inviteMember` reconoce la
+  haber solicitado todavía el borrado remoto. En ese caso se muestra un resultado no confirmado,
+  nunca una aceptación o eliminación inventada, y se indica volver a iniciar sesión y solicitarla.
+  Un resultado pendiente solo procede de un job confirmado; el servidor lo termina aunque la app
+  se cierre. Los tombstones de versiones anteriores sin job necesitan un reintento autenticado
+  para migrar el trabajo, ya que sus hashes no permiten recuperar por sí solos el UID.
+  El lock de email es distinto: se elimina junto al job después de completar Firestore y Auth,
+  solo si todavía pertenece al mismo trabajo, y deja de bloquear al cumplir 24 h. Si ese delete
+  final falla, el scheduler lo reintenta; `inviteMember` también reconoce la
   caducidad y lo retira dentro de la misma transacción que crea una invitación nueva. Además,
   `firestore.indexes.json` configura `expiresAt` como TTL para que Firestore purgue el documento
   físico de forma asíncrona; esa purga no ocurre necesariamente en el instante del vencimiento.

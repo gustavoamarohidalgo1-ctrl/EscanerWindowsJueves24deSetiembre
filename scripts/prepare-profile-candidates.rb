@@ -20,10 +20,9 @@ REQUIRED_MANUAL_CUJS = [
   "HPLcom/facturastock/app/feature/linereview/InvoiceLineReviewContract**->**(**)**",
   "HPLcom/facturastock/app/ui/format/FormattersKt**->**(**)**",
 ].freeze
-REQUIRED_HOME_OWNERS = [
-  "com/facturastock/app/feature/home/HomeRouteKt",
-  "com/facturastock/app/feature/home/HomeScreenKt",
-  "com/facturastock/app/feature/home/HomeDashboardContentKt",
+REQUIRED_SALES_OWNERS = [
+  "com/facturastock/app/feature/sales/SalesRouteKt",
+  "com/facturastock/app/feature/sales/SalesScreenKt",
 ].freeze
 
 def fail_candidate(message)
@@ -175,11 +174,11 @@ unless maintained_variant_mangling.empty?
   )
 end
 
-missing_home_owners = REQUIRED_HOME_OWNERS.reject do |owner|
+missing_sales_owners = REQUIRED_SALES_OWNERS.reject do |owner|
   generated_startup.any? { |rule| profile_owner(rule) == owner }
 end
-unless missing_home_owners.empty?
-  fail_candidate("startup did not reach ready Home owners: #{missing_home_owners.join(", ")}")
+unless missing_sales_owners.empty?
+  fail_candidate("startup did not reach ready Sales owners: #{missing_sales_owners.join(", ")}")
 end
 
 missing_manual_cujs = REQUIRED_MANUAL_CUJS - maintained_baseline
@@ -199,7 +198,7 @@ unless invalid_startup.empty?
 end
 
 unless generated_startup.any? { |rule| rule.include?("->") }
-  fail_candidate("startup must include observed methods through ready Home")
+  fail_candidate("startup must include observed methods through ready Sales")
 end
 
 startup_candidate = merge_flags(generated_startup)
@@ -233,7 +232,7 @@ summary_output = File.join(output_dir, "summary.txt")
 File.write(
   startup_output,
   [
-    "# Candidate generated from the non-minified Profile journey through ready Home.",
+    "# Candidate generated from the non-minified Profile journey through ready Sales.",
     "# Review this diff before copying it into app/src/main/baselineProfiles.",
     *startup_candidate,
     "",
@@ -242,7 +241,7 @@ File.write(
 File.write(
   baseline_output,
   [
-    "# Candidate generated from the non-minified Profile journey through ready Home.",
+    "# Candidate generated from the non-minified Profile journey through ready Sales.",
     "# Includes maintained parser/list CUJs that startup cannot observe.",
     *baseline_candidate,
     "",

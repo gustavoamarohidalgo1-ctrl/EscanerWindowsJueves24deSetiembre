@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.time.AppClock
 import com.facturastock.app.data.local.FacturaStockDatabase
+import com.facturastock.app.data.local.codec.InvoiceLinesEditCodec
+import com.facturastock.app.data.local.codec.PreparedPurchaseCodec
 import com.facturastock.app.data.local.dao.ProductDao
 import com.facturastock.app.data.local.dao.updateCas
 import com.facturastock.app.data.local.entity.ProductEntity
@@ -23,11 +25,15 @@ import com.facturastock.app.domain.model.ProductSalePricePolicy
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.domain.repository.ProductRepository
+import com.facturastock.app.domain.repository.ProductDeletionResult
+import com.facturastock.app.domain.repository.ProductBatchCreationResult
 import com.facturastock.app.domain.repository.ProductSalePriceMutationResult
 import com.facturastock.app.domain.repository.DisabledPurchaseBackupScheduler
 import com.facturastock.app.domain.repository.PurchaseBackupScheduler
 import com.facturastock.app.domain.repository.enqueueBestEffort
 import java.util.Locale
+import java.math.BigDecimal
+import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -43,6 +49,26 @@ class RoomProductRepository @Inject constructor(
     private val clock: AppClock,
     private val backupScheduler: PurchaseBackupScheduler = DisabledPurchaseBackupScheduler,
 ) : ProductRepository {
+    /**
+     * Verificación de lectura dentro de la misma transacción que escribe: si la fila confirmada
+     * no coincide exactamente con lo que se intentó guardar, el guardado falla de forma
+     * explícita en lugar de anunciar un éxito sin evidencia en disco. Un SELECT por clave
+     * primaria no aporta latencia perceptible frente a esa garantía.
+     */
+    private suspend fun verifyPersisted(expected: List<ProductEntity>) {
+        expected.forEach { entity ->
+            val stored = productDao.findById(entity.productId)
+            if (stored == null || stored != entity) {
+                throw StorageException(
+                    StorageError.Unavailable,
+                    IllegalStateException(
+                        "la relectura del producto no coincide con lo escrito",
+                    ),
+                )
+            }
+        }
+    }
+
     override suspend fun create(product: Product): Product = withContext(dispatchers.io) {
         val created = storageCatching {
             val now = clock.now()
@@ -64,6 +90,7 @@ class RoomProductRepository @Inject constructor(
                 }
                 productDao.insert(entity)
                 database.outboxOperationDao().insert(catalogOutbox(entity, 0L))
+                verifyPersisted(listOf(entity))
             }
             entity.toDomain()
         }
@@ -103,6 +130,7 @@ class RoomProductRepository @Inject constructor(
                     entities.forEach { entity ->
                         database.outboxOperationDao().insert(catalogOutbox(entity, 0L))
                     }
+                    verifyPersisted(entities)
                 }
                 entities.map(ProductEntity::toDomain)
             }
@@ -110,6 +138,69 @@ class RoomProductRepository @Inject constructor(
             backupScheduler.enqueueBestEffort()
             created
         }
+
+    override suspend fun createBatchSkippingExistingNames(
+        businessId: BusinessId,
+        products: List<Product>,
+    ): ProductBatchCreationResult = withContext(dispatchers.io) {
+        if (products.isEmpty()) {
+            return@withContext ProductBatchCreationResult(emptyList(), 0)
+        }
+        require(products.all { product -> product.businessId == businessId })
+        require(products.map(Product::productId).distinct().size == products.size) {
+            "Un lote de productos no puede repetir productId"
+        }
+        val normalizedNames = products.map { product ->
+            product.name.trim().lowercase(Locale.ROOT)
+        }
+        require(normalizedNames.distinct().size == normalizedNames.size) {
+            "Un lote condicionado no puede repetir nombres normalizados"
+        }
+
+        val result = storageCatching {
+            val now = clock.now()
+            val candidates = products.map { product ->
+                product.copy(createdAt = now, updatedAt = now, version = 1L).toEntity()
+            }
+            database.withTransaction {
+                // Room serializa sus transacciones. La lectura y la escritura ocurren bajo el
+                // mismo turno de escritura, por lo que otro escaneo no puede intercalarse entre
+                // ambas y crear el mismo nombre.
+                val pending = candidates.filter { entity ->
+                    productDao.findByNormalizedName(
+                        businessId = businessId.value,
+                        normalizedName = entity.normalizedName,
+                    ).isEmpty()
+                }
+                pending.forEach { entity ->
+                    requireReferencesBelongToBusiness(entity)
+                    if (
+                        !productDao.referencesAreActiveForCreate(
+                            entity.businessId,
+                            entity.unitId,
+                            entity.purchaseUnitId,
+                            entity.locationId,
+                        )
+                    ) {
+                        throw catalogOwnershipConflict(
+                            "un producto nuevo solo puede usar unidad y almacén activos",
+                        )
+                    }
+                }
+                productDao.insertAll(pending)
+                pending.forEach { entity ->
+                    database.outboxOperationDao().insert(catalogOutbox(entity, 0L))
+                }
+                verifyPersisted(pending)
+                ProductBatchCreationResult(
+                    created = pending.map(ProductEntity::toDomain),
+                    alreadyExistingCount = candidates.size - pending.size,
+                )
+            }
+        }
+        if (result.created.isNotEmpty()) backupScheduler.enqueueBestEffort()
+        result
+    }
 
     override suspend fun update(product: Product): Boolean = withContext(dispatchers.io) {
         val updated = storageCatching {
@@ -120,7 +211,9 @@ class RoomProductRepository @Inject constructor(
                 if (existing.businessId != requested.businessId) {
                     throw catalogOwnershipConflict("un producto no puede cambiar de negocio")
                 }
-                if (requested.version == Long.MAX_VALUE) return@withTransaction false
+                if (requested.version != existing.version || requested.version == Long.MAX_VALUE) {
+                    return@withTransaction false
+                }
                 val entity = product.copy(
                     createdAt = java.time.Instant.ofEpochMilli(existing.createdAt),
                     updatedAt = java.time.Instant.ofEpochMilli(
@@ -128,10 +221,12 @@ class RoomProductRepository @Inject constructor(
                     ),
                 ).toEntity()
                 requireReferencesBelongToBusiness(entity)
+                requireChangedReferencesAreActive(existing, entity)
                 // CAS: la versión que viaja en la entidad es la que el llamador leyó; si otro
                 // guardado ganó la carrera, la fila no coincide y el update honestamente falla.
                 if (productDao.updateCas(entity) == 0) return@withTransaction false
                 val stored = entity.copy(version = entity.version + 1L)
+                verifyPersisted(listOf(stored))
                 database.outboxOperationDao().insert(
                     catalogOutbox(stored, expectedVersion = entity.version),
                 )
@@ -140,6 +235,87 @@ class RoomProductRepository @Inject constructor(
         }
         if (updated) backupScheduler.enqueueBestEffort()
         updated
+    }
+
+    override suspend fun deletePermanently(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): ProductDeletionResult = withContext(dispatchers.io) {
+        storageCatching {
+            database.withTransaction {
+                val stored = productDao.findById(productId.value)
+                    ?: return@withTransaction ProductDeletionResult.NOT_FOUND
+                if (stored.businessId != businessId.value) {
+                    return@withTransaction ProductDeletionResult.NOT_FOUND
+                }
+                if (expectedVersion < 1L || stored.version != expectedVersion) {
+                    return@withTransaction ProductDeletionResult.STALE
+                }
+                val outbox = database.outboxOperationDao()
+                if (database.cloudBusinessBindingDao().findByLocal(businessId.value) != null ||
+                    productDao.hasRemoteDeletionReferences(businessId.value, productId.value) ||
+                    outbox.hasRemoteDeletionRisk(businessId.value)
+                ) {
+                    return@withTransaction ProductDeletionResult.SHARED_BUSINESS
+                }
+                if (productDao.hasDeletionReferences(productId.value) ||
+                    hasSnapshotDeletionReferences(businessId, productId)
+                ) {
+                    return@withTransaction ProductDeletionResult.HAS_HISTORY
+                }
+                val balances = database.inventoryDao().listBalancesForProduct(businessId.value, productId.value)
+                // No SUM ni CAST a REAL: posiciones opuestas nunca se cancelan para autorizar
+                // el borrado, y hasta el decimal no cero más pequeño conserva sus existencias.
+                if (balances.any { BigDecimal(it.quantityOnHand).signum() != 0 }) {
+                    return@withTransaction ProductDeletionResult.HAS_STOCK
+                }
+                outbox.deleteNeverAttemptedLocalProduct(businessId.value, productId.value)
+                val deletedBalances = productDao.deleteUnusedBalances(businessId.value, productId.value)
+                if (deletedBalances != balances.size ||
+                    productDao.deletePermanently(businessId.value, productId.value, expectedVersion) != 1 ||
+                    productDao.findById(productId.value) != null ||
+                    outbox.hasProductOperations(businessId.value, productId.value) ||
+                    database.inventoryDao().listBalancesForProduct(businessId.value, productId.value).isNotEmpty()
+                ) {
+                    // También revierte la limpieza si un trigger ignora o altera la escritura.
+                    throw StorageException(
+                        StorageError.Unavailable,
+                        IllegalStateException("la relectura no confirma la eliminación del producto"),
+                    )
+                }
+                ProductDeletionResult.DELETED
+            }
+        }
+    }
+
+    private suspend fun hasSnapshotDeletionReferences(businessId: BusinessId, productId: ProductId): Boolean {
+        for (entity in productDao.listDeletionEditCandidates(businessId.value, productId.value)) {
+            if (!InvoiceLinesEditCodec.supports(entity.payloadCodecVersion) ||
+                InvoiceLinesEditCodec.sha256(entity.payload) != entity.payloadSha256
+            ) return true
+            val snapshot = try {
+                InvoiceLinesEditCodec.decode(entity.payload)
+            } catch (_: IOException) {
+                return true
+            }
+            // Incluye tombstones restaurables y productos staged; nunca se reescribe el editor.
+            if (snapshot.lines.any { it.linkedProductId == productId || it.stagedProduct?.productId == productId }) {
+                return true
+            }
+        }
+        for (entity in productDao.listDeletionPreparedCandidates(businessId.value, productId.value)) {
+            if (!PreparedPurchaseCodec.supports(entity.payloadCodecVersion) ||
+                PreparedPurchaseCodec.sha256(entity.payload) != entity.payloadSha256
+            ) return true
+            val snapshot = try {
+                PreparedPurchaseCodec.decode(entity.payload)
+            } catch (_: IOException) {
+                return true
+            }
+            if (snapshot.lines.any { it.productId == productId }) return true
+        }
+        return false
     }
 
     override suspend fun updateSalePrice(
@@ -189,6 +365,7 @@ class RoomProductRepository @Inject constructor(
                     version = existing.version + 1L,
                     updatedAt = updatedAt,
                 )
+                verifyPersisted(listOf(stored))
                 database.outboxOperationDao().insert(
                     catalogOutbox(stored, expectedVersion = existing.version),
                 )
@@ -204,6 +381,20 @@ class RoomProductRepository @Inject constructor(
     override suspend fun findById(productId: ProductId): Product? = withContext(dispatchers.io) {
         storageCatching { productDao.findById(productId.value)?.toDomain() }
     }
+
+    override suspend fun findByIds(productIds: Collection<ProductId>): Map<ProductId, Product> =
+        withContext(dispatchers.io) {
+            if (productIds.isEmpty()) return@withContext emptyMap()
+            storageCatching {
+                productIds
+                    .map { it.value }
+                    .distinct()
+                    .chunked(IN_QUERY_CHUNK)
+                    .flatMap { chunk -> productDao.findByIds(chunk) }
+                    .map { it.toDomain() }
+                    .associateBy { it.productId }
+            }
+        }
 
     override suspend fun findBySku(businessId: BusinessId, sku: String): Product? =
         withContext(dispatchers.io) {
@@ -296,6 +487,8 @@ class RoomProductRepository @Inject constructor(
 
     override fun observeForBusiness(businessId: BusinessId): Flow<List<Product>> =
         productDao.observeForBusiness(businessId.value)
+            // Compara filas antes de reconstruir el catalogo cuando Room invalida por otro negocio.
+            .distinctUntilChanged()
             .map { list -> list.map { it.toDomain() } }
             // Room invalida por tabla, incluso por escrituras de otro negocio. No propagar una
             // lista identica evita reconstrucciones costosas en consumidores como Ventas.
@@ -312,12 +505,34 @@ class RoomProductRepository @Inject constructor(
         CatalogStatus.ACTIVE,
     )
 
-    private suspend fun setStatus(productId: ProductId, status: CatalogStatus): Boolean =
+    override suspend fun archive(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): Boolean = setStatus(productId, CatalogStatus.ARCHIVED, businessId, expectedVersion)
+
+    override suspend fun restore(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): Boolean = setStatus(productId, CatalogStatus.ACTIVE, businessId, expectedVersion)
+
+    private suspend fun setStatus(
+        productId: ProductId,
+        status: CatalogStatus,
+        expectedBusinessId: BusinessId? = null,
+        expectedVersion: Long? = null,
+    ): Boolean =
         withContext(dispatchers.io) {
             val mutation = storageCatching {
                 database.withTransaction {
                     val existing = productDao.findById(productId.value)
                         ?: return@withTransaction StatusMutation(success = false, changed = false)
+                    if ((expectedBusinessId != null && existing.businessId != expectedBusinessId.value) ||
+                        (expectedVersion != null && (expectedVersion < 1L || existing.version != expectedVersion))
+                    ) {
+                        return@withTransaction StatusMutation(success = false, changed = false)
+                    }
                     if (existing.status == status.name) {
                         StatusMutation(success = true, changed = false)
                     } else if (existing.version == Long.MAX_VALUE) {
@@ -338,6 +553,7 @@ class RoomProductRepository @Inject constructor(
                                 version = existing.version + 1L,
                                 updatedAt = updatedAt,
                             )
+                            verifyPersisted(listOf(stored))
                             database.outboxOperationDao().insert(
                                 catalogOutbox(stored, existing.version),
                             )
@@ -349,6 +565,24 @@ class RoomProductRepository @Inject constructor(
             if (mutation.changed) backupScheduler.enqueueBestEffort()
             mutation.success
         }
+
+    /** La revisión previa de UI puede quedar obsoleta mientras se archiva una referencia. */
+    private suspend fun requireChangedReferencesAreActive(
+        existing: ProductEntity,
+        requested: ProductEntity,
+    ) {
+        val inactiveUnit = requested.unitId != existing.unitId &&
+            database.unitDao().findById(requested.unitId)?.status != CatalogStatus.ACTIVE.name
+        val inactivePurchaseUnit = requested.purchaseUnitId != null &&
+            requested.purchaseUnitId != existing.purchaseUnitId &&
+            database.unitDao().findById(requested.purchaseUnitId)?.status != CatalogStatus.ACTIVE.name
+        val inactiveLocation = requested.locationId != null &&
+            requested.locationId != existing.locationId &&
+            database.inventoryLocationDao().findById(requested.locationId)?.status != CatalogStatus.ACTIVE.name
+        if (inactiveUnit || inactivePurchaseUnit || inactiveLocation) {
+            throw catalogOwnershipConflict("una referencia nueva del producto debe seguir activa al guardar")
+        }
+    }
 
     private suspend fun requireReferencesBelongToBusiness(
         product: ProductEntity,
@@ -401,3 +635,5 @@ class RoomProductRepository @Inject constructor(
 }
 
 private data class StatusMutation(val success: Boolean, val changed: Boolean)
+
+private const val IN_QUERY_CHUNK = 100

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sales_scanner_feedback_attention">Revisa la lectura</string>
+    <string name="sales_scanner_feedback_paused">Lector en pausa</string>
+    <string name="sales_scanner_feedback_paused_help">Termina de editar para seguir escaneando.</string>
+    <string name="sales_scanner_feedback_resume">Reanudar</string>
+    <string name="sales_scanner_feedback_saving">Guardando cambios</string>
+    <string name="sales_scanner_feedback_saving_help">El lector continuará al terminar.</string>
+    <string name="sales_scanner_feedback_review_edits">Revisa la cantidad o el precio</string>
+    <string name="sales_scanner_feedback_review_edits_help">Completa los cambios para seguir escaneando.</string>
+    <string name="sales_scanner_feedback_location">Elige un almacén</string>
+    <string name="sales_scanner_feedback_choose_product">Elige el producto correcto</string>
+    <string name="sales_scanner_feedback_unknown">Código no encontrado</string>
+    <string name="sales_scanner_feedback_replacement">Confirma el código del producto</string>
+    <string name="sales_scanner_feedback_selection_help">Esta lectura aún no se agregó a la venta.</string>
+    <string name="sales_scanner_feedback_checkout">Revisa la venta</string>
+    <string name="sales_scanner_feedback_checkout_help">Lector pausado durante la confirmación.</string>
+    <string name="sales_scanner_feedback_processing">Procesando lecturas: %1$d</string>
+    <string name="sales_scanner_feedback_processing_help">Cada producto se agrega una sola vez.</string>
+    <string name="sales_scanner_feedback_added">Agregado: %1$s</string>
+    <string name="sales_scanner_feedback_already_present">Ya está en la venta: %1$s</string>
+    <string name="sales_scanner_feedback_quantity">En venta: %1$s %2$s · %3$s</string>
+    <string name="sales_scanner_feedback_ready">Lector listo</string>
+    <string name="sales_scanner_feedback_ready_help">Un escaneo por producto. Ajusta la cantidad en el carrito.</string>
+    <string name="sales_scanner_feedback_registration">Registrando producto</string>
+    <string name="sales_scanner_feedback_registration_help">Guarda el producto para añadirlo a esta venta.</string>
+    <string name="sales_scanner_feedback_inactive_help">Espera a que el lector esté listo.</string>
+    <string name="sales_scanner_feedback_incomplete">Lectura incompleta. Reinicia el lector.</string>
+    <string name="sales_scanner_feedback_too_long">Código demasiado largo. Vuelve a escanear.</string>
+    <string name="sales_scanner_feedback_invalid">Caracteres no válidos. Vuelve a escanear.</string>
+    <string name="sales_scanner_feedback_queue_full">Espera y vuelve a escanear el último producto.</string>
+    <string name="sales_scanner_feedback_error_help">Consulta el aviso de la venta para continuar.</string>
+</resources>

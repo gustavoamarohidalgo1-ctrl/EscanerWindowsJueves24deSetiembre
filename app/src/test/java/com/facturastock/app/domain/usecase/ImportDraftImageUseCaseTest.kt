@@ -1030,6 +1030,135 @@ class ImportDraftImageUseCaseTest {
         assertNull(drafts.findDraft(DRAFT_ID))
     }
 
+    @Test
+    fun `explicit scan retake replaces the sole reviewed photo and clears OCR artifacts`() =
+        runTest {
+            activateBusiness(materializeDraft = false)
+            drafts.createDraft(draft(status = DraftStatus.NEEDS_REVIEW))
+            val previousId = ImageId.from(THIRD_UUID)
+            val previousPath = "draft_images/${DRAFT_ID.value}/${previousId.value}.jpg"
+            drafts.seedImage(page(previousId, pageIndex = 0, path = previousPath))
+            drafts.markOcrSnapshotPublished(DRAFT_ID)
+
+            val replacement = useCase(
+                draftId = DRAFT_ID,
+                jpegBytes = JPEG_BYTES,
+                rotationDegrees = 180,
+                preferredImageId = ImageId.from(SECOND_UUID),
+                replaceSoleInvoiceScan = true,
+            )
+
+            assertEquals(ImageId.from(SECOND_UUID), replacement.imageId)
+            assertEquals(0, replacement.pageIndex)
+            assertNull(drafts.findImage(previousId))
+            assertEquals(listOf(replacement), drafts.observeImages(DRAFT_ID).first())
+            assertEquals(DraftStatus.CAPTURED, drafts.findDraft(DRAFT_ID)?.status)
+            assertEquals(listOf(listOf(previousPath)), fileStore.deletions)
+            assertEquals(listOf(DRAFT_ID), fileStore.ocrVersionDeletions)
+        }
+
+    @Test
+    fun `restored scan retake replays its exact commit without taking or appending another photo`() =
+        runTest {
+            activateBusiness(materializeDraft = false)
+            drafts.createDraft(draft(status = DraftStatus.OCR_READY))
+            val previousId = ImageId.from(THIRD_UUID)
+            drafts.seedImage(
+                page(
+                    previousId,
+                    pageIndex = 0,
+                    path = "draft_images/${DRAFT_ID.value}/${previousId.value}.jpg",
+                ),
+            )
+            val preferredId = ImageId.from(SECOND_UUID)
+            val committed = useCase(
+                draftId = DRAFT_ID,
+                jpegBytes = JPEG_BYTES,
+                rotationDegrees = 0,
+                preferredImageId = preferredId,
+                replaceSoleInvoiceScan = true,
+            )
+            importer.nextException = FileException(FileError.Corrupt)
+
+            val replay = useCase(
+                draftId = DRAFT_ID,
+                jpegBytes = byteArrayOf(1, 2, 3),
+                rotationDegrees = 270,
+                preferredImageId = preferredId,
+                replaceSoleInvoiceScan = true,
+            )
+
+            assertEquals(committed, replay)
+            assertEquals(1, importer.bytesCalls.size)
+            assertEquals(listOf(preferredId), drafts.observeImages(DRAFT_ID).first().map { it.imageId })
+            assertEquals(listOf(DRAFT_ID, DRAFT_ID), fileStore.ocrVersionDeletions)
+        }
+
+    @Test
+    fun `scan retake rejects multiple pages without replacing either legacy page`() = runTest {
+        activateBusiness(materializeDraft = false)
+        drafts.createDraft(draft(status = DraftStatus.NEEDS_REVIEW))
+        val firstId = ImageId.from(SECOND_UUID)
+        val secondId = ImageId.from(THIRD_UUID)
+        drafts.seedImage(
+            page(
+                firstId,
+                pageIndex = 0,
+                path = "draft_images/${DRAFT_ID.value}/${firstId.value}.jpg",
+            ),
+        )
+        drafts.seedImage(
+            page(
+                secondId,
+                pageIndex = 1,
+                path = "draft_images/${DRAFT_ID.value}/${secondId.value}.jpg",
+            ),
+        )
+
+        val failure = runCatching {
+            useCase(
+                draftId = DRAFT_ID,
+                jpegBytes = JPEG_BYTES,
+                rotationDegrees = 0,
+                replaceSoleInvoiceScan = true,
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is StorageException)
+        assertTrue((failure as StorageException).error is StorageError.ConstraintConflict)
+        assertEquals(
+            listOf(firstId, secondId),
+            drafts.observeImages(DRAFT_ID).first().map { it.imageId },
+        )
+        assertEquals(DraftStatus.NEEDS_REVIEW, drafts.findDraft(DRAFT_ID)?.status)
+        assertTrue(fileStore.ocrVersionDeletions.isEmpty())
+        val rejectedNewPath = "draft_images/${DRAFT_ID.value}/${GENERATED_UUID}.jpg"
+        assertEquals(listOf(listOf(rejectedNewPath)), fileStore.deletions)
+    }
+
+    @Test
+    fun `legacy append remains blocked after OCR even when the draft has one photo`() = runTest {
+        activateBusiness(materializeDraft = false)
+        drafts.createDraft(draft(status = DraftStatus.NEEDS_REVIEW))
+        val previousId = ImageId.from(SECOND_UUID)
+        drafts.seedImage(
+            page(
+                previousId,
+                pageIndex = 0,
+                path = "draft_images/${DRAFT_ID.value}/${previousId.value}.jpg",
+            ),
+        )
+
+        val failure = runCatching {
+            useCase(DRAFT_ID, JPEG_BYTES, ROTATION_DEGREES)
+        }.exceptionOrNull()
+
+        assertTrue(failure is StorageException)
+        assertTrue(importer.bytesCalls.isEmpty())
+        assertEquals(listOf(previousId), drafts.observeImages(DRAFT_ID).first().map { it.imageId })
+        assertEquals(DraftStatus.NEEDS_REVIEW, drafts.findDraft(DRAFT_ID)?.status)
+    }
+
     private suspend fun activateBusiness(materializeDraft: Boolean = true) {
         appConfig.completeOnboarding(
             BUSINESS_ID,

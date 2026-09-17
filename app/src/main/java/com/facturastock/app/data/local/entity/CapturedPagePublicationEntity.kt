@@ -10,7 +10,8 @@ import com.facturastock.app.data.local.requireText
 
 /**
  * Recibo idempotente de una captura. Vive hasta que se elimina el borrador, incluso si la página
- * se reordena o se borra: así un ID reservado nunca puede reutilizarse con otra intención.
+ * se reordena o se borra: así un ID reservado nunca puede reutilizarse con otra intención. El
+ * tipo especial de reintento conserva el ID de la única página que resolvió la transacción.
  */
 @Entity(
     tableName = "captured_page_publications",
@@ -54,12 +55,12 @@ data class CapturedPagePublicationEntity(
         requireCanonicalUuid(imageId, "imageId")
         requireCanonicalUuid(draftId, "draftId")
         requireCanonicalUuid(businessId, "businessId")
-        require(intentKind == APPEND || intentKind == REPLACE) { "intentKind inválido" }
+        require(intentKind in INTENT_KINDS) { "intentKind inválido" }
         require((intentKind == APPEND) == (replaceTargetImageId == null)) {
-            "APPEND no lleva objetivo y REPLACE exige uno"
+            "APPEND no lleva objetivo y las intenciones de reemplazo exigen uno"
         }
         require((intentKind == APPEND) == (replacedFilePath == null)) {
-            "APPEND no limpia archivo sustituido y REPLACE exige su ruta"
+            "APPEND no limpia archivo sustituido y las intenciones de reemplazo exigen su ruta"
         }
         replaceTargetImageId?.let { requireCanonicalUuid(it, "replaceTargetImageId") }
         replacedFilePath?.let { requireText(it, "replacedFilePath", 512) }
@@ -76,6 +77,8 @@ data class CapturedPagePublicationEntity(
     companion object {
         const val APPEND = "APPEND"
         const val REPLACE = "REPLACE"
+        const val REPLACE_SOLE_INVOICE_SCAN = "REPLACE_SOLE_INVOICE_SCAN"
+        private val INTENT_KINDS = setOf(APPEND, REPLACE, REPLACE_SOLE_INVOICE_SCAN)
         private val ALLOWED_MIME_TYPES = setOf("image/jpeg", "image/png", "image/webp")
         private val ROTATIONS = setOf(0, 90, 180, 270)
     }

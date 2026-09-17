@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.data.local.FacturaStockDatabase
 import com.facturastock.app.data.local.entity.CloudBusinessBindingEntity
 import com.facturastock.app.data.local.entity.ProductEntity
@@ -609,6 +610,41 @@ class CatalogRepositoriesTest {
     }
 
     @Test
+    fun concurrentScannerBatchesCreateOneNormalizedNameAndOneOutboxOperation() = runBlocking {
+        businesses.create(business(businessId(1), ruc = "20123456789", legalName = "Negocio"))
+        units.create(unit(unitId(1), code = "NIU", name = "Unidad"))
+
+        val results = listOf(
+            async(Dispatchers.Default) {
+                products.createBatchSkippingExistingNames(
+                    businessId(1),
+                    listOf(product(productId(1), name = "Arroz Extra")),
+                )
+            },
+            async(Dispatchers.Default) {
+                products.createBatchSkippingExistingNames(
+                    businessId(1),
+                    listOf(product(productId(2), name = "  ARROZ EXTRA  ")),
+                )
+            },
+        ).awaitAll()
+
+        assertEquals(1, results.sumOf { result -> result.created.size })
+        assertEquals(1, results.sumOf { result -> result.alreadyExistingCount })
+        assertEquals(
+            1,
+            products.findByNormalizedName(businessId(1), "arroz extra").size,
+        )
+        val catalogOutboxCount = database.openHelper.writableDatabase.query(
+            "SELECT COUNT(*) FROM outbox_operations WHERE entityType = 'PRODUCT'",
+        ).use { cursor ->
+            cursor.moveToFirst()
+            cursor.getInt(0)
+        }
+        assertEquals(1, catalogOutboxCount)
+    }
+
+    @Test
     fun productCanonicalSkuAndBarcodeDuplicatesBecomeConstraintConflicts() = runBlocking {
         businesses.create(business(businessId(1), ruc = "20123456789", legalName = "Negocio"))
         units.create(unit(unitId(1), code = "NIU", name = "Unidad"))
@@ -738,7 +774,13 @@ class CatalogRepositoriesTest {
             products,
             units,
             aliases,
-            RoomProductInventoryRepository(database.inventoryDao(), testDispatchers),
+            RoomProductInventoryRepository(
+                database,
+                database.inventoryDao(),
+                testDispatchers,
+                clock,
+                UuidGenerator { UUID.fromString("00000000-0000-0000-0000-000000000099") },
+            ),
         )(productId(1))!!
 
         assertEquals("NIU", detail.unit.code)

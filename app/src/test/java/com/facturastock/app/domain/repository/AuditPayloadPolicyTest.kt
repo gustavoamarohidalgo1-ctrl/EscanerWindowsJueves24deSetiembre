@@ -190,6 +190,10 @@ class AuditPayloadPolicyTest {
         AuditEventType.SALE_POSTED to mapOf(
             AuditPayloadKey.VERSION to "1",
         ),
+        AuditEventType.SALE_VOIDED to mapOf(
+            AuditPayloadKey.VERSION to "1",
+            AuditPayloadKey.ACTOR_ROLE to "OWNER",
+        ),
         AuditEventType.PURCHASE_VOIDED to mapOf(
             AuditPayloadKey.VERSION to "1",
             AuditPayloadKey.PURCHASE_ID to PURCHASE_ID,

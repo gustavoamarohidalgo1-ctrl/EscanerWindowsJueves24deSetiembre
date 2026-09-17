@@ -1,5 +1,8 @@
 package com.facturastock.app.di
 
+import com.facturastock.app.domain.repository.ReportPdfRepository
+import com.facturastock.app.domain.repository.ReportPdfWriter
+import com.facturastock.app.domain.usecase.ExportReportPdfUseCase
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.core.time.AppClock
@@ -18,6 +21,7 @@ import com.facturastock.app.domain.repository.InventoryReadRepository
 import com.facturastock.app.domain.repository.HomeDashboardReadRepository
 import com.facturastock.app.domain.repository.ImageQualityAnalyzer
 import com.facturastock.app.domain.repository.InvoiceDraftRepository
+import com.facturastock.app.domain.repository.InvoiceMatchingCommitRepository
 import com.facturastock.app.domain.repository.InvoiceHeaderReviewRepository
 import com.facturastock.app.domain.repository.InvoiceLinesReviewRepository
 import com.facturastock.app.domain.repository.ManualInvoiceReviewRepository
@@ -40,6 +44,7 @@ import com.facturastock.app.domain.repository.PrivacyMaintenanceScheduler
 import com.facturastock.app.domain.repository.PurchasePostingRepository
 import com.facturastock.app.domain.repository.PurchaseVoidRepository
 import com.facturastock.app.domain.repository.SaleRepository
+import com.facturastock.app.domain.repository.SaleVoidRepository
 import com.facturastock.app.domain.repository.RemoteLedgerRepository
 import com.facturastock.app.domain.repository.RemoteSaleSyncRepository
 import com.facturastock.app.domain.repository.SharedInventoryApplicationRepository
@@ -63,7 +68,9 @@ import com.facturastock.app.domain.usecase.ApplyImageRetentionAfterConfirmUseCas
 import com.facturastock.app.domain.usecase.ApplyImageRetentionAfterOcrUseCase
 import com.facturastock.app.domain.usecase.BindCloudBusinessLinkUseCase
 import com.facturastock.app.domain.usecase.CompleteOnboardingUseCase
+import com.facturastock.app.domain.usecase.ConfirmInvoiceMatchingUseCase
 import com.facturastock.app.domain.usecase.CreateLinkedProductUseCase
+import com.facturastock.app.domain.usecase.MatchScannedInvoiceLinesUseCase
 import com.facturastock.app.domain.usecase.CropDraftImageUseCase
 import com.facturastock.app.domain.usecase.DeleteDraftImageUseCase
 import com.facturastock.app.domain.usecase.DeleteDraftUseCase
@@ -96,6 +103,7 @@ import com.facturastock.app.domain.usecase.AuthorizePurchaseDuplicateOverrideUse
 import com.facturastock.app.domain.usecase.CheckPurchaseDuplicateUseCase
 import com.facturastock.app.domain.usecase.ConfirmPurchaseUseCase
 import com.facturastock.app.domain.usecase.CheckoutSaleUseCase
+import com.facturastock.app.domain.usecase.VoidSaleUseCase
 import com.facturastock.app.domain.usecase.CreateSaleCartUseCase
 import com.facturastock.app.domain.usecase.PreviewPurchaseVoidUseCase
 import com.facturastock.app.domain.usecase.VoidPurchaseUseCase
@@ -1080,11 +1088,26 @@ object UseCaseModule {
         ObserveSaleCartUseCase(repository)
 
     @Provides
+    fun provideVoidSaleUseCase(
+        configuration: AppConfigurationRepository,
+        repository: SaleVoidRepository,
+    ): VoidSaleUseCase = VoidSaleUseCase(configuration, repository)
+
+    @Provides
+    fun provideExportReportPdfUseCase(
+        configuration: AppConfigurationRepository,
+        repository: ReportPdfRepository,
+        writer: ReportPdfWriter,
+        appClock: AppClock,
+    ): ExportReportPdfUseCase = ExportReportPdfUseCase(configuration, repository, writer, appClock)
+
+    @Provides
     fun provideObserveSalesReportUseCase(
         configuration: AppConfigurationRepository,
         repository: SaleRepository,
         appClock: AppClock,
-    ): ObserveSalesReportUseCase = ObserveSalesReportUseCase(configuration, repository, appClock)
+        debtRepository: DebtRepository,
+    ): ObserveSalesReportUseCase = ObserveSalesReportUseCase(configuration, repository, appClock, debtRepository)
 
     @Provides
     fun provideObserveDebtsUseCase(
@@ -1127,4 +1150,25 @@ object UseCaseModule {
         scheduler = purchaseBackupScheduler,
     )
 
+    @Provides
+    fun provideMatchScannedInvoiceLinesUseCase(
+        appConfigurationRepository: AppConfigurationRepository,
+        invoiceDraftRepository: InvoiceDraftRepository,
+        productMatchingUseCase: ProductMatchingUseCase,
+        unitRepository: UnitRepository,
+    ): MatchScannedInvoiceLinesUseCase = MatchScannedInvoiceLinesUseCase(
+        appConfigurationRepository = appConfigurationRepository,
+        invoiceDraftRepository = invoiceDraftRepository,
+        productMatchingUseCase = productMatchingUseCase,
+        unitRepository = unitRepository,
+    )
+
+    @Provides
+    fun provideConfirmInvoiceMatchingUseCase(
+        appConfigurationRepository: AppConfigurationRepository,
+        confirmationRepository: InvoiceMatchingCommitRepository,
+    ): ConfirmInvoiceMatchingUseCase = ConfirmInvoiceMatchingUseCase(
+        appConfigurationRepository = appConfigurationRepository,
+        confirmationRepository = confirmationRepository,
+    )
 }

@@ -9,8 +9,10 @@ import com.facturastock.app.domain.error.FileError
 import com.facturastock.app.domain.error.FileException
 import com.facturastock.app.domain.model.DraftStatus
 import com.facturastock.app.domain.model.InvoiceDraft
+import com.facturastock.app.domain.model.InvoiceImage
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.DraftId
+import com.facturastock.app.domain.model.id.ImageId
 import com.facturastock.app.domain.observability.OperationalAction
 import com.facturastock.app.domain.observability.OperationalErrorCode
 import com.facturastock.app.domain.observability.OperationalOutcome
@@ -328,6 +330,61 @@ class CaptureViewModelTest {
             assertEquals(BUSINESS_ID, event.identifiers.businessId)
             assertEquals(DRAFT_ID, event.identifiers.draftId)
             assertEquals(GENERATED_UUID.toString(), event.identifiers.imageId?.value)
+        }
+
+    @Test
+    fun `scan retake route replaces its reviewed sole photo and can open processing`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            activateBusiness(materializeDraft = false)
+            seedDraft(DraftStatus.NEEDS_REVIEW)
+            val previousImageId = ImageId.from(SECOND_UUID)
+            drafts.seedImage(
+                InvoiceImage(
+                    imageId = previousImageId,
+                    draftId = DRAFT_ID,
+                    businessId = BUSINESS_ID,
+                    pageIndex = 0,
+                    filePath = "draft_images/${DRAFT_ID.value}/${previousImageId.value}.jpg",
+                    sha256 = "c".repeat(64),
+                    mimeType = "image/jpeg",
+                    widthPx = 1_200,
+                    heightPx = 1_600,
+                    fileSizeBytes = 320_000L,
+                    createdAt = Instant.EPOCH,
+                ),
+            )
+            drafts.markOcrSnapshotPublished(DRAFT_ID)
+            val viewModel = createViewModel(
+                savedStateHandle = SavedStateHandle(
+                    mapOf(
+                        "draftId" to DRAFT_ID.value,
+                        "scanRetake" to "true",
+                    ),
+                ),
+            )
+            assertTrue(viewModel.uiState.value.replaceSoleInvoiceScan)
+
+            viewModel.effects.test {
+                viewModel.onAction(CaptureContract.Action.Start)
+                runCurrent()
+                expectNoEvents()
+                viewModel.onAction(CaptureContract.Action.CameraReady)
+                runCurrent()
+                viewModel.onAction(CaptureContract.Action.CaptureClicked)
+                runCurrent()
+                assertEquals(CaptureContract.Effect.CaptureNow, awaitItem())
+                viewModel.onAction(
+                    CaptureContract.Action.CaptureSucceeded(JPEG_BYTES, ROTATION_DEGREES),
+                )
+                runCurrent()
+                assertEquals(CaptureContract.Effect.OpenProcessing(DRAFT_ID), awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            val stored = drafts.observeImages(DRAFT_ID).first().single()
+            assertEquals(ImageId.from(GENERATED_UUID), stored.imageId)
+            assertNull(drafts.findImage(previousImageId))
+            assertEquals(DraftStatus.CAPTURED, drafts.findDraft(DRAFT_ID)?.status)
         }
 
     @Test

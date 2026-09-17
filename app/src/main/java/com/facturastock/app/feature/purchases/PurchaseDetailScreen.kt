@@ -769,6 +769,7 @@ private fun DetailSectionTitle(
 private fun StockMovementType.labelRes(): Int = when (this) {
     StockMovementType.PURCHASE -> R.string.purchase_detail_movement_purchase
     StockMovementType.SALE -> R.string.purchase_detail_movement_sale
+    StockMovementType.SALE_VOID -> R.string.inventory_movement_sale_void
     StockMovementType.ADJUSTMENT -> R.string.purchase_detail_movement_adjustment
     StockMovementType.VOID -> R.string.purchase_detail_movement_void
 }
@@ -779,6 +780,7 @@ private fun AuditEventType.labelRes(): Int = when (this) {
     // Los eventos SALE_POSTED no pertenecen a este timeline (purchaseId es NULL). La rama
     // mantiene exhaustividad ante una fila corrupta sin introducir una pantalla de ventas aquí.
     AuditEventType.SALE_POSTED -> R.string.purchase_detail_audit_posted
+    AuditEventType.SALE_VOIDED -> R.string.sale_void_audit_label
     AuditEventType.PURCHASE_VOIDED -> R.string.purchase_detail_audit_voided
     AuditEventType.PURCHASE_DUPLICATE_OVERRIDE -> R.string.purchase_detail_audit_duplicate_override
     AuditEventType.STOCK_ADJUSTED -> R.string.purchase_detail_audit_stock_adjusted

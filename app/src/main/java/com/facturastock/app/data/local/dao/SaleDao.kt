@@ -9,6 +9,7 @@ import androidx.room.Relation
 import androidx.room.Transaction
 import androidx.room.Update
 import com.facturastock.app.data.local.entity.SaleEntity
+import com.facturastock.app.data.local.entity.PendingSaleCheckoutEntity
 import com.facturastock.app.data.local.entity.SaleLineEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -16,6 +17,8 @@ data class SaleWithLines(
     @Embedded val sale: SaleEntity,
     @Relation(parentColumn = "saleId", entityColumn = "saleId")
     val lines: List<SaleLineEntity>,
+    @Relation(parentColumn = "saleId", entityColumn = "saleId")
+    val pendingCheckout: PendingSaleCheckoutEntity? = null,
 )
 
 data class PostedSaleSummaryRow(
@@ -36,6 +39,12 @@ data class PostedSaleProfitRow(
     val saleCurrencyCode: String,
     val postedAt: Long,
     val saleLineId: String,
+    val productId: String,
+    val linePosition: Int,
+    val productNameSnapshot: String,
+    val unitCodeSnapshot: String,
+    val locationNameSnapshot: String,
+    val lineCurrencyCode: String,
     val lineQuantity: String,
     val lineTotalMinorUnits: Long?,
     val lineTaxMinorUnits: Long,
@@ -57,6 +66,15 @@ data class PostedSaleProfitPageKey(
 @Dao
 interface SaleDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPendingCheckout(pending: PendingSaleCheckoutEntity)
+
+    @Query("SELECT * FROM pending_sale_checkouts WHERE saleId = :saleId")
+    suspend fun findPendingCheckout(saleId: String): PendingSaleCheckoutEntity?
+
+    @Query("DELETE FROM pending_sale_checkouts WHERE saleId = :saleId")
+    suspend fun deletePendingCheckout(saleId: String)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertSale(sale: SaleEntity)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -72,11 +90,14 @@ interface SaleDao {
     @Query("SELECT * FROM sales WHERE saleId = :saleId")
     fun observeWithLines(saleId: String): Flow<SaleWithLines?>
 
+    /** El indice de ventas aplica orden y limite; solo se cuentan las lineas de ventas visibles. */
     @Query(
-        "SELECT s.saleId, s.totalMinorUnits, s.currencyCode, COUNT(l.saleLineId) AS lineCount, " +
-            "s.postedAt AS postedAt FROM sales s INNER JOIN sale_lines l ON l.saleId = s.saleId " +
+        "SELECT s.saleId, s.totalMinorUnits, s.currencyCode, " +
+            "(SELECT COUNT(*) FROM sale_lines l WHERE l.saleId = s.saleId) AS lineCount, " +
+            "s.postedAt AS postedAt FROM sales s " +
             "WHERE s.businessId = :businessId AND s.status = 'POSTED' AND s.postedAt IS NOT NULL " +
-            "GROUP BY s.saleId, s.totalMinorUnits, s.currencyCode, s.postedAt " +
+            "AND EXISTS (SELECT 1 FROM sale_lines l WHERE l.saleId = s.saleId) " +
+            "AND NOT EXISTS (SELECT 1 FROM sale_voids v WHERE v.saleId = s.saleId) " +
             "ORDER BY s.postedAt DESC, s.saleId DESC LIMIT :limit",
     )
     fun observeRecentPosted(businessId: String, limit: Int): Flow<List<PostedSaleSummaryRow>>
@@ -87,6 +108,7 @@ interface SaleDao {
             "AND s.postedAt IS NOT NULL AND s.postedAt >= :startInclusive " +
             "AND s.postedAt < :endExclusive " +
             "AND EXISTS (SELECT 1 FROM sale_lines l WHERE l.saleId = s.saleId) " +
+            "AND NOT EXISTS (SELECT 1 FROM sale_voids v WHERE v.saleId = s.saleId) " +
             "AND (:beforePostedAt IS NULL OR s.postedAt < :beforePostedAt OR " +
             "(s.postedAt = :beforePostedAt AND s.saleId < :beforeSaleId)) " +
             "ORDER BY s.postedAt DESC, s.saleId DESC LIMIT :limit",
@@ -106,6 +128,7 @@ interface SaleDao {
             "AND s.postedAt IS NOT NULL AND s.postedAt >= :startInclusive " +
             "AND s.postedAt < :endExclusive " +
             "AND EXISTS (SELECT 1 FROM sale_lines l WHERE l.saleId = s.saleId) " +
+            "AND NOT EXISTS (SELECT 1 FROM sale_voids v WHERE v.saleId = s.saleId) " +
             "AND (:beforePostedAt IS NULL OR s.postedAt < :beforePostedAt OR " +
             "(s.postedAt = :beforePostedAt AND s.saleId < :beforeSaleId)) " +
             "ORDER BY s.postedAt DESC, s.saleId DESC LIMIT :limit",
@@ -121,7 +144,10 @@ interface SaleDao {
 
     @Query(
         "SELECT s.saleId, s.totalMinorUnits, s.currencyCode AS saleCurrencyCode, " +
-            "s.postedAt AS postedAt, l.saleLineId, l.quantity AS lineQuantity, " +
+            "s.postedAt AS postedAt, l.saleLineId, l.productId, " +
+            "l.position AS linePosition, l.productNameSnapshot, l.unitCodeSnapshot, " +
+            "l.locationNameSnapshot, l.currencyCode AS lineCurrencyCode, " +
+            "l.quantity AS lineQuantity, " +
             "l.lineTotalMinorUnits, l.taxMinorUnits AS lineTaxMinorUnits, " +
             "m.movementId, m.quantityDelta AS movementQuantityDelta, " +
             "m.unitCost AS movementUnitCost, m.currencyCode AS movementCurrencyCode " +
@@ -130,7 +156,9 @@ interface SaleDao {
             "AND m.saleLineId = l.saleLineId AND m.type = 'SALE' " +
             "WHERE s.businessId = :businessId AND s.status = 'POSTED' " +
             "AND s.postedAt IS NOT NULL AND s.saleId IN (:saleIds) " +
-            "ORDER BY s.postedAt DESC, s.saleId DESC, l.position ASC, m.movementId ASC",
+            "AND NOT EXISTS (SELECT 1 FROM sale_voids v WHERE v.saleId = s.saleId) " +
+            "ORDER BY s.postedAt DESC, s.saleId DESC, l.position ASC, l.saleLineId ASC, " +
+            "m.movementId ASC",
     )
     suspend fun listPostedProfitRowsForSales(
         businessId: String,

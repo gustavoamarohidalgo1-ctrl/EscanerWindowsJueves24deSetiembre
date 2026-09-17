@@ -39,12 +39,14 @@ object OcrContract {
         data object Cancel : Action
         data object Retry : Action
         data object EnterManually : Action
+        data object ContinueToMatching : Action
         data object BackSelected : Action
     }
 
     sealed interface Effect : UiEffect {
         data class OpenReview(val draftId: DraftId) : Effect
         data class OpenManualReview(val draftId: DraftId) : Effect
+        data class OpenMatching(val draftId: DraftId) : Effect
         data class OpenProducts(
             val createdCount: Int,
             val existingCount: Int,

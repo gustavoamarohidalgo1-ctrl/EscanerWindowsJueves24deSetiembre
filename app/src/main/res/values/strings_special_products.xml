@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="inventory_register_special_product">Producto especial</string>
+    <string name="catalog_special_product_title">Producto por kilo sin código</string>
+    <string name="catalog_special_product_help">Se registra en kilos (kg), sin código de barras. Al vender puedes ingresar el importe o los kilos; se descontarán los kilos del almacén seleccionado.</string>
+    <string name="catalog_special_product_quantity">Kilos iniciales (kg)</string>
+    <string name="catalog_special_product_cost_label">Costo por kilo</string>
+    <string name="catalog_special_product_price_label">Precio de venta por kilo</string>
+    <string name="catalog_special_product_unit">Unidad: kilogramo (kg)</string>
+    <string name="catalog_special_product_location_label">Almacén de existencias</string>
+    <string name="catalog_special_product_location_required">Selecciona un almacén activo para registrar los kilos iniciales.</string>
+</resources>

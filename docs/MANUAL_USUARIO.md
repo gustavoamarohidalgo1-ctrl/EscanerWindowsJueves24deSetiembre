@@ -34,8 +34,9 @@ Dos ideas guían el diseño y conviene tenerlas presentes desde el principio:
 16. [Privacidad de tus datos](#16-privacidad-de-tus-datos)
 17. [Practicar sin riesgo: modo demostración](#17-practicar-sin-riesgo-modo-demostración)
 
-La barra inferior tiene cinco destinos permanentes: **Inicio**, **Catálogos**, **Compras**,
-**Inventario** y **Ajustes**.
+La app abre directamente en **Vender**. La barra inferior —lateral en tablet— tiene tres destinos
+permanentes: **Vender**, **Inventario** y **Reportes**. **Ajustes** se abre desde el
+icono de engranaje superior.
 
 ## 1. Configurar el negocio
 
@@ -84,7 +85,8 @@ emparejamiento ni solicita permisos de Bluetooth para hacerlo.
 
 ## 3. Escanear productos de una factura
 
-Desde **Comprobantes** el recorrido tiene exactamente dos acciones:
+La sección **Facturas** ya no está disponible en el menú. El recorrido anterior, conservado
+para estados históricos, tenía dos acciones:
 
 1. Tocar **«Abrir cámara»**.
 2. Colocar toda la factura dentro del marco y tocar **«Tomar foto»**.
@@ -100,7 +102,8 @@ RUC, número del comprobante, cantidades, costos, precio de venta ni almacén. P
 hasta que una operación posterior registre stock.
 
 El OCR ocurre dentro del teléfono y la foto de este recorrido no se sube como comprobante. Tras un
-éxito se eliminan la foto y el borrador temporal. En la variante con nube, el producto se guarda
+éxito se elimina el borrador temporal y se solicita de inmediato borrar su foto privada; si Android
+no confirma el borrado del archivo, el mantenimiento de privacidad lo vuelve a intentar. En la variante con nube, el producto se guarda
 primero en Room y su outbox se envía cuando la cuenta está enlazada y **«Respaldar registros en la
 nube»** está activo; si no hay conexión, queda pendiente sin perderse.
 
@@ -340,18 +343,20 @@ Si se intenta salir del recorrido antes de registrar, la app avisa: **«¿Descar
 
 ## 10. Registrar una venta
 
-Desde **Inicio** se toca **«Vender»**. La venta usa el negocio activo y conserva un carrito
-local; agregar productos todavía no descuenta stock. Hay dos formas de entrada:
+Al abrir la app aparece **«Vender»**. Primero toca **«Contado»** o **«A crédito»**. La siguiente
+pantalla ofrece **«Escáner físico»** y **«Venta manual»**. La venta usa el negocio activo y
+conserva un carrito local; agregar productos todavía no descuenta stock.
 
-- **«Buscar»**: escribir el nombre o parte del nombre y elegir entre las coincidencias
-  similares del catálogo.
+- **«Venta manual»**: muestra directamente los productos con existencias disponibles. Toca un
+  producto para agregarlo; también puedes buscar por nombre para filtrar la lista.
 - **«Escáner físico»**: recibir un código de un lector USB/Bluetooth configurado como
   teclado (*keyboard wedge*).
 
 La búsqueda manual compara únicamente nombres: no interpreta una consulta numérica como código de
 barras, SKU ni código de proveedor. Los códigos se reciben únicamente al cambiar a
 **«Escáner físico»**.
-Al volver atrás, la app termina de guardar cualquier cambio válido que esté pendiente antes de
+**«Volver»** regresa a la elección del modo y después al tipo de venta, conservando el carrito.
+Al salir de Ventas, la app termina de guardar cualquier cambio válido que esté pendiente antes de
 cerrar la pantalla. Si una cantidad o precio no se puede guardar, muestra
 **«¿Descartar cambios sin guardar?»**: **«Cancelar»** vuelve a la venta para corregirlos y
 **«Descartar cambios y salir»** abandona únicamente esas ediciones locales tras una confirmación
@@ -438,8 +443,9 @@ En **Deudores** se puede:
 
 Un abono parcial reduce el saldo y uno por el importe pendiente marca la deuda como pagada. No se
 puede cobrar cero, un valor negativo ni más que el saldo. La venta, la deuda y los abonos ya
-publicados no se editan ni eliminan; esta versión tampoco permite revertir una venta a crédito o un
-abono. Más detalle en [`DEBTORS_AND_CREDIT_SALES.md`](DEBTORS_AND_CREDIT_SALES.md).
+publicados no se editan ni eliminan. Una venta local puede anularse desde **Reportes**, conservando
+esa historia y cancelando el saldo exigible. La corrección individual de un abono no está disponible.
+Más detalle en [`DEBTORS_AND_CREDIT_SALES.md`](DEBTORS_AND_CREDIT_SALES.md).
 
 ### Precio de venta y ganancias por producto
 
@@ -452,6 +458,24 @@ publicadas y muestra ganancia por unidad, margen y ganancia potencial sobre el s
 **estimación de inventario**, no una utilidad contable realizada: no descuenta gastos operativos ni
 impuestos de la empresa y no resume ventas por periodo. Si falta precio o stock, o aparecen monedas
 distintas, la pantalla explica el motivo y no convierte ni mezcla importes.
+
+### Anular una venta desde Reportes
+
+En **Reportes**, busca la venta y pulsa **Anular venta**. Revisa la fecha, el importe y los
+productos que volverán a cada almacén. La confirmación también muestra el saldo a crédito que
+se cancelará y, si hubo cobros o abonos, el dinero que corresponde devolver al cliente.
+La app registra la anulación; la devolución del dinero se realiza por el medio que hayas usado
+para cobrar.
+
+Pulsa **Cancelar** para conservar la venta o **Anular venta** para confirmar. Una vez anulada,
+desaparece de las ventas y totales de Reportes, sus cantidades regresan al inventario y su saldo
+deja de figurar como deuda cobrable. El historial original y los pagos se conservan. Repetir una
+solicitud ya completada no vuelve a ingresar stock.
+
+Si cambió el inventario o entró un abono mientras revisabas la confirmación, se muestra el impacto
+actualizado para que vuelvas a revisarlo. Esta opción está disponible para negocios locales con
+permiso de propietario o administrador. Las ventas de un negocio con inventario compartido en
+la nube requieren una anulación coordinada con ese servicio y no se modifican desde esta opción.
 
 ## 11. Trabajar sin conexión
 
@@ -635,7 +659,26 @@ Situaciones que la app maneja explícitamente:
 ## 15. Inventario
 
 **Inventario** muestra las existencias y su valorización por almacén. Las compras publicadas agregan
-existencias y las ventas confirmadas las descuentan; nada se ingresa a mano en esta pantalla.
+existencias y las ventas confirmadas las descuentan.
+
+En la lista y en el detalle de cada producto están disponibles estas acciones:
+
+- **Editar**: permite corregir nombre, código de barras, SKU, cantidad actual y precios unitarios
+  de compra y venta. Conserva la identidad y el historial; los cambios de cantidad y costo se
+  registran como ajustes en la ubicación seleccionada. Cancelar descarta la edición.
+- Los productos agotados siguen visibles con **cantidad 0**. También aparecen los productos que
+  todavía no tienen un saldo registrado. Llegar a cero no elimina el producto.
+- **Eliminar**: muestra el nombre del producto y exige **Eliminar permanentemente**. Si no tiene
+  existencias ni registros vinculados, se borra del catálogo; no se envía a Archivados ni puede
+  restaurarse desde la aplicación. **Cancelar** conserva el producto.
+- Los productos con ventas, compras, movimientos u otras referencias se conservan para proteger
+  su historial. La aplicación explica el motivo si no puede borrarlos. La eliminación permanente
+  también se bloquea cuando existe vinculación o posible actividad de sincronización remota.
+- No hay filtros **Activos/Archivados** para productos. El lector se suspende durante la
+  confirmación de borrado y vuelve a estar disponible al cerrarla.
+
+Si el producto cambia mientras se edita o confirma una acción, la app pide revisar su estado actual
+antes de intentar otro cambio; no sobrescribe silenciosamente la otra edición.
 
 En la parte superior se puede elegir **Existencias** o **Ganancias por producto**. Ganancias usa el
 precio de venta guardado y el costo promedio ponderado de las compras para mostrar la estimación por

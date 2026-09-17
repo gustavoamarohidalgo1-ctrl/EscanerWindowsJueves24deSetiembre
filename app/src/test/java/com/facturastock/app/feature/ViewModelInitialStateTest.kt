@@ -220,6 +220,29 @@ class ViewModelInitialStateTest {
                 UuidGenerator { DRAFT_UUID },
                 clock,
                 dispatchers,
+                object : com.facturastock.app.domain.repository.ProductRegistrationRepository {
+                    override suspend fun register(
+                        product: com.facturastock.app.domain.model.Product,
+                        quantity: java.math.BigDecimal,
+                        unitCost: com.facturastock.app.domain.model.UnitCost,
+                    ): com.facturastock.app.domain.model.CatalogMutationResult<com.facturastock.app.domain.model.Product> =
+                        error("No se registra un producto al cargar el estado inicial")
+                },
+                object : com.facturastock.app.domain.repository.ProductEditingRepository {
+                    override suspend fun load(
+                        businessId: com.facturastock.app.domain.model.id.BusinessId,
+                        productId: com.facturastock.app.domain.model.id.ProductId,
+                        defaultCurrency: com.facturastock.app.domain.model.CurrencyCode,
+                    ): com.facturastock.app.domain.repository.ProductEditingSnapshot? =
+                        error("No se abre un editor de producto al cargar el estado inicial")
+
+                    override suspend fun save(
+                        expected: com.facturastock.app.domain.repository.ProductEditingSnapshot,
+                        candidate: com.facturastock.app.domain.model.Product,
+                        stockEdits: List<com.facturastock.app.domain.repository.ProductStockEdit>,
+                    ): com.facturastock.app.domain.repository.ProductEditingResult =
+                        error("No se edita un producto al cargar el estado inicial")
+                },
             )
 
             assertEquals(CatalogsContract.State(), viewModel.uiState.value)

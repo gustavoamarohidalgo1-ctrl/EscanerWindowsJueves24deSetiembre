@@ -3,12 +3,14 @@ package com.facturastock.app.domain.repository
 import com.facturastock.app.domain.model.DebtDetail
 import com.facturastock.app.domain.model.DebtPayment
 import com.facturastock.app.domain.model.DebtPaymentMethod
+import com.facturastock.app.domain.model.DebtPaymentReportItem
 import com.facturastock.app.domain.model.DebtSummary
 import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.DebtId
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 data class RecordDebtPaymentCommand(
     val debtId: DebtId,
@@ -56,6 +58,13 @@ interface DebtRepository {
     fun observeAll(businessId: BusinessId): Flow<List<DebtSummary>>
 
     fun observeDetail(businessId: BusinessId, debtId: DebtId): Flow<DebtDetail?>
+
+    /** Incluye abonos parciales y finales de cualquier fecha de venta; excluye ventas anuladas. */
+    fun observePaymentsInRange(
+        businessId: BusinessId,
+        startInclusive: Instant,
+        endExclusive: Instant,
+    ): Flow<List<DebtPaymentReportItem>> = flowOf(emptyList())
 
     suspend fun recordPayment(
         businessId: BusinessId,

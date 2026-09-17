@@ -2,8 +2,10 @@ package com.facturastock.app.feature.sales
 
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.Money
+import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.LocationId
 import com.facturastock.app.domain.model.id.ProductId
+import com.facturastock.app.domain.model.id.SaleId
 import java.math.BigDecimal
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -31,6 +33,7 @@ class SalesContractTest {
     )
     private val ready = SalesContract.State(
         isLoading = false,
+        entryStep = SalesContract.EntryStep.SELL,
         cartId = "00000000-0000-4000-8000-0000000000d1",
         cartContentHash = "a".repeat(64),
         cartLines = listOf(validLine),
@@ -38,11 +41,39 @@ class SalesContractTest {
     )
 
     @Test
+    fun `pending checkout can be verified after network failure without accepting edits or scans`() {
+        val pending = ready.copy(isCheckoutPending = true, failure = SalesContract.Failure.ONLINE_REQUIRED,
+            catalogLoadFailed = true, cartLines = listOf(validLine.copy(quantityValid = false)))
+        assertTrue(pending.canCheckout)
+        assertFalse(pending.canRouteScannerInput)
+        assertFalse(pending.copy(isMutating = true).canCheckout)
+        assertFalse(pending.copy(cartLoadFailed = true).canCheckout)
+        assertTrue(
+            pending.copy(
+                pendingAssociationBarcode = "753176004930",
+                scannerFailure = SalesContract.ScannerFailure.INCOMPLETE,
+            ).canCheckout,
+        )
+    }
+
+    @Test
+    fun `entry selectors never accept scans or enable checkout`() {
+        assertEquals(SalesContract.EntryStep.SELECT_KIND, SalesContract.State().entryStep)
+        listOf(SalesContract.EntryStep.SELECT_KIND, SalesContract.EntryStep.SELECT_MODE).forEach { step ->
+            val selector = ready.copy(entryStep = step)
+            assertFalse(selector.canCheckout)
+            assertFalse(selector.canRouteScannerInput)
+        }
+        assertFalse(ready.copy(mode = SalesContract.EntryMode.MANUAL).canRouteScannerInput)
+    }
+
+    @Test
     fun `checkout only enables for a persisted valid snapshot`() {
         assertTrue(ready.canCheckout)
         assertTrue(ready.copy(searchFailed = true).canCheckout)
         assertFalse(ready.copy(isSavingLineEdits = true).canCheckout)
         assertFalse(ready.copy(hasPendingEdits = true).canCheckout)
+        assertFalse(ready.copy(pendingBarcodeCount = 1).canCheckout)
         assertFalse(
             ready.copy(cartLines = listOf(validLine.copy(quantityValid = false))).canCheckout,
         )
@@ -62,6 +93,96 @@ class SalesContractTest {
         assertFalse(ready.copy(isSavingLineEdits = true).canRouteScannerInput)
         assertFalse(ready.copy(hasPendingEdits = true).canRouteScannerInput)
         assertFalse(ready.copy(discardEditsReview = true).canRouteScannerInput)
+        assertFalse(ready.copy(isTextInputFocused = true).canRouteScannerInput)
+        assertFalse(ready.copy(isMutating = true).canRouteScannerInput)
+        assertTrue(ready.copy(isMutating = true, isProcessingBarcode = true).canRouteScannerInput)
+    }
+
+    @Test
+    fun `checkout waits for unresolved scanner choices or rejected reads`() {
+        val option = SalesContract.ProductOption(
+            productId = validLine.productId,
+            productName = validLine.productName,
+            locationId = validLine.locationId,
+            locationName = validLine.locationName,
+            unitCode = validLine.unitCode,
+            availableQuantity = validLine.availableQuantity,
+            sku = null,
+            barcode = "7753176004930",
+        )
+        assertFalse(ready.copy(pendingAssociationBarcode = "753176004930").canCheckout)
+        assertFalse(ready.copy(pendingLocations = listOf(option)).canCheckout)
+        assertFalse(
+            ready.copy(
+                pendingReplacement = SalesContract.BarcodeReplacement(option, option.barcode, "753176004930"),
+            ).canCheckout,
+        )
+        SalesContract.ScannerFailure.entries.forEach { failure ->
+            val unresolved = ready.copy(scannerFailure = failure)
+            assertFalse(unresolved.canCheckout)
+            assertTrue(unresolved.canRouteScannerInput)
+            assertTrue(unresolved.copy(scannerFailure = null).canCheckout)
+        }
+    }
+
+    @Test
+    fun `product registration requires an idle unknown reading and blocks sales input while open`() {
+        val unknown = ready.copy(pendingAssociationBarcode = "753176004930")
+        assertTrue(unknown.canRegisterProduct)
+        assertFalse(ready.canRegisterProduct)
+        assertFalse(unknown.copy(pendingBarcodeCount = 1).canRegisterProduct)
+        assertFalse(unknown.copy(isMutating = true).canRegisterProduct)
+        assertFalse(unknown.copy(hasPendingEdits = true).canRegisterProduct)
+        assertFalse(unknown.copy(catalogLoadFailed = true).canRegisterProduct)
+        assertFalse(unknown.copy(mode = SalesContract.EntryMode.MANUAL).canRegisterProduct)
+        val request = SalesContract.ProductRegistrationRequest(
+            requestId = UUID.randomUUID().toString(),
+            barcode = requireNotNull(unknown.pendingAssociationBarcode),
+            businessId = BusinessId.from(UUID(0L, 1L)),
+            saleId = SaleId.from(UUID.fromString(requireNotNull(ready.cartId))),
+        )
+        val registering = unknown.copy(productRegistration = request)
+        assertFalse(registering.canRegisterProduct)
+        assertFalse(registering.canRouteScannerInput)
+        assertFalse(registering.canCheckout)
+    }
+
+    @Test
+    fun `pending association allows a new scan but preserves editor and mutation guards`() {
+        val associating = ready.copy(pendingAssociationBarcode = "753176004930")
+
+        assertTrue(associating.canRouteScannerInput)
+        assertFalse(associating.copy(isTextInputFocused = true).canRouteScannerInput)
+        assertFalse(associating.copy(isMutating = true).canRouteScannerInput)
+        assertFalse(associating.copy(isSavingLineEdits = true).canRouteScannerInput)
+        assertFalse(associating.copy(hasPendingEdits = true).canRouteScannerInput)
+        assertFalse(associating.copy(discardEditsReview = true).canRouteScannerInput)
+        assertFalse(
+            associating.copy(
+                checkoutReview = SalesContract.CheckoutReview(
+                    cartId = requireNotNull(ready.cartId),
+                    version = ready.cartVersion,
+                    contentHash = requireNotNull(ready.cartContentHash),
+                    total = total,
+                ),
+            ).canRouteScannerInput,
+        )
+        val option = SalesContract.ProductOption(
+            productId = validLine.productId,
+            productName = validLine.productName,
+            locationId = validLine.locationId,
+            locationName = validLine.locationName,
+            unitCode = validLine.unitCode,
+            availableQuantity = validLine.availableQuantity,
+            sku = null,
+            barcode = "7753176004930",
+        )
+        assertFalse(associating.copy(pendingLocations = listOf(option)).canRouteScannerInput)
+        assertFalse(
+            associating.copy(
+                pendingReplacement = SalesContract.BarcodeReplacement(option, option.barcode, "753176004930"),
+            ).canRouteScannerInput,
+        )
     }
 
     @Test

@@ -17,15 +17,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
@@ -41,6 +45,7 @@ import com.facturastock.app.domain.model.DebtSummary
 import com.facturastock.app.ui.components.EmptyState
 import com.facturastock.app.ui.components.FacturaStockDialog
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
+import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.components.StatusCard
 import com.facturastock.app.ui.components.StatusTone
 import com.facturastock.app.ui.format.formatForDisplay
@@ -258,15 +263,53 @@ fun DebtDetailScreen(
 
         if (debt.status == DebtStatus.OPEN) {
             item(key = "payment_action", contentType = "primary_action") {
-                FacturaStockPrimaryButton(
-                    text = stringResource(R.string.debt_payment_action),
-                    onClick = { onAction(DebtorsContract.Action.PaymentRequested) },
-                    enabled = !state.isSavingPayment,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(DebtorsTestTags.PAYMENT),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    FacturaStockPrimaryButton(
+                        text = stringResource(if (state.isSavingPayment) R.string.debt_payment_saving else R.string.debt_payment_action),
+                        onClick = { onAction(DebtorsContract.Action.PaymentRequested) },
+                        enabled = !state.isSavingPayment && state.paymentEditor == null && state.deleteTarget == null && !state.isDeletingDebt,
+                        modifier = Modifier.fillMaxWidth().testTag(DebtorsTestTags.PAYMENT),
+                    )
+                    Text(
+                        stringResource(R.string.pago_directo_saldo_completo, debt.balance.formatForDisplay()),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag(DebtorsTestTags.PAYMENT_FULL_BALANCE),
+                    )
+                    TextButton(
+                        onClick = { onAction(DebtorsContract.Action.PartialPaymentRequested) },
+                        enabled = !state.isSavingPayment && state.deleteTarget == null && !state.isDeletingDebt,
+                        modifier = Modifier.testTag(DebtorsTestTags.PARTIAL_PAYMENT),
+                    ) {
+                        Text(stringResource(R.string.pago_directo_registrar_abono))
+                    }
+                }
             }
+        }
+
+        if (state.isSavingPayment && state.paymentEditor == null) {
+            item(key = "payment_progress", contentType = "progress") {
+                Column(Modifier.testTag(DebtorsTestTags.PAYMENT_PROGRESS).semantics { liveRegion = LiveRegionMode.Polite }) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.debt_payment_saving))
+                }
+            }
+        }
+        if (state.paymentEditor == null) {
+            fullPaymentFailureMessage(state.failure)?.let { message ->
+                item(key = "payment_error", contentType = "error") {
+                    Text(stringResource(message), color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(DebtorsTestTags.PAYMENT_ERROR).semantics { liveRegion = LiveRegionMode.Polite })
+                }
+            }
+        }
+
+        item(key = "delete_action", contentType = "secondary_action") {
+            FacturaStockSecondaryButton(
+                text = stringResource(R.string.debt_delete_action),
+                onClick = { onAction(DebtorsContract.Action.DeleteRequested) },
+                enabled = !state.isSavingPayment && state.paymentEditor == null && state.deleteTarget == null && !state.isDeletingDebt,
+                modifier = Modifier.fillMaxWidth().testTag(DebtorsTestTags.DELETE),
+            )
         }
 
         item(key = "products_header", contentType = "section_header") {
@@ -302,14 +345,88 @@ fun DebtDetailScreen(
         }
     }
 
+    if (state.deleteTarget != null) {
+        DebtDeleteDialog(state, onAction)
+    }
     state.paymentEditor?.let { editor ->
         PaymentDialog(
             editor = editor,
-            isSaving = state.isSavingPayment,
+            isSaving = state.isSavingPayment || state.isDeletingDebt,
             failure = state.failure,
             onAction = onAction,
         )
     }
+}
+
+@Composable
+private fun DebtDeleteDialog(state: DebtorsContract.State, onAction: (DebtorsContract.Action) -> Unit) {
+    val target = requireNotNull(state.deleteTarget)
+    val preview = state.deletePreview
+    val busy = state.isDeletingDebt || state.isLoadingDeletePreview
+    val spacing = FacturaStockDesign.spacing
+    FacturaStockDialog(
+        title = stringResource(R.string.debt_delete_title),
+        message = stringResource(R.string.debt_delete_message),
+        confirmLabel = stringResource(when {
+            state.isDeletingDebt -> R.string.debt_delete_saving
+            state.isLoadingDeletePreview -> R.string.debt_delete_loading
+            preview != null -> R.string.debt_delete_confirm
+            else -> R.string.debt_delete_review
+        }),
+        dismissLabel = stringResource(R.string.debt_delete_cancel),
+        onConfirm = {
+            onAction(if (preview != null) DebtorsContract.Action.DeleteConfirmed else DebtorsContract.Action.DeletePreviewRetry)
+        },
+        onDismiss = { onAction(DebtorsContract.Action.DeleteDismissed) },
+        confirmEnabled = !busy && !state.isSavingPayment,
+        dismissEnabled = !state.isDeletingDebt,
+        modifier = Modifier.testTag(DebtorsTestTags.DELETE_DIALOG),
+    ) {
+        Column(
+            modifier = Modifier.testTag(DebtorsTestTags.DELETE_IMPACT),
+            verticalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            Text(stringResource(R.string.debt_delete_debtor, target.debtorName), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.debt_delete_identity, target.debtId.value), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.debt_delete_date, target.createdAt.formatForDisplay()))
+            Text(stringResource(R.string.debt_delete_original, target.originalAmount.formatForDisplay()))
+            Text(stringResource(R.string.debt_delete_balance, target.balance.formatForDisplay()))
+            Text(stringResource(R.string.debt_delete_payment_alternative))
+            if (busy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(stringResource(if (state.isDeletingDebt) R.string.debt_delete_saving else R.string.debt_delete_loading),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+            if (preview != null) {
+                HorizontalDivider()
+                Text(stringResource(R.string.debt_delete_stock), style = MaterialTheme.typography.titleSmall)
+                preview.lines.forEach { line ->
+                    Text(stringResource(R.string.debt_delete_line, line.productName,
+                        line.quantity.value.stripTrailingZeros().toPlainString(), line.unitCode, line.locationName))
+                }
+                HorizontalDivider()
+                Text(stringResource(R.string.debt_delete_refund, preview.refundAmount.formatForDisplay()))
+                Text(stringResource(R.string.debt_delete_history))
+            }
+            state.deleteFailure?.let { failure ->
+                Text(stringResource(failure.messageRes()), color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(DebtorsTestTags.DELETE_ERROR).semantics { liveRegion = LiveRegionMode.Polite })
+            }
+        }
+    }
+}
+
+@StringRes
+private fun DebtorsContract.DeleteFailure.messageRes(): Int = when (this) {
+    DebtorsContract.DeleteFailure.LOAD_FAILED -> R.string.debt_delete_error_load
+    DebtorsContract.DeleteFailure.OPERATION_FAILED -> R.string.debt_delete_error_operation
+    DebtorsContract.DeleteFailure.STALE -> R.string.debt_delete_error_stale
+    DebtorsContract.DeleteFailure.CONTEXT_CHANGED -> R.string.debt_delete_error_context
+    DebtorsContract.DeleteFailure.NO_ACTIVE_BUSINESS -> R.string.debt_delete_error_business
+    DebtorsContract.DeleteFailure.NOT_FOUND -> R.string.debt_delete_error_not_found
+    DebtorsContract.DeleteFailure.UNAUTHORIZED -> R.string.debt_delete_error_unauthorized
+    DebtorsContract.DeleteFailure.SHARED_BUSINESS_UNSUPPORTED -> R.string.debt_delete_error_shared
+    DebtorsContract.DeleteFailure.INVALID_HISTORY -> R.string.debt_delete_error_history
 }
 
 @Composable
@@ -624,4 +741,12 @@ private fun paymentFailureMessage(failure: DebtorsContract.Failure?): Int? = whe
     DebtorsContract.Failure.REMOTE_REJECTED -> R.string.debt_payment_error_remote_rejected
     DebtorsContract.Failure.SAVE_PAYMENT_FAILED -> R.string.debt_payment_error_save
     else -> null
+}
+
+@StringRes
+private fun fullPaymentFailureMessage(failure: DebtorsContract.Failure?): Int? = when (failure) {
+    DebtorsContract.Failure.STALE_DEBT -> R.string.pago_directo_error_actualizado
+    DebtorsContract.Failure.SAVE_PAYMENT_FAILED -> R.string.pago_directo_error_guardar
+    DebtorsContract.Failure.DEBT_NOT_FOUND -> R.string.debt_not_found_message
+    else -> paymentFailureMessage(failure)
 }

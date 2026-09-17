@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sales_register_product_action">Registrar producto</string>
+    <string name="sales_register_product_help">Si es un producto nuevo, regístralo y agrégalo a esta venta.</string>
+    <string name="sales_register_product_after_suggestions">Si ninguno corresponde, puedes registrar un producto nuevo.</string>
+    <string name="sales_registered_product_title">Producto registrado</string>
+    <string name="sales_registered_product_retry">Se guardó en inventario, pero no se agregó a la venta. Revisa el aviso y vuelve a escanearlo.</string>
+</resources>

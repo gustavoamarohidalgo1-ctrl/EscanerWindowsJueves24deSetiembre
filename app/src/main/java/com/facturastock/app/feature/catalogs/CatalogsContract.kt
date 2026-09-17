@@ -2,12 +2,15 @@ package com.facturastock.app.feature.catalogs
 
 import androidx.compose.runtime.Immutable
 import com.facturastock.app.domain.model.CatalogStatus
+import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.InventoryLocation
+import com.facturastock.app.domain.repository.ProductEditingSnapshot
 import com.facturastock.app.domain.model.Product
 import com.facturastock.app.domain.model.ProductCatalogDetail
 import com.facturastock.app.domain.model.Supplier
 import com.facturastock.app.domain.model.UnitOfMeasure
 import com.facturastock.app.domain.model.id.LocationId
+import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.domain.model.id.SupplierId
 import com.facturastock.app.domain.model.id.UnitId
@@ -23,6 +26,12 @@ object CatalogsContract {
         UNITS,
         LOCATIONS,
     }
+
+    val visibleSections: List<Section> = listOf(
+        Section.PRODUCTS,
+        Section.SUPPLIERS,
+        Section.UNITS,
+    )
 
     enum class StatusFilter(val status: CatalogStatus?) {
         ALL(null),
@@ -103,6 +112,22 @@ object CatalogsContract {
     )
 
     @Immutable
+    data class InventoryBalanceOption(
+        val locationId: LocationId,
+        val locationName: String,
+        val quantity: String,
+        val unitCost: String,
+        val currency: CurrencyCode?,
+    )
+
+    @Immutable
+    data class InventoryBalanceDraft(
+        val locationId: LocationId,
+        val quantity: String,
+        val purchasePrice: String,
+    )
+
+    @Immutable
     sealed interface Form {
         val isEditing: Boolean
         val title: String
@@ -116,6 +141,20 @@ object CatalogsContract {
             val locationId: LocationId? = null,
             val purchaseUnitId: UnitId? = null,
             val purchaseFactor: String = "",
+            val salePrice: String = "",
+            val quantity: String = "",
+            val purchasePrice: String = "",
+            val isScannedRegistration: Boolean = false,
+            val isSpecialRegistration: Boolean = false,
+            val registrationProductId: ProductId? = null,
+            val isScannerOrigin: Boolean = isScannedRegistration,
+            val isInventoryOrigin: Boolean = false,
+            val isSkuInputTooLong: Boolean = false,
+            val isBarcodeInputTooLong: Boolean = false,
+            val saleCurrency: CurrencyCode? = null,
+            val inventoryCurrency: CurrencyCode? = null,
+            val inventorySnapshot: ProductEditingSnapshot? = null,
+            val inventoryBalanceDrafts: List<InventoryBalanceDraft> = emptyList(),
             val original: Product? = null,
         ) : Form {
             override val isEditing: Boolean = productId != null
@@ -174,9 +213,10 @@ object CatalogsContract {
 
     @Immutable
     data class State(
+        val currency: CurrencyCode = CurrencyCode.of("PEN"),
         val section: Section = Section.PRODUCTS,
         val query: String = "",
-        val statusFilter: StatusFilter = StatusFilter.ALL,
+        val statusFilter: StatusFilter = if (section == Section.PRODUCTS) StatusFilter.ACTIVE else StatusFilter.ALL,
         val rows: List<Row> = emptyList(),
         val total: Int = 0,
         val hasMore: Boolean = false,
@@ -187,6 +227,16 @@ object CatalogsContract {
         val savedFeedback: Boolean = false,
         val detail: Detail? = null,
         val form: Form? = null,
+        val inventoryBalances: List<InventoryBalanceOption> = emptyList(),
+        val isInventoryBalanceLoading: Boolean = false,
+        val inventoryBalanceFailure: Failure? = null,
+        val isInventoryStockEditable: Boolean = true,
+        val isInventoryEntryPending: Boolean = false,
+        val inventoryEntryFailure: Failure? = null,
+        val isSpecialEntryPending: Boolean = false,
+        val specialEntryFailure: Failure? = null,
+        val isScannerEntryPending: Boolean = false,
+        val scannerEntryFailure: Failure? = null,
         val unitOptions: List<UnitOption> = emptyList(),
         val locationOptions: List<LocationOption> = emptyList(),
         val pendingStatusChange: PendingStatusChange? = null,
@@ -208,6 +258,9 @@ object CatalogsContract {
         data class ProductNameChanged(val value: String) : Action
         data class ProductSkuChanged(val value: String) : Action
         data class ProductBarcodeChanged(val value: String) : Action
+        data class ProductPriceChanged(val value: String) : Action
+        data class ProductPurchasePriceChanged(val value: String) : Action
+        data class ProductQuantityChanged(val value: String) : Action
         data class ProductUnitSelected(val unitId: UnitId) : Action
         data class ProductLocationSelected(val locationId: LocationId?) : Action
         data class ProductPurchaseUnitSelected(val unitId: UnitId?) : Action
@@ -228,5 +281,11 @@ object CatalogsContract {
 
     sealed interface Effect : UiEffect {
         data object Back : Effect
+
+        data class ProductSaved(
+            val requestId: String,
+            val productId: ProductId,
+            val businessId: BusinessId,
+        ) : Effect
     }
 }

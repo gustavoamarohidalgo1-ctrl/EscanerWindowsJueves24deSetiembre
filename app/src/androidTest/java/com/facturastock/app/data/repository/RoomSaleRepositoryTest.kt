@@ -1,5 +1,11 @@
 package com.facturastock.app.data.repository
 
+import com.facturastock.app.domain.repository.RemoteSaleSyncRepository
+import com.facturastock.app.domain.repository.DisabledRemoteSaleSyncRepository
+import com.facturastock.app.domain.repository.RemoteSalePostResult
+import com.facturastock.app.domain.repository.AuthorizedLocalBalance
+import com.facturastock.app.domain.model.SharedSaleDocument
+import java.io.IOException
 import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -82,6 +88,155 @@ class RoomSaleRepositoryTest {
     fun tearDown() {
         database.close()
         context.deleteDatabase(RESTART_DATABASE_NAME)
+    }
+
+    @Test
+    fun lostCheckoutAckSurvivesRestartFreezesCartAndReplaysExactlyOnce() = runBlocking {
+        database.close()
+        database = openRestartDatabase()
+        seedCatalogAndStock()
+        var posted: SharedSaleDocument? = null
+        var calls = 0
+        val remote = object : RemoteSaleSyncRepository by DisabledRemoteSaleSyncRepository {
+            override suspend fun postSale(
+                localBusinessId: BusinessId,
+                document: SharedSaleDocument,
+            ): RemoteSalePostResult {
+                calls += 1
+                assertTrue(database.saleDao().findPendingCheckout(document.saleId.value) != null)
+                if (posted == null) {
+                    posted = document
+                    throw IOException("Synthetic lost response after server commit")
+                }
+                assertEquals(posted, document)
+                return RemoteSalePostResult.Authorized(
+                    saleId = document.saleId, receiptId = "receipt", seq = 1L,
+                    postedAt = Instant.ofEpochMilli(NOW),
+                    balances = listOf(AuthorizedLocalBalance(PRODUCT, LOCATION, "3.000", "2.5000", "PEN", 8L,
+                        Instant.ofEpochMilli(NOW))),
+                )
+            }
+        }
+        fun buildRepository() = RoomSaleRepository(database, AppClock { Instant.ofEpochMilli(NOW) },
+            UuidGenerator { uuid(ids.incrementAndGet()) }, TEST_DISPATCHERS, remote)
+        repository = buildRepository()
+        val opened = repository.createOrResume(BUSINESS, PEN).cart
+        val saved = repository.saveLine(BUSINESS, SaveSaleCartLineCommand(opened.saleId, opened.version,
+            productId = PRODUCT, locationId = LOCATION, quantity = Quantity.of("2.000"),
+            unitPrice = Money.ofMinor(500L, PEN))) as SaleCartMutationResult.Saved
+        val command = CheckoutSaleCommand(saved.cart.saleId, saved.cart.version, saved.cart.contentHash,
+            debtorName = "Cliente prueba", debtDueAt = Instant.ofEpochMilli(NOW + 1000L))
+        assertEquals(CheckoutSaleResult.OnlineRequired, repository.checkout(BUSINESS, command))
+        database.close()
+        database = openRestartDatabase()
+        repository = buildRepository()
+        val restored = repository.createOrResume(BUSINESS, PEN).cart
+        assertEquals("Cliente prueba", restored.pendingCheckout?.debtorName)
+        assertEquals(SaleCartMutationResult.CheckoutPending, repository.saveLine(BUSINESS,
+            SaveSaleCartLineCommand(restored.saleId, restored.version, restored.lines.single().saleLineId,
+                PRODUCT, LOCATION, Quantity.of("3"), Money.ofMinor(500L, PEN))))
+        assertEquals(SaleCartMutationResult.CheckoutPending, repository.removeLine(BUSINESS,
+            restored.saleId, restored.lines.single().saleLineId, restored.version))
+        assertEquals(CheckoutSaleResult.CartChanged, repository.checkout(BUSINESS,
+            command.copy(debtorName = "Otra persona")))
+        assertEquals(1, calls)
+        val line = requireNotNull(database.saleDao().findLine(restored.lines.single().saleLineId.value))
+        assertTrue(runCatching { database.saleDao().updateLineEntity(line.copy(quantity = "3.000")) }.isFailure)
+        assertEquals(CheckoutSaleResult.Posted(restored.saleId), repository.checkout(BUSINESS, command))
+        assertNull(database.saleDao().findPendingCheckout(restored.saleId.value))
+        assertEquals(CheckoutSaleResult.AlreadyPosted(restored.saleId), repository.checkout(BUSINESS, command))
+        assertEquals(2, calls)
+        assertEquals(1, database.inventoryDao().listMovementsForSale(BUSINESS.value, restored.saleId.value).size)
+        assertEquals("3.000", database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value)?.quantityOnHand)
+        assertDatabaseIntegrity()
+    }
+
+    @Test
+    fun lostCheckoutAckCanCompleteAfterCatalogIsArchivedWithoutChangingHistoricalLines() = runBlocking {
+        database.close()
+        database = openRestartDatabase()
+        seedCatalogAndStock()
+        var accepted: SharedSaleDocument? = null
+        var calls = 0
+        val remote = object : RemoteSaleSyncRepository by DisabledRemoteSaleSyncRepository {
+            override suspend fun postSale(
+                localBusinessId: BusinessId,
+                document: SharedSaleDocument,
+            ): RemoteSalePostResult {
+                calls += 1
+                if (accepted == null) {
+                    accepted = document
+                    throw IOException("Synthetic lost ACK before catalog archive")
+                }
+                assertEquals(accepted, document)
+                return RemoteSalePostResult.Authorized(
+                    saleId = document.saleId,
+                    receiptId = "receipt-archived",
+                    seq = 1L,
+                    postedAt = Instant.ofEpochMilli(NOW),
+                    balances = listOf(AuthorizedLocalBalance(
+                        PRODUCT, LOCATION, "3.000", "2.5000", "PEN", 8L,
+                        Instant.ofEpochMilli(NOW),
+                    )),
+                )
+            }
+        }
+        fun buildRepository() = RoomSaleRepository(
+            database, AppClock { Instant.ofEpochMilli(NOW) },
+            UuidGenerator { uuid(ids.incrementAndGet()) }, TEST_DISPATCHERS, remote,
+        )
+        repository = buildRepository()
+        val cart = repository.createOrResume(BUSINESS, PEN).cart
+        val saved = repository.saveLine(BUSINESS, SaveSaleCartLineCommand(
+            cart.saleId, cart.version, productId = PRODUCT, locationId = LOCATION,
+            quantity = Quantity.of("2.000"), unitPrice = Money.ofMinor(500L, PEN),
+        )) as SaleCartMutationResult.Saved
+        val command = CheckoutSaleCommand(saved.cart.saleId, saved.cart.version, saved.cart.contentHash)
+        val originalLines = requireNotNull(database.saleDao().findWithLines(cart.saleId.value)).lines
+        assertEquals(CheckoutSaleResult.OnlineRequired, repository.checkout(BUSINESS, command))
+
+        val product = requireNotNull(database.productDao().findById(PRODUCT.value))
+        assertEquals(1, database.productDao().setStatus(PRODUCT.value, CatalogStatus.ARCHIVED.name, product.version, NOW + 1L))
+        assertEquals(1, database.unitDao().setStatus(UNIT_ID, CatalogStatus.ARCHIVED.name, NOW + 1L))
+        assertEquals(1, database.inventoryLocationDao().setStatus(LOCATION.value, CatalogStatus.ARCHIVED.name, NOW + 1L))
+        database.close()
+        database = openRestartDatabase()
+        repository = buildRepository()
+
+        assertEquals(CheckoutSaleResult.Posted(cart.saleId), repository.checkout(BUSINESS, command))
+        assertEquals(CheckoutSaleResult.AlreadyPosted(cart.saleId), repository.checkout(BUSINESS, command))
+        assertEquals(2, calls)
+        assertEquals(originalLines, requireNotNull(database.saleDao().findWithLines(cart.saleId.value)).lines)
+        assertNull(database.saleDao().findPendingCheckout(cart.saleId.value))
+        assertEquals(1, database.inventoryDao().listMovementsForSale(BUSINESS.value, cart.saleId.value).size)
+        assertEquals("3.000", database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value)?.quantityOnHand)
+        assertEquals(CatalogStatus.ARCHIVED.name, database.productDao().findById(PRODUCT.value)?.status)
+        assertEquals(CatalogStatus.ARCHIVED.name, database.unitDao().findById(UNIT_ID)?.status)
+        assertEquals(CatalogStatus.ARCHIVED.name, database.inventoryLocationDao().findById(LOCATION.value)?.status)
+        assertDatabaseIntegrity()
+    }
+
+    @Test
+    fun localCheckoutCannotUsePendingIntentToSellArchivedCatalog() = runBlocking {
+        val remote = object : RemoteSaleSyncRepository by DisabledRemoteSaleSyncRepository {
+            override suspend fun postSale(localBusinessId: BusinessId, document: SharedSaleDocument): RemoteSalePostResult {
+                val product = requireNotNull(database.productDao().findById(PRODUCT.value))
+                database.productDao().setStatus(PRODUCT.value, CatalogStatus.ARCHIVED.name, product.version, NOW + 1L)
+                return RemoteSalePostResult.NotRequired
+            }
+        }
+        repository = RoomSaleRepository(database, AppClock { Instant.ofEpochMilli(NOW) },
+            UuidGenerator { uuid(ids.incrementAndGet()) }, TEST_DISPATCHERS, remote)
+        val cart = repository.createOrResume(BUSINESS, PEN).cart
+        val saved = repository.saveLine(BUSINESS, SaveSaleCartLineCommand(
+            cart.saleId, cart.version, productId = PRODUCT, locationId = LOCATION,
+            quantity = Quantity.of("2"), unitPrice = Money.ofMinor(500L, PEN),
+        )) as SaleCartMutationResult.Saved
+        assertEquals(CheckoutSaleResult.ProductUnavailable, repository.checkout(BUSINESS,
+            CheckoutSaleCommand(saved.cart.saleId, saved.cart.version, saved.cart.contentHash)))
+        assertNull(database.saleDao().findPendingCheckout(cart.saleId.value))
+        assertTrue(database.inventoryDao().listMovementsForSale(BUSINESS.value, cart.saleId.value).isEmpty())
+        assertBalanceUnchanged()
     }
 
     @Test
@@ -357,6 +512,19 @@ class RoomSaleRepositoryTest {
         assertEquals(BigDecimal("5.0000000"), included.historicalCost?.amount)
         assertEquals(BigDecimal("5.0000000"), included.grossProfit?.amount)
         assertTrue(included.issues.isEmpty())
+        assertEquals(Instant.ofEpochMilli(NOW), included.postedAt)
+        val line = included.lines.single()
+        assertEquals(PRODUCT, line.productId)
+        assertEquals(0, line.position)
+        assertEquals("Producto", line.productName)
+        assertEquals("NIU", line.unitCode)
+        assertEquals("Principal", line.locationName)
+        assertEquals(Quantity.of("2.000"), line.quantity)
+        assertEquals(1_180L, line.totalCharged.minorUnits)
+        assertEquals(1_000L, line.netRevenue.minorUnits)
+        assertEquals(BigDecimal("5.0000000"), line.historicalCost?.amount)
+        assertEquals(BigDecimal("5.0000000"), line.grossProfit?.amount)
+        assertTrue(line.issues.isEmpty())
         assertTrue(
             repository.observePostedProfits(
                 BUSINESS,

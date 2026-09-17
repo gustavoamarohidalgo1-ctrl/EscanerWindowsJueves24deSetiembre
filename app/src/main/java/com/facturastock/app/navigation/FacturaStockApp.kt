@@ -1,6 +1,8 @@
 package com.facturastock.app.navigation
 
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,8 +38,10 @@ import androidx.navigation.navArgument
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import com.facturastock.app.FacturaStockApplication
 import com.facturastock.app.R
+import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.core.id.RandomUuidGenerator
 import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.feature.account.AccountRoute
@@ -49,13 +53,15 @@ import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.debtors.DebtorsContract
 import com.facturastock.app.feature.debtors.DebtorsListScreen
 import com.facturastock.app.feature.debtors.DebtorsRoute
-import com.facturastock.app.feature.home.HomeScreen
-import com.facturastock.app.feature.home.HomeRoute
+import com.facturastock.app.feature.inventory.InventoryContract
+import com.facturastock.app.feature.inventory.InventoryListScreen
+import com.facturastock.app.feature.inventory.InventoryRegistrationRoute
+import com.facturastock.app.feature.inventory.InventoryRegistrationScreen
 import com.facturastock.app.feature.inventory.InventoryRoute
-import com.facturastock.app.feature.invoices.InvoiceHubScreen
 import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewRoute
 import com.facturastock.app.feature.linereview.InvoiceLineReviewRoute
 import com.facturastock.app.feature.linking.ProductLinkingRoute
+import com.facturastock.app.feature.matching.InvoiceMatchingRoute
 import com.facturastock.app.feature.ocr.OcrRoute
 import com.facturastock.app.feature.onboarding.OnboardingRoute
 import com.facturastock.app.feature.preparation.PreparationRoute
@@ -166,7 +172,7 @@ fun FacturaStockApp(
                 initialInternalDeepLinkRequestId = initialInternalDeepLinkRequestId,
                 onDiscardDraft = onDiscardDraft,
                 useInjectedViewModels = useInjectedViewModels,
-                startDestination = AppRoutes.HOME,
+                startDestination = AppRoutes.SALES,
                 deepLinksEnabled = true,
                 draftFlowViewModel = draftFlowViewModel,
             )
@@ -214,13 +220,14 @@ private fun FacturaStockContent(
     deepLinksEnabled: Boolean,
     draftFlowViewModel: DraftFlowViewModel?,
 ) {
+    val activity = LocalActivity.current
     val onBackPressedDispatcher =
         LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentPattern = backStackEntry?.destination?.route
     if (shouldSignalDeferredStartupFromDestination(currentPattern)) {
-        // Un deep link que evita Home conserva un fallback posterior al primer frame. Home
-        // despierta el mantenimiento únicamente cuando su dashboard ya está operativo.
+        // Vender y los demás destinos despiertan el mantenimiento después de su primer frame.
+        // El alias antiguo de Inicio espera a redirigir al destino vigente.
         DeferredStartupAfterFrameEffect()
     }
     val currentDefinition = AppRoutes.definitionFor(currentPattern)
@@ -267,8 +274,8 @@ private fun FacturaStockContent(
         }
     }
 
-    fun removeFlowAndOpenInvoices() {
-        navController.navigate(AppRoutes.INVOICES) {
+    fun removeFlowAndOpenSales() {
+        navController.navigate(AppRoutes.SALES) {
             popUpTo(navController.graph.findStartDestination().id) {
                 saveState = false
             }
@@ -290,7 +297,7 @@ private fun FacturaStockContent(
 
                 is DraftFlowContract.Effect.DraftDiscarded -> {
                     showDiscardDialog = false
-                    removeFlowAndOpenInvoices()
+                    removeFlowAndOpenSales()
                     draftFlowViewModel.onAction(
                         DraftFlowContract.Action.DiscardNavigationHandled,
                     )
@@ -365,8 +372,7 @@ private fun FacturaStockContent(
             maxHeight < spacing.expandedNavigationMinHeight
         val scaffoldContentMaxWidth = if (
             useNavigationRail && currentPattern in setOf(
-                AppRoutes.HOME,
-                AppRoutes.INVOICES,
+                AppRoutes.SALES,
                 AppRoutes.REPORTS,
             )
         ) {
@@ -465,7 +471,7 @@ private fun FacturaStockContent(
                 uuidGenerator = uuidGenerator,
                 useInjectedViewModels = useInjectedViewModels,
                 startDestination = startDestination,
-                onInvalidDestination = ::removeFlowAndOpenInvoices,
+                onInvalidDestination = ::removeFlowAndOpenSales,
                 protectedBackEnabled = !showDiscardDialog,
                 onProtectedBack = { showDiscardDialog = true },
                 draftFlowState = draftFlowState,
@@ -475,14 +481,16 @@ private fun FacturaStockContent(
                 onSalesExitConfirmed = {
                     val target = pendingSalesExit
                     pendingSalesExit = null
-                    if (target != null) navigateTo(target) else navController.popBackStack()
+                    when {
+                        target != null -> navigateTo(target)
+                        navController.previousBackStackEntry != null -> navController.popBackStack()
+                        else -> activity?.finish()
+                    }
                 },
                 onSalesExitCancelled = { pendingSalesExit = null },
                 onSalesExitRequestAvailable = { request -> salesExitRequest = request },
-                onHomeReady = {
-                    val application = navController.context.applicationContext as?
-                        FacturaStockApplication
-                    application?.onFirstAppFrameRendered()
+                onOpenDebtorsFromSales = {
+                    requestNavigation(PendingNavigation(AppRoutes.DEBTORS, topLevel = false))
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -515,7 +523,7 @@ private fun FacturaStockContent(
                     } else {
                         draftId?.let(onDiscardDraft)
                         showDiscardDialog = false
-                        removeFlowAndOpenInvoices()
+                        removeFlowAndOpenSales()
                     }
                 }
             },
@@ -543,7 +551,7 @@ private fun FacturaStockNavHost(
     onSalesExitConfirmed: () -> Unit,
     onSalesExitCancelled: () -> Unit,
     onSalesExitRequestAvailable: ((() -> Unit)?) -> Unit,
-    onHomeReady: () -> Unit,
+    onOpenDebtorsFromSales: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -557,7 +565,7 @@ private fun FacturaStockNavHost(
             if (useInjectedViewModels) {
                 OnboardingRoute(
                     onFinished = {
-                        navController.navigate(AppRoutes.HOME) {
+                        navController.navigate(AppRoutes.SALES) {
                             popUpTo(AppRoutes.ONBOARDING) {
                                 inclusive = true
                             }
@@ -572,90 +580,37 @@ private fun FacturaStockNavHost(
             }
         }
         composable(AppRoutes.HOME) {
-            if (useInjectedViewModels) {
-                HomeRoute(
-                    onContentReady = onHomeReady,
-                    onOpenDraftCamera = { draftId ->
-                        navController.navigate(AppRoutes.camera(draftId))
-                    },
-                    onOpenDraftSource = { draftId ->
-                        navController.navigate(AppRoutes.source(draftId))
-                    },
-                    onOpenPreview = { draftId, imageId ->
-                        navController.navigate(
-                            AppRoutes.imagePreview(
-                                draftId,
-                                CaptureId.from(UUID.fromString(imageId.value)),
-                            ),
-                        )
-                    },
-                    onOpenProcessing = { draftId ->
-                        navController.navigate(AppRoutes.processing(draftId))
-                    },
-                    onOpenHeader = { draftId ->
-                        navController.navigate(AppRoutes.invoiceHeader(draftId))
-                    },
-                    onOpenLines = { draftId ->
-                        navController.navigate(AppRoutes.invoiceLines(draftId))
-                    },
-                    onOpenSummary = { draftId ->
-                        navController.navigate(AppRoutes.purchaseSummary(draftId))
-                    },
-                    onOpenPurchaseDetail = { purchaseId ->
-                        navController.navigate(AppRoutes.purchaseDetail(purchaseId))
-                    },
-                    onOpenSales = {
-                        navController.navigateTopLevel(TopLevelDestination.SALES)
-                    },
-                    onOpenProducts = {
-                        navController.navigate(AppRoutes.PRODUCTS) { launchSingleTop = true }
-                    },
-                    onOpenPurchases = {
-                        navController.navigate(AppRoutes.PURCHASES) { launchSingleTop = true }
-                    },
-                    onOpenDebtors = {
-                        navController.navigate(AppRoutes.DEBTORS) { launchSingleTop = true }
-                    },
-                    onOpenInventory = {
-                        navController.navigateTopLevel(TopLevelDestination.INVENTORY)
-                    },
-                )
-            } else {
-                HomeScreen(
-                    onScanInvoice = {
-                        val draftId = DraftId.from(uuidGenerator.newUuid())
-                        navController.navigate(AppRoutes.camera(draftId))
-                    },
-                    onOpenSales = {
-                        navController.navigateTopLevel(TopLevelDestination.SALES)
-                    },
-                    onOpenProducts = {
-                        navController.navigate(AppRoutes.PRODUCTS) { launchSingleTop = true }
-                    },
-                    onOpenPurchases = {
-                        navController.navigate(AppRoutes.PURCHASES) { launchSingleTop = true }
-                    },
-                    onOpenDebtors = {
-                        navController.navigate(AppRoutes.DEBTORS) { launchSingleTop = true }
-                    },
-                    onOpenInventory = {
-                        navController.navigateTopLevel(TopLevelDestination.INVENTORY)
-                    },
-                )
+            // Una pila restaurada de una versión anterior también abre Vender.
+            LaunchedEffect(navController) {
+                navController.navigate(AppRoutes.SALES) {
+                    popUpTo(AppRoutes.HOME) { inclusive = true }
+                    launchSingleTop = true
+                }
             }
         }
-        composable(AppRoutes.SALES) {
+        composable(AppRoutes.SALES) { entry ->
             if (useInjectedViewModels) {
+                val registrationResult = salesRegistrationResult(entry)
                 SalesRoute(
                     onBack = onSalesExitConfirmed,
+                    onOpenDebtors = onOpenDebtorsFromSales,
                     onCreditSalePosted = {
                         navController.navigate(AppRoutes.DEBTORS) {
-                            popUpTo(AppRoutes.SALES) { inclusive = true }
+                            popUpTo(AppRoutes.SALES) { inclusive = false }
                             launchSingleTop = true
                         }
                     },
                     onExitCancelled = onSalesExitCancelled,
                     onExitRequestAvailable = onSalesExitRequestAvailable,
+                    onRegisterProduct = { request ->
+                        if (navController.currentBackStackEntry?.id == entry.id) {
+                            navController.navigate(
+                                AppRoutes.salesProductRegistration(request.barcode, request.requestId, request.businessId),
+                            ) { launchSingleTop = true }
+                        }
+                    },
+                    registrationResult = registrationResult,
+                    onRegistrationResultConsumed = { entry.savedStateHandle[SALES_REGISTRATION_RESULT_KEY] = null },
                 )
             } else {
                 SalesScreen(
@@ -663,6 +618,8 @@ private fun FacturaStockNavHost(
                     onAction = { action ->
                         if (action == SalesContract.Action.BackSelected) {
                             onSalesExitConfirmed()
+                        } else if (action == SalesContract.Action.OpenDebtorsSelected) {
+                            onOpenDebtorsFromSales()
                         }
                     },
                 )
@@ -691,8 +648,9 @@ private fun FacturaStockNavHost(
                 )
             }
         }
-        composable(AppRoutes.NEW_DEBT) {
+        composable(AppRoutes.NEW_DEBT) { entry ->
             if (useInjectedViewModels) {
+                val registrationResult = salesRegistrationResult(entry)
                 SalesRoute(
                     entryKind = SalesContract.EntryKind.CREDIT,
                     allowEntryKindSelection = false,
@@ -704,12 +662,22 @@ private fun FacturaStockNavHost(
                     },
                     onExitCancelled = onSalesExitCancelled,
                     onExitRequestAvailable = onSalesExitRequestAvailable,
+                    onRegisterProduct = { request ->
+                        if (navController.currentBackStackEntry?.id == entry.id) {
+                            navController.navigate(
+                                AppRoutes.salesProductRegistration(request.barcode, request.requestId, request.businessId),
+                            ) { launchSingleTop = true }
+                        }
+                    },
+                    registrationResult = registrationResult,
+                    onRegistrationResultConsumed = { entry.savedStateHandle[SALES_REGISTRATION_RESULT_KEY] = null },
                 )
             } else {
                 SalesScreen(
                     state = SalesContract.State(
                         isLoading = false,
                         entryKind = SalesContract.EntryKind.CREDIT,
+                        entryStep = SalesContract.EntryStep.SELECT_MODE,
                     ),
                     onAction = { action ->
                         if (action == SalesContract.Action.BackSelected) {
@@ -746,6 +714,30 @@ private fun FacturaStockNavHost(
                             launchSingleTop = true
                         }
                     },
+                    onDebtDeleted = {
+                        if (navController.currentBackStackEntry?.id == entry.id &&
+                            !navController.popBackStack(AppRoutes.DEBTORS, inclusive = false)
+                        ) {
+                            navController.navigate(AppRoutes.DEBTORS) {
+                                popUpTo(entry.destination.id) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onFullPaymentSaved = {
+                        if (navController.currentBackStackEntry?.id == entry.id) {
+                            // Un cobro recién guardado abre siempre el día actual, incluso si
+                            // la última visita a Reportes mostraba semana o mes.
+                            navController.clearBackStack(AppRoutes.REPORTS)
+                            navController.navigate(AppRoutes.REPORTS) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = false
+                                }
+                                launchSingleTop = true
+                                restoreState = false
+                            }
+                        }
+                    },
                 )
             } else {
                 TopLevelPlaceholderScreen(
@@ -755,22 +747,21 @@ private fun FacturaStockNavHost(
             }
         }
         composable(AppRoutes.INVOICES) {
-            InvoiceHubScreen(
-                isCreating = draftFlowState.isCreatingDraft,
-                creationFailed = draftFlowState.draftCreationFailed,
-                onRegister = {
-                    if (useInjectedViewModels) {
-                        onStartDraft()
-                    } else {
-                        val draftId = DraftId.from(uuidGenerator.newUuid())
-                        navController.navigate(AppRoutes.camera(draftId))
-                    }
-                },
-            )
+            // Una navegación restaurada de Facturas vuelve al destino principal vigente.
+            LaunchedEffect(navController) {
+                navController.navigate(AppRoutes.SALES) {
+                    popUpTo(AppRoutes.INVOICES) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
         }
         composable(AppRoutes.REPORTS) {
             if (useInjectedViewModels) {
-                ReportsRoute()
+                ReportsRoute(
+                    onOpenDebtors = {
+                        navController.navigate(AppRoutes.DEBTORS) { launchSingleTop = true }
+                    },
+                )
             } else {
                 TopLevelPlaceholderScreen(
                     titleRes = R.string.navigation_reports,
@@ -778,7 +769,14 @@ private fun FacturaStockNavHost(
                 )
             }
         }
-        composable(AppRoutes.PRODUCTS) {
+        composable(
+            route = AppRoutes.PRODUCTS_PATTERN,
+            arguments = listOf(
+                optionalStringArgument(AppRoutes.PREFILL_BARCODE),
+                optionalStringArgument(AppRoutes.EDIT_PRODUCT_ID),
+                optionalStringArgument(AppRoutes.SPECIAL_PRODUCT),
+            ),
+        ) {
             if (useInjectedViewModels) {
                 CatalogsRoute(
                     onBack = navController::popBackStack,
@@ -786,6 +784,42 @@ private fun FacturaStockNavHost(
             } else {
                 TopLevelPlaceholderScreen(
                     titleRes = R.string.products_empty_title,
+                    messageRes = R.string.products_empty_message,
+                )
+            }
+        }
+        composable(
+            route = AppRoutes.SALES_PRODUCT_REGISTRATION,
+            arguments = listOf(
+                stringArgument(AppRoutes.PREFILL_BARCODE),
+                stringArgument(AppRoutes.REGISTRATION_REQUEST_ID),
+                stringArgument(AppRoutes.REGISTRATION_BUSINESS_ID),
+            ),
+        ) { entry ->
+            val requestId = entry.arguments?.getString(AppRoutes.REGISTRATION_REQUEST_ID).orEmpty()
+            val businessId = BusinessId.parse(entry.arguments?.getString(AppRoutes.REGISTRATION_BUSINESS_ID))
+            val cancelRegistration = {
+                navController.finishSalesRegistration(entry, SalesContract.ProductRegistrationResult(requestId))
+            }
+            if (requestId.isBlank() || requestId.length > 128 || businessId == null) {
+                LaunchedEffect(entry) { cancelRegistration() }
+            } else if (useInjectedViewModels) {
+                CatalogsRoute(
+                    onBack = cancelRegistration,
+                    isSalesRegistration = true,
+                    onProductSaved = { saved ->
+                        if (saved.requestId == requestId && saved.businessId == businessId) {
+                            navController.finishSalesRegistration(
+                                entry,
+                                SalesContract.ProductRegistrationResult(saved.requestId, saved.productId, saved.businessId),
+                            )
+                        }
+                    },
+                )
+            } else {
+                BackHandler(onBack = cancelRegistration)
+                TopLevelPlaceholderScreen(
+                    titleRes = R.string.inventory_register_products,
                     messageRes = R.string.products_empty_message,
                 )
             }
@@ -816,15 +850,61 @@ private fun FacturaStockNavHost(
                     onOpenPurchase = { purchaseId ->
                         navController.navigate(AppRoutes.purchaseDetail(purchaseId))
                     },
+                    onRegisterProduct = { barcode ->
+                        if (navController.currentDestination?.route == AppRoutes.INVENTORY) {
+                            navController.navigate(AppRoutes.productsWithBarcode(barcode.orEmpty())) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onRegisterProducts = { navController.navigate(AppRoutes.INVENTORY_REGISTER) },
+                    onRegisterSpecialProduct = {
+                        if (navController.currentDestination?.route == AppRoutes.INVENTORY) {
+                            navController.navigate(AppRoutes.specialProductRegistration()) { launchSingleTop = true }
+                        }
+                    },
+                    onEditProduct = { productId ->
+                        if (navController.currentDestination?.route == AppRoutes.INVENTORY) {
+                            navController.navigate(AppRoutes.editInventoryProduct(productId)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
                     onBack = navController::popBackStack,
                     onCloseInvalidRoute = {
                         navController.navigateTopLevel(TopLevelDestination.INVENTORY)
                     },
                 )
             } else {
-                TopLevelPlaceholderScreen(
-                    titleRes = R.string.inventory_empty_title,
-                    messageRes = R.string.inventory_empty_message,
+                InventoryListScreen(
+                    items = emptyList(), query = "", diagnosticReport = null,
+                    isLoading = false, isDiagnosing = false, diagnosticFailed = false,
+                    onQueryChange = {}, onProductClick = {}, onRunDiagnostic = {},
+                    onRegisterProducts = { navController.navigate(AppRoutes.INVENTORY_REGISTER) },
+                )
+            }
+        }
+        composable(AppRoutes.INVENTORY_REGISTER) {
+            if (useInjectedViewModels) {
+                InventoryRegistrationRoute(
+                    onRegisterProduct = { barcode ->
+                        if (navController.currentDestination?.route == AppRoutes.INVENTORY_REGISTER) {
+                            navController.navigate(AppRoutes.productsWithBarcode(barcode)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onOpenProduct = { productId ->
+                        if (navController.currentDestination?.route == AppRoutes.INVENTORY_REGISTER) {
+                            navController.navigate(AppRoutes.inventoryDetail(productId))
+                        }
+                    },
+                    onBack = navController::popBackStack,
+                )
+            } else {
+                InventoryRegistrationScreen(
+                    state = InventoryContract.State(scannerActive = true),
+                    onBack = navController::popBackStack,
                 )
             }
         }
@@ -844,6 +924,14 @@ private fun FacturaStockNavHost(
                     onOpenProduct = {},
                     onOpenPurchase = { purchaseId ->
                         navController.navigate(AppRoutes.purchaseDetail(purchaseId))
+                    },
+                    onRegisterProduct = {},
+                    onEditProduct = { selectedProductId ->
+                        if (navController.currentDestination?.route == AppRoutes.INVENTORY_DETAIL) {
+                            navController.navigate(AppRoutes.editInventoryProduct(selectedProductId)) {
+                                launchSingleTop = true
+                            }
+                        }
                     },
                     onBack = navController::popBackStack,
                     onCloseInvalidRoute = {
@@ -1018,8 +1106,10 @@ private fun FacturaStockNavHost(
             onInvalidDestination = onInvalidDestination,
             protectedBackEnabled = protectedBackEnabled,
             onProtectedBack = onProtectedBack,
-            optionalArguments = listOf(AppRoutes.REPLACE_ID),
-        ) { draftId, _ ->
+            optionalArguments = listOf(AppRoutes.REPLACE_ID, AppRoutes.SCAN_RETAKE),
+        ) { draftId, entry ->
+            val isInvoiceScanRetake =
+                entry.arguments?.getString(AppRoutes.SCAN_RETAKE)?.toBooleanStrictOrNull() == true
             if (useInjectedViewModels) {
                 CaptureRoute(
                     onOpenProcessing = { effectDraftId ->
@@ -1027,7 +1117,14 @@ private fun FacturaStockNavHost(
                             launchSingleTop = true
                         }
                     },
-                    onBack = navController::popBackStack,
+                    onBack = if (isInvoiceScanRetake) {
+                        onInvalidDestination
+                    } else {
+                        {
+                            navController.popBackStack()
+                            Unit
+                        }
+                    },
                     onCloseInvalidRoute = onInvalidDestination,
                     allowImagePicker = navController.previousBackStackEntry
                         ?.destination
@@ -1044,7 +1141,14 @@ private fun FacturaStockNavHost(
                     step = 2,
                     iconRes = R.drawable.ic_add_document,
                     showPreviousAction = true,
-                    onPreviousAction = navController::popBackStack,
+                    onPreviousAction = if (isInvoiceScanRetake) {
+                        onInvalidDestination
+                    } else {
+                        {
+                            navController.popBackStack()
+                            Unit
+                        }
+                    },
                 )
             }
         }
@@ -1095,14 +1199,17 @@ private fun FacturaStockNavHost(
         ) { draftId, _ ->
             val returnToCamera: () -> Unit = {
                 val previousRoute = navController.previousBackStackEntry?.destination?.route
-                if (previousRoute == AppRoutes.CAMERA) {
-                    navController.popBackStack()
-                    Unit
-                } else {
-                    navController.navigate(AppRoutes.camera(draftId)) {
-                        popUpTo(AppRoutes.PROCESSING) { inclusive = true }
-                        launchSingleTop = true
-                    }
+                navController.navigate(AppRoutes.invoiceScanRetakeCamera(draftId)) {
+                    // En el flujo directo quita también la cámara anterior; una entrada legacy
+                    // conserva su pila pero recibe igualmente la intención segura de página única.
+                    popUpTo(
+                        if (previousRoute == AppRoutes.CAMERA) {
+                            AppRoutes.CAMERA
+                        } else {
+                            AppRoutes.PROCESSING
+                        },
+                    ) { inclusive = true }
+                    launchSingleTop = true
                 }
             }
             if (useInjectedViewModels) {
@@ -1113,13 +1220,16 @@ private fun FacturaStockNavHost(
                     onOpenManualReview = { effectDraftId ->
                         navController.navigate(AppRoutes.manualInvoiceReview(effectDraftId))
                     },
-                    onOpenProducts = { _, _, _ ->
-                        navController.navigate(AppRoutes.PRODUCTS) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = false
-                            }
+                    onOpenMatching = { effectDraftId ->
+                        val restoreReview = navController.currentBackStackEntry?.savedStateHandle
+                            ?.remove<String>("matching.restoreForDraft") == effectDraftId.value
+                        navController.navigate(AppRoutes.invoiceMatching(effectDraftId)) {
                             launchSingleTop = true
+                            restoreState = restoreReview
                         }
+                    },
+                    onOpenProducts = { _, _, _ ->
+                        navController.navigate(AppRoutes.invoiceMatching(draftId))
                     },
                     onCancelled = returnToCamera,
                     onBack = returnToCamera,
@@ -1193,6 +1303,45 @@ private fun FacturaStockNavHost(
                     onPrimaryAction = {
                         val lineId = LineId.from(uuidGenerator.newUuid())
                         navController.navigate(AppRoutes.productLinking(draftId, lineId))
+                    },
+                    step = 6,
+                    showPreviousAction = true,
+                    onPreviousAction = navController::popBackStack,
+                )
+            }
+        }
+        draftDestination(
+            route = AppRoutes.INVOICE_MATCHING,
+            onInvalidDestination = onInvalidDestination,
+            protectedBackEnabled = protectedBackEnabled,
+            onProtectedBack = onProtectedBack,
+        ) { draftId, _ ->
+            if (useInjectedViewModels) {
+                InvoiceMatchingRoute(
+                    onMatchingConfirmed = { _ ->
+                        navController.navigate(AppRoutes.PRODUCTS) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = false
+                            }
+                            launchSingleTop = true
+                        }
+                    },
+                    onBack = {
+                        navController.previousBackStackEntry?.takeIf {
+                            it.destination.route == AppRoutes.PROCESSING
+                        }?.savedStateHandle?.set("matching.restoreForDraft", draftId.value)
+                        if (!navController.popBackStack(AppRoutes.PROCESSING, inclusive = false, saveState = true)) {
+                            navController.popBackStack()
+                        }
+                    },
+                )
+            } else {
+                PurchaseFlowScreen(
+                    titleRes = R.string.matching_title,
+                    messageRes = R.string.matching_subtitle,
+                    primaryActionRes = R.string.action_save,
+                    onPrimaryAction = {
+                        navController.navigate(AppRoutes.PRODUCTS)
                     },
                     step = 6,
                     showPreviousAction = true,
@@ -1490,6 +1639,40 @@ private fun DraftBackHandler(
     }
 }
 
+private const val SALES_REGISTRATION_RESULT_KEY = "sales.productRegistration.navigationResult"
+
+@Composable
+private fun salesRegistrationResult(entry: NavBackStackEntry): SalesContract.ProductRegistrationResult? {
+    val fields by remember(entry) {
+        entry.savedStateHandle.getStateFlow<ArrayList<String>?>(SALES_REGISTRATION_RESULT_KEY, null)
+    }.collectAsStateWithLifecycle(lifecycleOwner = entry, minActiveState = Lifecycle.State.RESUMED)
+    return salesRegistrationResultFromFields(fields)
+}
+
+internal fun salesRegistrationResultFromFields(fields: List<String>?): SalesContract.ProductRegistrationResult? {
+    if (fields == null || fields.size != 3) return null
+    val requestId = fields[0].takeIf { it.isNotBlank() && it.length <= 128 } ?: return null
+    if (fields[1].isEmpty() && fields[2].isEmpty()) return SalesContract.ProductRegistrationResult(requestId)
+    val productId = ProductId.parse(fields[1]) ?: return null
+    val businessId = BusinessId.parse(fields[2]) ?: return null
+    return SalesContract.ProductRegistrationResult(requestId, productId, businessId)
+}
+
+private fun NavHostController.finishSalesRegistration(
+    source: NavBackStackEntry,
+    result: SalesContract.ProductRegistrationResult,
+) {
+    // Un efecto repetido o de una entrada que ya salió no puede modificar otro carrito.
+    if (currentBackStackEntry?.id != source.id) return
+    previousBackStackEntry?.takeIf {
+        it.destination.route == AppRoutes.SALES || it.destination.route == AppRoutes.NEW_DEBT
+    }?.savedStateHandle?.set(
+        SALES_REGISTRATION_RESULT_KEY,
+        arrayListOf(result.requestId, result.productId?.value.orEmpty(), result.businessId?.value.orEmpty()),
+    )
+    popBackStack()
+}
+
 private fun stringArgument(name: String) = navArgument(name) {
     type = NavType.StringType
     nullable = false
@@ -1503,12 +1686,14 @@ private fun optionalStringArgument(name: String) = navArgument(name) {
 }
 
 private fun NavHostController.navigateTopLevel(destination: TopLevelDestination) {
+    val startDestination = graph.findStartDestination()
     navigate(destination.route) {
-        popUpTo(graph.findStartDestination().id) {
+        popUpTo(startDestination.id) {
             saveState = true
         }
         launchSingleTop = true
-        restoreState = true
+        // La raíz sigue en la pila. Restaurarla recuperaría la sección que acabamos de salir.
+        restoreState = destination.route != startDestination.route
     }
 }
 

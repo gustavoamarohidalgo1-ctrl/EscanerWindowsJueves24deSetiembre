@@ -1,6 +1,5 @@
 package com.facturastock.app.navigation
 
-import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
@@ -8,63 +7,56 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.rule.GrantPermissionRule
 import com.facturastock.app.MainActivity
 import com.facturastock.app.R
+import com.facturastock.app.data.local.FacturaStockDatabase
 import com.facturastock.app.domain.model.Business
-import com.facturastock.app.domain.model.DraftStatus
-import com.facturastock.app.domain.model.id.DraftId
+import com.facturastock.app.domain.model.InventoryLocation
+import com.facturastock.app.domain.model.id.LocationId
 import com.facturastock.app.domain.model.id.PurchaseId
 import com.facturastock.app.domain.repository.BusinessRepository
 import com.facturastock.app.domain.repository.InvoiceDraftRepository
-import com.facturastock.app.feature.capture.CaptureTestTags
-import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewTestTags
-import com.facturastock.app.feature.home.HomeTestTags
-import com.facturastock.app.feature.invoices.InvoiceHubTestTags
-import com.facturastock.app.feature.linereview.InvoiceLineReviewTestTags
+import com.facturastock.app.domain.repository.InventoryLocationRepository
+import com.facturastock.app.domain.repository.UnitRepository
+import com.facturastock.app.domain.repository.ProductRepository
+import com.facturastock.app.domain.repository.ProductInventoryRepository
+import com.facturastock.app.feature.catalogs.CatalogsTestTags
+import com.facturastock.app.feature.inventory.InventoryTestTags
+import com.facturastock.app.feature.common.ScannerCodeInputTestTags
+import com.facturastock.app.feature.reports.ReportsTestTags
+import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.testing.TestAppConfigurationState
 import com.facturastock.app.testing.completedGateConfiguration
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import java.time.Instant
+import java.util.UUID
+import java.math.BigDecimal
 import javax.inject.Inject
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * Con compuerta (prompt 9) la app real solo arranca en HOME si el onboarding está completo:
- * el módulo [com.facturastock.app.di.AppConfigurationModule] se reemplaza por un fake de test
- * cuyo estado se fija completo ANTES de lanzar la actividad manualmente.
- *
- * El permiso de cámara se concede por adelantado ([GrantPermissionRule]): el paso de origen
- * comprueba el permiso al pulsar "Tomar foto" y, al tenerlo ya, navega directo a la cámara
- * sin diálogo del sistema.
- *
- * REQUISITO DE ENTORNO: el paso de cámara usa CameraX real (prompt 12), por lo que el test de
- * recreación necesita un dispositivo/emulador con cámara funcional —en el emulador con cámara
- * virtual el obturador captura un JPEG real y el flujo sigue a la vista previa—. Si el enlace
- * de la cámara falla, la pantalla ofrece la salida "Elegir imagen" hacia la galería.
- */
+/** Verifica recreación, navegación superior y deep links con la configuración completa. */
 @HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 class NavigationRecreationTest {
@@ -74,11 +66,6 @@ class NavigationRecreationTest {
     @get:Rule(order = 1)
     val composeRule = createEmptyComposeRule()
 
-    @get:Rule(order = 2)
-    val grantPermissionRule: GrantPermissionRule = GrantPermissionRule.grant(
-        Manifest.permission.CAMERA,
-    )
-
     private lateinit var scenario: ActivityScenario<MainActivity>
 
     @Inject
@@ -87,6 +74,11 @@ class NavigationRecreationTest {
     @Inject
     lateinit var invoiceDraftRepository: InvoiceDraftRepository
 
+    @Inject lateinit var locationRepository: InventoryLocationRepository
+    @Inject lateinit var unitRepository: UnitRepository
+    @Inject lateinit var productRepository: ProductRepository
+    @Inject lateinit var inventoryRepository: ProductInventoryRepository
+
     private val context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
@@ -94,6 +86,7 @@ class NavigationRecreationTest {
     fun setUp() {
         val configuration = completedGateConfiguration()
         TestAppConfigurationState.current.value = configuration
+        context.deleteDatabase(FacturaStockDatabase.NAME)
         hiltRule.inject()
         runBlocking {
             val businessId = requireNotNull(configuration.businessId)
@@ -117,80 +110,115 @@ class NavigationRecreationTest {
     }
 
     @Test
-    fun activityRecreationKeepsCurrentFlowDestination() {
-        click(R.string.action_scan_invoice)
-        // Con el permiso concedido, "Tomar foto" en origen abre la cámara directamente.
-        click(R.string.action_take_photo)
-        // Obturador real de CameraX: la captura produce un JPEG que se importa como página 0.
-        clickTag(CaptureTestTags.SHUTTER)
-        processPreviewIntoOcr()
-        confirmUncertainEssentialHeaderFields()
-        click(R.string.header_review_review_products)
-
-        waitUntilTagDisplayed(InvoiceLineReviewTestTags.LINK_PRODUCTS)
+    fun specialRegistrationKeepsDraftAcrossRecreationAndSavesKilosWithoutCode() {
+        val businessId = requireNotNull(TestAppConfigurationState.current.value.activeBusinessId)
+        val locationId = LocationId.from(UUID.fromString("10000000-0000-4000-8000-000000000089"))
+        runBlocking {
+            locationRepository.create(InventoryLocation(locationId, businessId, "Almacén kilos",
+                createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH))
+        }
+        clickNavigation(R.string.navigation_inventory)
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_SPECIAL_PRODUCT).performScrollTo().performClick()
+        waitUntilTagDisplayed(CatalogsTestTags.PRODUCT_NAME)
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_BARCODE).assertDoesNotExist()
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.FIELD).assertDoesNotExist()
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_NAME).performTextReplacement("Comida prueba por kilo")
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_QUANTITY).performScrollTo().performTextReplacement("2,5")
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_PURCHASE_PRICE).performScrollTo().performTextReplacement("4,25")
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_SALE_PRICE).performScrollTo().performTextReplacement("10")
 
         scenario.recreate()
-        waitUntilTagDisplayed(InvoiceLineReviewTestTags.LINK_PRODUCTS)
+        waitUntilTagDisplayed(CatalogsTestTags.PRODUCT_NAME)
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_NAME).assertTextContains("Comida prueba por kilo")
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_QUANTITY).performScrollTo().assertTextContains("2,5")
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_SALE_PRICE).performScrollTo().assertTextContains("10")
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_BARCODE).assertDoesNotExist()
+        composeRule.onNodeWithTag(CatalogsTestTags.SAVE_FORM).performScrollTo().performClick()
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+        runBlocking {
+            val product = productRepository.search(businessId, "Comida prueba por kilo").single()
+            assertNull(product.barcode)
+            assertEquals("KGM", unitRepository.findById(product.unitId)?.code)
+            assertEquals(locationId, product.locationId)
+            val stock = inventoryRepository.summaryForProduct(businessId, product.productId).positions.single()
+            assertEquals(0, BigDecimal("2.5").compareTo(stock.quantityOnHand))
+            assertEquals(0, BigDecimal("4.25").compareTo(requireNotNull(stock.averageUnitCost).amount))
+        }
+        scenario.recreate()
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+        composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
     }
 
     @Test
-    fun systemBackOnDraftShowsDiscardConfirmation() {
-        click(R.string.action_scan_invoice)
+    fun activityRecreationKeepsInventoryDestination() {
+        clickNavigation(R.string.navigation_inventory)
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+
+        scenario.recreate()
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+    }
+
+    @Test
+    fun cashUnifiedFlowSurvivesRecreationAndSystemBackReturnsToKindSelection() {
+        waitUntilTagDisplayed(SalesTestTags.ENTRY_KIND_SCREEN)
+        composeRule.onNodeWithTag(SalesTestTags.CASH_ENTRY).performClick()
+        waitUntilTagDisplayed(ScannerCodeInputTestTags.FIELD)
+        composeRule.onAllNodesWithTag(ScannerCodeInputTestTags.FIELD).assertCountEquals(1)
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
+
+        scenario.recreate()
+        waitUntilTagDisplayed(ScannerCodeInputTestTags.FIELD)
+        composeRule.onAllNodesWithTag(ScannerCodeInputTestTags.FIELD).assertCountEquals(1)
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
 
         scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
-        waitUntilDisplayed(R.string.discard_dialog_title)
-        composeRule
-            .onNodeWithText(context.getString(R.string.action_keep_editing))
-            .assertIsDisplayed()
+        waitUntilTagDisplayed(SalesTestTags.ENTRY_KIND_SCREEN)
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.FIELD).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
     }
 
     @Test
-    fun invoiceHubCreatesDurableDraftAndDiscardDeletesBeforeReturning() {
+    fun systemBackFromReportsReturnsToSales() {
+        clickNavigation(R.string.navigation_reports)
+        waitUntilTagDisplayed(ReportsTestTags.SCREEN)
+
+        scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        waitUntilTagDisplayed(SalesTestTags.SCREEN)
+    }
+
+    @Test
+    fun remainingSectionsNavigateWithoutCreatingInvoiceDrafts() {
         val businessId = requireNotNull(TestAppConfigurationState.current.value.activeBusinessId)
         val before = runBlocking {
             invoiceDraftRepository.observeDrafts(businessId, status = null)
-                .first()
-                .map { draft -> draft.draftId }
-                .toSet()
+                .first().map { draft -> draft.draftId }.toSet()
         }
 
-        clickNavigation(R.string.navigation_invoices)
-        composeRule.onNodeWithTag(InvoiceHubTestTags.SCREEN).performScrollToNode(
-            hasTestTag(InvoiceHubTestTags.REGISTER_ACTION),
-        )
-        clickTag(InvoiceHubTestTags.REGISTER_ACTION)
-        waitUntilDisplayed(R.string.action_take_photo)
+        clickNavigation(R.string.navigation_inventory)
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+        clickNavigation(R.string.navigation_reports)
+        waitUntilTagDisplayed(ReportsTestTags.SCREEN)
+        clickNavigation(R.string.navigation_sales)
+        waitUntilTagDisplayed(SalesTestTags.SCREEN)
 
-        var createdDraftId: DraftId? = null
-        composeRule.waitUntil(timeoutMillis = 10_000L) {
-            createdDraftId = runBlocking {
-                invoiceDraftRepository.observeDrafts(businessId, status = null)
-                    .first()
-                    .singleOrNull { draft -> draft.draftId !in before }
-                    ?.draftId
-            }
-            createdDraftId != null
+        listOf(R.string.navigation_home, R.string.navigation_invoices).forEach { labelRes ->
+            val matcher = hasText(context.getString(labelRes)) and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+            composeRule.onNode(matcher).assertDoesNotExist()
         }
-        val durableDraftId = requireNotNull(createdDraftId)
-        assertEquals(
-            DraftStatus.CREATED,
-            runBlocking { invoiceDraftRepository.findDraft(durableDraftId)?.status },
-        )
-
-        scenario.onActivity { activity ->
-            activity.onBackPressedDispatcher.onBackPressed()
+        val after = runBlocking {
+            invoiceDraftRepository.observeDrafts(businessId, status = null)
+                .first().map { draft -> draft.draftId }.toSet()
         }
-        waitUntilDisplayed(R.string.discard_dialog_title)
-        click(R.string.action_discard_draft)
-
-        // El efecto de navegación solo se publica después de que Room confirma la ausencia.
-        composeRule.waitUntil(timeoutMillis = 10_000L) {
-            runBlocking { invoiceDraftRepository.findDraft(durableDraftId) == null }
-        }
-        assertNull(runBlocking { invoiceDraftRepository.findDraft(durableDraftId) })
-        waitUntilTagDisplayed(InvoiceHubTestTags.SCREEN)
+        assertEquals(before, after)
     }
 
     @Test
@@ -213,7 +241,7 @@ class NavigationRecreationTest {
         scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
-        waitUntilTagDisplayed(HomeTestTags.DRAFTS_LIST)
+        waitUntilTagDisplayed(SalesTestTags.SCREEN)
 
         // El URI no cambia: el identificador de evento debe forzar una segunda entrega.
         scenario.onActivity { activity ->
@@ -224,31 +252,6 @@ class NavigationRecreationTest {
             )
         }
         waitUntilDisplayed(R.string.purchase_not_found_title)
-    }
-
-    private fun click(@StringRes labelRes: Int) {
-        val label = context.getString(labelRes)
-        composeRule.waitUntil(timeoutMillis = 30_000L) {
-            runCatching {
-                composeRule.onNodeWithText(label).assertIsDisplayed()
-            }.isSuccess
-        }
-        val node = composeRule.onNodeWithText(label)
-        runCatching { node.performScrollTo() }
-        node.performClick()
-        composeRule.waitForIdle()
-    }
-
-    private fun clickTag(tag: String) {
-        composeRule.waitUntil(timeoutMillis = 10_000L) {
-            runCatching {
-                composeRule.onNodeWithTag(tag)
-                    .assertIsDisplayed()
-                    .assertIsEnabled()
-            }.isSuccess
-        }
-        composeRule.onNodeWithTag(tag).performClick()
-        composeRule.waitForIdle()
     }
 
     private fun clickNavigation(@StringRes labelRes: Int) {
@@ -269,38 +272,6 @@ class NavigationRecreationTest {
         }
     }
 
-    private fun processPreviewIntoOcr() {
-        // CameraX y la publicación Room concluyen fuera del reloj de idleness de Compose.
-        // Esperar el CTA de Preview demuestra que la página ya se publicó de forma atómica.
-        click(R.string.preview_action_process)
-        composeRule.waitUntil(timeoutMillis = 30_000L) {
-            isDisplayed(R.string.preview_quality_continue) ||
-                isDisplayed(R.string.header_review_review_products)
-        }
-        if (isDisplayed(R.string.preview_quality_continue)) {
-            click(R.string.preview_quality_continue)
-        }
-        // OcrViewModel arranca el pipeline al entrar en Procesamiento y navega al completar.
-        waitUntilDisplayed(R.string.header_review_review_products, timeoutMillis = 30_000L)
-    }
-
-    private fun confirmUncertainEssentialHeaderFields() {
-        val list = composeRule.onNodeWithTag(InvoiceHeaderReviewTestTags.LIST)
-        val label = context.getString(R.string.header_review_confirm_verified_value)
-        repeat(MAX_HEADER_FIELDS) {
-            val present = runCatching {
-                list.performScrollToNode(hasText(label))
-            }.isSuccess
-            if (!present) return
-            composeRule.onAllNodesWithText(label)[0].performClick()
-            composeRule.waitForIdle()
-        }
-    }
-
-    private fun isDisplayed(@StringRes labelRes: Int): Boolean = runCatching {
-        composeRule.onNodeWithText(context.getString(labelRes)).assertIsDisplayed()
-    }.isSuccess
-
     private fun waitUntilDisplayed(
         @StringRes labelRes: Int,
         timeoutMillis: Long = 5_000L,
@@ -311,9 +282,5 @@ class NavigationRecreationTest {
                 composeRule.onNodeWithText(label).assertIsDisplayed()
             }.isSuccess
         }
-    }
-
-    private companion object {
-        const val MAX_HEADER_FIELDS = 11
     }
 }

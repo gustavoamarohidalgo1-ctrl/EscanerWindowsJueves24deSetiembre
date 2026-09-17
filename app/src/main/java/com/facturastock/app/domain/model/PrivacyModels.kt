@@ -368,6 +368,8 @@ data class AccountDeletionSummary(
     val businessesDeleted: List<String>,
     /** Membresías propias eliminadas en negocios que sobreviven. */
     val membershipsRemoved: Int,
+    /** El servidor aceptó el trabajo durable, pero todavía no confirmó su finalización. */
+    val isPending: Boolean = false,
 ) {
     init {
         require(membershipsRemoved >= 0)

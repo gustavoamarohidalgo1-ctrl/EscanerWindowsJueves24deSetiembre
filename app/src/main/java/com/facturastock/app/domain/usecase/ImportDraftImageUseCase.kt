@@ -4,6 +4,7 @@ import com.facturastock.app.core.coroutines.SuspendMutex
 import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.domain.error.StorageError
 import com.facturastock.app.domain.error.StorageException
+import com.facturastock.app.domain.model.DraftStatus
 import com.facturastock.app.domain.model.InvoiceImage
 import com.facturastock.app.domain.model.acceptsImageMutations
 import com.facturastock.app.domain.model.id.BusinessId
@@ -79,18 +80,21 @@ class ImportDraftImageUseCase(
      * Entrada de galería: la imagen se lee desde [sourceUri] y toma la rotación de su EXIF.
      * [preferredImageId] permite reservar la identidad antes de abrir el picker y reconocer
      * exactamente el commit al restaurar la ruta, incluso cuando [replaceImageId] no es null.
+     * [replaceSoleInvoiceScan] queda reservado al reintento explícito del flujo rápido de cámara.
      */
     suspend operator fun invoke(
         draftId: DraftId,
         sourceUri: String,
         replaceImageId: ImageId? = null,
         preferredImageId: ImageId? = null,
+        replaceSoleInvoiceScan: Boolean = false,
     ): InvoiceImage =
         importAndPersist(
             draftId = draftId,
             sensorRotationDegrees = null,
             replaceImageId = replaceImageId,
             preferredImageId = preferredImageId,
+            replaceSoleInvoiceScan = replaceSoleInvoiceScan,
         ) { imageId ->
             draftImageImporter.import(draftId, imageId, sourceUri)
         }
@@ -106,12 +110,14 @@ class ImportDraftImageUseCase(
         rotationDegrees: Int,
         replaceImageId: ImageId? = null,
         preferredImageId: ImageId? = null,
+        replaceSoleInvoiceScan: Boolean = false,
     ): InvoiceImage =
         importAndPersist(
             draftId = draftId,
             sensorRotationDegrees = rotationDegrees,
             replaceImageId = replaceImageId,
             preferredImageId = preferredImageId,
+            replaceSoleInvoiceScan = replaceSoleInvoiceScan,
         ) { imageId ->
             draftImageImporter.importBytes(draftId, imageId, jpegBytes, rotationDegrees)
         }
@@ -121,6 +127,7 @@ class ImportDraftImageUseCase(
         sensorRotationDegrees: Int?,
         replaceImageId: ImageId?,
         preferredImageId: ImageId? = null,
+        replaceSoleInvoiceScan: Boolean,
         importImage: suspend (ImageId) -> ImportedImageFile,
     ): InvoiceImage =
         importMutex.withLock {
@@ -129,6 +136,7 @@ class ImportDraftImageUseCase(
                 sensorRotationDegrees = sensorRotationDegrees,
                 replaceImageId = replaceImageId,
                 preferredImageId = preferredImageId,
+                replaceSoleInvoiceScan = replaceSoleInvoiceScan,
                 importImage = importImage,
             )
         }
@@ -138,11 +146,22 @@ class ImportDraftImageUseCase(
         sensorRotationDegrees: Int?,
         replaceImageId: ImageId?,
         preferredImageId: ImageId?,
+        replaceSoleInvoiceScan: Boolean,
         importImage: suspend (ImageId) -> ImportedImageFile,
     ): InvoiceImage {
         val imageId = preferredImageId ?: ImageId.from(uuidGenerator.newUuid())
-        val publicationIntent = replaceImageId?.let(CapturedPageIntent::Replace)
-            ?: CapturedPageIntent.Append
+        if (replaceSoleInvoiceScan && replaceImageId != null) {
+            throw StorageException(
+                StorageError.ConstraintConflict(
+                    "El reintento del escaneo no acepta un objetivo multipágina",
+                ),
+            )
+        }
+        val publicationIntent = when {
+            replaceSoleInvoiceScan -> CapturedPageIntent.ReplaceSoleInvoiceScan
+            replaceImageId != null -> CapturedPageIntent.Replace(replaceImageId)
+            else -> CapturedPageIntent.Append
+        }
         val businessId = try {
             appConfigurationRepository.current().activeBusinessId
                 ?: throw StorageException(StorageError.Unavailable)
@@ -168,6 +187,9 @@ class ImportDraftImageUseCase(
                         listOfNotNull(publication.replacedFilePath)
                             .filter { it != publication.image.filePath },
                     )
+                    if (publicationIntent == CapturedPageIntent.ReplaceSoleInvoiceScan) {
+                        deleteOcrVersionsBestEffort(draftId)
+                    }
                     recordCapture(
                         draftId,
                         imageId,
@@ -201,7 +223,10 @@ class ImportDraftImageUseCase(
                         ),
                     )
                 }
-                if (!draft.status.acceptsImageMutations) {
+                val acceptsInvoiceScanRetake =
+                    publicationIntent == CapturedPageIntent.ReplaceSoleInvoiceScan &&
+                        draft.status in INVOICE_SCAN_RETAKE_STATUSES
+                if (!draft.status.acceptsImageMutations && !acceptsInvoiceScanRetake) {
                     throw StorageException(
                         StorageError.ConstraintConflict(
                             "El borrador ya no admite cambios de imágenes",
@@ -249,6 +274,9 @@ class ImportDraftImageUseCase(
                 listOfNotNull(publication.replacedFilePath)
                     .filter { it != importedPath },
             )
+            if (publicationIntent == CapturedPageIntent.ReplaceSoleInvoiceScan) {
+                deleteOcrVersionsBestEffort(draftId)
+            }
             recordCapture(draftId, imageId, businessId, OperationalOutcome.SUCCEEDED)
             return publication.image
         } catch (cancelled: CancellationException) {
@@ -301,6 +329,17 @@ class ImportDraftImageUseCase(
         deleteBestEffort(safeToDelete)
     }
 
+    /** El snapshot Room ya fue invalidado; los derivados de archivo son regenerables. */
+    private suspend fun deleteOcrVersionsBestEffort(draftId: DraftId) {
+        withContext(NonCancellable) {
+            try {
+                draftFileStore.deleteOcrVersions(draftId)
+            } catch (_: Exception) {
+                // Mejor esfuerzo: el nuevo original durable nunca se revierte por un huérfano.
+            }
+        }
+    }
+
     private suspend fun recordCapture(
         draftId: DraftId,
         imageId: ImageId,
@@ -332,5 +371,14 @@ class ImportDraftImageUseCase(
         } catch (_: Exception) {
             // Mejor esfuerzo: los huérfanos se toleran y nunca enmascaran el resultado.
         }
+    }
+
+    private companion object {
+        val INVOICE_SCAN_RETAKE_STATUSES = setOf(
+            DraftStatus.CAPTURED,
+            DraftStatus.ERROR,
+            DraftStatus.OCR_READY,
+            DraftStatus.NEEDS_REVIEW,
+        )
     }
 }

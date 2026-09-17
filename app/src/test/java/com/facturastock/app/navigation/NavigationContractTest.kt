@@ -1,5 +1,7 @@
 package com.facturastock.app.navigation
 
+import com.facturastock.app.domain.model.id.BusinessId
+import com.facturastock.app.feature.sales.SalesContract
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,24 +18,24 @@ class NavigationContractTest {
     private val debtUuid = UUID.fromString("623e4567-e89b-12d3-a456-426614174005")
 
     @Test
-    fun registryContainsFiveCommercialTopLevelsAndTwentyFiveSecondaryDestinations() {
-        assertEquals(30, AppRoutes.all.size)
-        assertEquals(30, AppRoutes.all.map { it.pattern }.distinct().size)
+    fun registryContainsThreeCommercialTopLevelsAndLegacyAliases() {
+        assertEquals(33, AppRoutes.all.size)
+        assertEquals(33, AppRoutes.all.map { it.pattern }.distinct().size)
         assertEquals(
             setOf(
-                AppRoutes.HOME,
                 AppRoutes.SALES,
-                AppRoutes.INVOICES,
                 AppRoutes.INVENTORY,
                 AppRoutes.REPORTS,
             ),
             AppRoutes.topLevel.map { it.pattern }.toSet(),
         )
-        assertEquals(5, AppRoutes.topLevel.size)
+        assertEquals(3, AppRoutes.topLevel.size)
         assertEquals(
             AppRoutes.topLevel.map { it.pattern },
             TopLevelDestination.entries.map { it.route },
         )
+        assertFalse(AppRoutes.HOME in AppRoutes.topLevel.map { it.pattern })
+        assertFalse(AppRoutes.INVOICES in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.PRODUCTS in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.PURCHASES in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.SETTINGS in AppRoutes.topLevel.map { it.pattern })
@@ -50,6 +52,7 @@ class NavigationContractTest {
                 AppRoutes.PROCESSING,
                 AppRoutes.INVOICE_HEADER,
                 AppRoutes.INVOICE_LINES,
+                AppRoutes.INVOICE_MATCHING,
                 AppRoutes.PRODUCT_LINKING,
             ),
             AppRoutes.editableDraftPatterns,
@@ -59,10 +62,8 @@ class NavigationContractTest {
     }
 
     @Test
-    fun routeMetadataMatchesEveryPlaceholderAndCarriesOnlyTypedIdentityOrRevisionTokens() {
+    fun routeMetadataMatchesEveryPlaceholderAndCarriesOnlyIdentityRevisionOrExplicitEntryTokens() {
         val placeholder = Regex("""\{([^}]+)\}""")
-        val optionalReplaceSuffix = "?replace={${AppRoutes.REPLACE_ID}}"
-
         AppRoutes.all.forEach { definition ->
             assertEquals(
                 placeholder.findAll(definition.pattern)
@@ -72,15 +73,49 @@ class NavigationContractTest {
             )
             assertTrue(
                 definition.argumentNames.all { argument ->
-                    argument.endsWith("Id") || argument == AppRoutes.EXPECTED_PREPARED_HASH
+                    argument.endsWith("Id") ||
+                        argument == AppRoutes.EXPECTED_PREPARED_HASH ||
+                        argument == AppRoutes.SCAN_RETAKE ||
+                        argument == AppRoutes.PREFILL_BARCODE ||
+                        (definition.pattern == AppRoutes.PRODUCTS_PATTERN && argument == AppRoutes.SPECIAL_PRODUCT)
                 },
             )
-            // El único parámetro de consulta permitido es el replaceId opcional de
-            // source/camera ("Repetir" una página); no hay fragmentos ni otras consultas.
-            val withoutOptionalReplace = definition.pattern.removeSuffix(optionalReplaceSuffix)
-            assertFalse(withoutOptionalReplace.contains('?'))
+            // El origen especial solo existe en Productos; no transporta datos de stock.
+            // Las otras consultas conservan códigos, identidades o el reintento de captura.
+            if ('?' in definition.pattern) {
+                assertTrue(
+                    definition.pattern == AppRoutes.PURCHASE_SOURCE ||
+                        definition.pattern == AppRoutes.CAMERA ||
+                        definition.pattern == AppRoutes.PRODUCTS_PATTERN ||
+                        definition.pattern == AppRoutes.SALES_PRODUCT_REGISTRATION,
+                )
+            }
             assertFalse(definition.pattern.contains('#'))
         }
+    }
+
+    @Test
+    fun salesRegistrationResultDistinguishesCancellationFromAValidatedSavedIdentity() {
+        val businessId = BusinessId.from(draftUuid)
+        val productId = ProductId.from(productUuid)
+        assertEquals(
+            SalesContract.ProductRegistrationResult("request-1"),
+            salesRegistrationResultFromFields(listOf("request-1", "", "")),
+        )
+        assertEquals(
+            SalesContract.ProductRegistrationResult("request-1", productId, businessId),
+            salesRegistrationResultFromFields(listOf("request-1", productId.value, businessId.value)),
+        )
+        listOf(
+            emptyList(),
+            listOf("", productId.value, businessId.value),
+            listOf("request-1", productId.value, ""),
+            listOf("request-1", "", businessId.value),
+            listOf("request-1", "invalid", businessId.value),
+            listOf("request-1", productId.value, "invalid"),
+            listOf("request-1", productId.value, businessId.value, "extra"),
+        ).forEach { assertNull(salesRegistrationResultFromFields(it)) }
+        assertNull(salesRegistrationResultFromFields(null))
     }
 
     @Test
@@ -91,6 +126,16 @@ class NavigationContractTest {
         val purchaseId = PurchaseId.from(purchaseUuid)
         val productId = ProductId.from(productUuid)
         val debtId = DebtId.from(debtUuid)
+
+        assertEquals(
+            "products?editProductId=${productUuid}",
+            AppRoutes.editInventoryProduct(productId),
+        )
+        assertEquals("products?specialProduct=true", AppRoutes.specialProductRegistration())
+        assertEquals(
+            listOf(AppRoutes.PRODUCTS_PATTERN),
+            AppRoutes.all.filter { AppRoutes.SPECIAL_PRODUCT in it.argumentNames }.map { it.pattern },
+        )
 
         assertEquals(
             "purchase/draft/${draftUuid}/source",
@@ -109,6 +154,10 @@ class NavigationContractTest {
         assertEquals(
             "purchase/draft/${draftUuid}/camera?replace=${captureUuid}",
             AppRoutes.camera(draftId, replaceId),
+        )
+        assertEquals(
+            "purchase/draft/${draftUuid}/camera?scanRetake=true",
+            AppRoutes.invoiceScanRetakeCamera(draftId),
         )
         assertEquals(
             "purchase/draft/${draftUuid}/preview/${captureUuid}",

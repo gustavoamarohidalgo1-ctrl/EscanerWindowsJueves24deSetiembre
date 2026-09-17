@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.facturastock.app.ui.theme.FacturaStockDesign
+import com.facturastock.app.core.input.suppressScannerTrailingKeys
 
 @Composable
 fun FacturaStockDialog(
@@ -46,6 +47,7 @@ fun FacturaStockDialog(
     ) {
         Box(
             modifier = Modifier
+                .suppressScannerTrailingKeys()
                 .fillMaxSize()
                 .padding(FacturaStockDesign.spacing.lg),
             contentAlignment = Alignment.Center,

@@ -8,6 +8,8 @@ import com.facturastock.app.data.local.dao.InventoryDiagnosticBalanceRow
 import com.facturastock.app.data.local.dao.InventoryDiagnosticMovementRow
 import com.facturastock.app.data.local.dao.InventoryMovementReadRow
 import com.facturastock.app.data.local.dao.InventoryPositionReadRow
+import com.facturastock.app.data.local.dao.InventoryListReadRow
+import com.facturastock.app.data.local.dao.InventoryReadBalanceRow
 import com.facturastock.app.data.local.dao.InventoryProductHeaderReadRow
 import com.facturastock.app.data.local.storageCatching
 import com.facturastock.app.domain.model.CatalogStatus
@@ -54,11 +56,23 @@ class RoomInventoryReadRepository @Inject constructor(
 
     override fun observeInventory(businessId: BusinessId): Flow<List<InventoryReadItem>> =
         database.inventoryDao().observeReadPositions(businessId.value)
+            // Filas idénticas no necesitan repetir conversiones decimales ni agregaciones.
+            .distinctUntilChanged()
             .map(::mapInventoryItems)
             // Una mutacion de inventario ajena al negocio invalida la tabla completa en Room;
             // suprimir snapshots iguales reduce recomposiciones y trabajo de proyeccion.
             .distinctUntilChanged()
             .flowOn(dispatchers.io)
+
+    override fun observeProductItem(
+        businessId: BusinessId,
+        productId: ProductId,
+    ): Flow<InventoryReadItem?> = database.inventoryDao()
+        .observeReadProductPositions(businessId.value, productId.value)
+        .distinctUntilChanged()
+        .map { rows -> mapInventoryItems(rows).singleOrNull() }
+        .distinctUntilChanged()
+        .flowOn(dispatchers.io)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override fun observeProduct(
@@ -108,18 +122,18 @@ class RoomInventoryReadRepository @Inject constructor(
 }
 
 private data class InventoryItemAccumulator(
-    val first: InventoryPositionReadRow,
+    val first: InventoryProductHeaderReadRow,
     val positions: MutableList<InventoryReadPosition> = mutableListOf(),
 )
 
-private fun mapInventoryItems(rows: List<InventoryPositionReadRow>): List<InventoryReadItem> {
+private fun mapInventoryItems(rows: List<InventoryListReadRow>): List<InventoryReadItem> {
     if (rows.isEmpty()) return emptyList()
     // Convierte cada fila mientras se agrupa. `groupBy` retenia una segunda coleccion completa
     // de filas y luego creaba una tercera lista de posiciones, elevando el pico de memoria.
     val grouped = LinkedHashMap<String, InventoryItemAccumulator>()
     rows.forEach { row ->
-        grouped.getOrPut(row.productId) { InventoryItemAccumulator(row) }
-            .positions += row.toPosition()
+        val accumulator = grouped.getOrPut(row.product.productId) { InventoryItemAccumulator(row.product) }
+        row.position?.let { accumulator.positions += it.toPosition() }
     }
     return grouped.values.map { accumulator ->
         val first = accumulator.first
@@ -157,7 +171,11 @@ private fun InventoryProductHeaderReadRow.toItem(
     },
 )
 
-private fun InventoryPositionReadRow.toPosition(): InventoryReadPosition {
+private fun InventoryPositionReadRow.toPosition(): InventoryReadPosition = InventoryReadBalanceRow(
+    locationId, locationName, locationStatus, quantityOnHand, averageUnitCost, currencyCode, version, updatedAt,
+).toPosition()
+
+private fun InventoryReadBalanceRow.toPosition(): InventoryReadPosition {
     val currency = CurrencyCode.of(currencyCode)
     val quantity = decimal(quantityOnHand, "quantityOnHand")
     return InventoryReadPosition(
@@ -400,7 +418,9 @@ private fun replayMovements(
             runningQuantity = runningQuantity.add(outgoing)
             return@forEach
         }
-        val replayable = batch.toReplayablePurchase(issues)
+        val replayable = if (batch.all { it.type == StockMovementType.SALE_VOID }) {
+            batch.toReplayableSaleVoid(issues)
+        } else batch.toReplayablePurchase(issues)
         if (replayable == null || average == null) {
             if (batch.any { it.row.unitCost == null }) {
                 issues += InventoryDiagnosticIssue.MISSING_MOVEMENT_COST
@@ -447,6 +467,33 @@ private data class ReplayablePurchaseBatch(
     val appliedCostTotal: BigDecimal,
     val rounding: InventoryCostRoundingPolicy,
 )
+
+private fun List<ParsedDiagnosticMovement>.toReplayableSaleVoid(
+    issues: MutableSet<InventoryDiagnosticIssue>,
+): ReplayablePurchaseBatch? {
+    var quantity = BigDecimal.ZERO
+    var cost = BigDecimal.ZERO
+    val lineIds = mutableSetOf<String>()
+    for (movement in this) {
+        val row = movement.row
+        val unitCost = row.unitCost.toDecimalOrIssue(issues, nonNegative = true)
+        if (movement.delta.signum() <= 0 || row.saleId == null || row.saleLineId == null ||
+            row.purchaseId != null || row.purchaseLineId != null || unitCost == null ||
+            !lineIds.add(row.saleLineId)
+        ) {
+            issues += InventoryDiagnosticIssue.INVALID_LEDGER_DATA
+            issues += InventoryDiagnosticIssue.COST_UNVERIFIABLE
+            return null
+        }
+        quantity = quantity.add(movement.delta)
+        cost = cost.add(movement.delta.multiply(unitCost))
+    }
+    return ReplayablePurchaseBatch(
+        quantity = quantity,
+        appliedCostTotal = cost,
+        rounding = InventoryCostRoundingPolicy(18, RoundingMode.HALF_EVEN),
+    )
+}
 
 private fun List<ParsedDiagnosticMovement>.toReplayablePurchase(
     issues: MutableSet<InventoryDiagnosticIssue>,

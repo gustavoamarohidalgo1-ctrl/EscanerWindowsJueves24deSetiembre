@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sales_barcode_suggestions_title">Códigos parecidos</string>
+    <string name="sales_barcode_suggestions_help">Compara el producto y su código antes de agregarlo. El código guardado se conserva.</string>
+    <string name="sales_barcode_suggestions_saved_code">Código guardado: %1$s</string>
+    <plurals name="sales_barcode_suggestions_missing_digits">
+        <item quantity="one">%1$d dígito de diferencia</item>
+        <item quantity="other">%1$d dígitos de diferencia</item>
+    </plurals>
+    <string name="sales_barcode_suggestions_rescan">Volver a escanear</string>
+    <string name="sales_barcode_suggestions_fallback">Si ninguno corresponde, vuelve a escanear o busca por nombre.</string>
+    <string name="sales_barcode_suggestions_manual_action">Asociar este código manualmente</string>
+    <string name="sales_barcode_suggestions_manual_notice">Verifica primero que el código leído esté completo. Esta opción guardará ese código en el producto al confirmar la asociación.</string>
+</resources>

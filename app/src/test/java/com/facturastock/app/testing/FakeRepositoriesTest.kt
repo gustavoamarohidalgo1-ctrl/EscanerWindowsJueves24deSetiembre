@@ -225,6 +225,28 @@ class FakeRepositoriesTest {
     }
 
     @Test
+    fun `editar un borrador READY_TO_POST lo devuelve a NEEDS_REVIEW`() = runTest {
+        val drafts = FakeInvoiceDraftRepository(clock)
+        drafts.createDraft(draft(draftId(1)).copy(status = DraftStatus.NEEDS_REVIEW))
+        drafts.updateDraft(
+            requireNotNull(drafts.findDraft(draftId(1))).copy(status = DraftStatus.READY_TO_POST),
+        )
+        assertEquals(DraftStatus.READY_TO_POST, drafts.findDraft(draftId(1))?.status)
+
+        drafts.updateDraft(
+            requireNotNull(drafts.findDraft(draftId(1))).copy(supplierLegalNameRaw = "Editado"),
+        )
+        assertEquals(DraftStatus.NEEDS_REVIEW, drafts.findDraft(draftId(1))?.status)
+        assertEquals("Editado", drafts.findDraft(draftId(1))?.supplierLegalNameRaw)
+
+        drafts.updateDraft(
+            requireNotNull(drafts.findDraft(draftId(1))).copy(status = DraftStatus.READY_TO_POST),
+        )
+        drafts.addLine(line(lineId(1), draftId(1), position = 0))
+        assertEquals(DraftStatus.NEEDS_REVIEW, drafts.findDraft(draftId(1))?.status)
+    }
+
+    @Test
     fun `replaceLines reasigna posiciones, toca el borrador y rechaza ids duplicados`() = runTest {
         val drafts = FakeInvoiceDraftRepository(clock)
         val created = drafts.createDraft(draft(draftId(1)))

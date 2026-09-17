@@ -44,8 +44,11 @@ la referencia son opcionales. Un abono parcial reduce el saldo; uno por el saldo
 cuenta como pagada. Un doble toque, un reintento o un ACK perdido no deben cobrar dos veces.
 
 La deuda, la venta y los abonos son historia: no se sobrescriben ni se eliminan desde esta pantalla.
-Esta versión tampoco ofrece anular una venta a crédito ni corregir un abono ya publicado; una futura
-reversión deberá registrar un hecho compensatorio, no editar el pasado.
+Desde **Reportes → Anular venta**, un negocio local puede anular la venta a crédito completa.
+El recibo `sale_voids` cancela el saldo exigible y conserva el saldo histórico y los abonos originales;
+las consultas de cuentas por cobrar excluyen esa venta y se rechazan nuevos pagos. La confirmación
+muestra los abonos ya cobrados para que se devuelvan al cliente por el medio de cobro correspondiente.
+No se corrige individualmente un abono ni se anulan localmente ventas con inventario compartido cloud.
 
 ## Dos teléfonos y conexión
 

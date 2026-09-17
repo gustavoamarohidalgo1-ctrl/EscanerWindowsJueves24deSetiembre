@@ -1,6 +1,6 @@
 # Ventas, inventario y lector externo de códigos
 
-Este documento delimita el alcance funcional v1 de ventas y de la consulta de inventario mediante
+Este documento delimita el alcance funcional de ventas y del registro de inventario mediante
 códigos en FacturaStock. Describe el contrato del repositorio; no acredita por sí solo una
 compilación, una instalación desde Google Play ni una publicación productiva.
 
@@ -15,7 +15,8 @@ El carrito permite:
 
 - agregar un producto escribiendo su nombre y eligiendo entre coincidencias similares;
 - recibir el código de un lector físico USB o Bluetooth configurado como teclado
-  (*keyboard wedge*);
+  (*keyboard wedge*) e incorporar cada producto una sola vez mediante el escáner;
+- registrar un código desconocido desde la venta y volver al mismo carrito;
 - elegir el almacén exacto cuando el producto tiene existencias en más de una ubicación;
 - revisar cantidad y el precio unitario de venta sugerido antes de confirmar;
 - elegir **«Contado»** o **«A crédito»** en **«Tipo de venta»**; el crédito exige el nombre de la persona y crea una cuenta por
@@ -26,48 +27,151 @@ concreto producto–almacén: el flujo no presenta el stock agregado de varias u
 una única existencia vendible. Si el saldo es positivo pero menor que una unidad, la cantidad inicial
 usa exactamente ese saldo fraccionario en vez de intentar vender una unidad inexistente.
 
+## Entrada a la venta
+
+**Vender**, la pantalla inicial de la app, comienza con **Tipo de venta**: **Contado** o
+**A crédito**. Al tocar una opción se abre una pantalla distinta para elegir **Escáner físico**
+o **Venta manual**. El lector todavía no recibe códigos mientras se muestran estos selectores.
+
+**Escáner físico** abre la pantalla del lector y del carrito. **Venta manual** abre el catálogo
+con productos que se pueden tocar para agregarlos, junto con una búsqueda opcional por nombre.
+El catálogo manual no aparece en la pantalla del escáner, salvo cuando un código desconocido
+requiere elegir explícitamente un producto para asociarlo.
+
+**Atrás**, tanto en pantalla como con el gesto o botón de Android, vuelve primero a la elección
+del modo y después al tipo de venta. Volver a elegir un modo conserva las líneas del carrito;
+estos pasos no publican una venta ni descuentan stock. Para cambiar entre lector y catálogo se
+vuelve a la pantalla de modos.
+
 ## Flujo manual
 
-1. Desde **Inicio**, abrir **«Vender»**.
-2. Elegir **«Buscar»** y escribir el nombre o parte del nombre del producto.
-3. Elegir el producto y la ubicación de la que saldrá el stock.
-4. Revisar la cantidad y el **precio unitario de venta** sugerido en el carrito.
-5. Revisar el total y usar **«Revisar y confirmar venta»**.
+1. Abrir **«Vender»**, que también es la pantalla inicial de la app.
+2. Tocar **«Contado»** o **«A crédito»**.
+3. En la siguiente pantalla, tocar **«Venta manual»**.
+4. Tocar un producto del catálogo; se puede escribir su nombre o parte del nombre para filtrarlo.
+   Elegir la ubicación de la que saldrá el stock cuando corresponda.
+5. Revisar la cantidad y el **precio unitario de venta** sugerido en el carrito.
+6. Revisar el total y usar **«Revisar y confirmar venta»**.
 
 La venta manual no interpreta el texto como SKU, código de barras ni código de proveedor. Incluso
 si la consulta contiene solo números, se compara con el nombre del producto y nunca activa una
 búsqueda encubierta por código. Para leer códigos se debe cambiar explícitamente a
 **«Escáner físico»**.
 
-## Consulta desde Inventario
+## Un escaneo por producto; cantidad manual
 
-En **Inventario → Existencias** hay dos modos explícitos: **«Buscar»** y **«Escáner físico»**.
-**«Buscar»** conserva la consulta manual por producto, SKU o almacén. Solo al elegir
-**«Escáner físico»** la pantalla recibe las ráfagas del lector HID.
+En modo **Escáner físico**, la primera lectura de un producto que no está en el carrito añade
+una unidad, o el saldo fraccionario disponible si es menor que una unidad. Las unidades que se
+van a vender se ajustan en el campo **Cantidad** del carrito. Repetir el disparo no aumenta esa
+cantidad ni crea otra línea: la pantalla informa **Ya está en la venta** y muestra la cantidad
+guardada.
 
-Una lectura completa y válida hace una búsqueda exacta del código dentro del negocio activo. Si el
-producto existe, la app abre su trazabilidad en la ruta existente `inventory/{productId}`. El valor
-del código no viaja como argumento de navegación: la ruta recibe únicamente el `ProductId`
-canónico resuelto localmente.
+La comprobación usa la identidad del producto (`productId`) en todo el carrito. También se aplica
+si otra lectura llega por su SKU, si se elige una sugerencia de código parecido o si el producto
+ya figura en otro almacén. Una relectura no cambia el almacén, el precio ni la cantidad elegidos.
+Si se retira el producto por completo del carrito, una lectura posterior permite añadirlo de nuevo.
+Cambiar de modo o volver a abrir la misma venta conserva esta regla porque se consulta el carrito
+actual, sin mantener una lista permanente de códigos bloqueados.
 
-Esta consulta es de solo lectura. Inventario no crea productos, no asocia ni reemplaza códigos y no
-modifica existencias, movimientos o precios. Un código desconocido solo muestra que no está
-asociado a un producto de ese negocio y permite volver a escanear. Cambiar a **«Buscar»**, pasar a
-**«Ganancias por producto»**, abrir la trazabilidad, pausar la app o iniciar una operación que
-bloquee la pantalla desactiva el receptor y descarta cualquier lectura parcial.
+**Venta manual** conserva su comportamiento: tocar otra vez un producto y almacén puede aumentar
+su cantidad, con las validaciones de existencias. La regla de un solo ingreso por producto
+mediante el escáner no modifica la identidad producto–almacén de las líneas ni sus controles de stock.
 
-El escáner de Inventario tampoco abre la cámara ni usa ML Kit Barcode Scanning. Comparte el mismo
-contrato de teclado físico HID descrito abajo.
+## Recuperar una lectura incompleta durante la venta
+
+En **Vender → Escáner físico**, la búsqueda exacta por código de barras conserva prioridad;
+también se admite el SKU exacto de un producto importado. Si no hay coincidencia exacta, se
+buscan hasta cinco productos con códigos numéricos que puedan diferir por **uno, dos o tres
+dígitos omitidos**, conservando el orden de los demás. Las omisiones pueden estar al principio,
+en medio o al final. También se contempla que el código guardado haya quedado incompleto.
+
+La pantalla **Códigos parecidos** muestra el código leído y, para cada opción, el nombre,
+código guardado, número de dígitos de diferencia, existencias, almacén y precio disponible.
+Solo incluye productos activos del negocio actual con existencias positivas. Los candidatos
+con menos omisiones aparecen primero; cada almacén se elige por separado.
+
+Tocar **Agregar a la venta** añade exclusivamente el producto y almacén elegidos, con su precio
+guardado, si ese producto todavía no está en el carrito. Si ya está, identifica su línea y conserva
+la cantidad elegida. **No cambia ni asocia el código de barras**. Si hay dudas, **Volver a escanear**
+descarta la elección pendiente y permite repetir la lectura. Para cambiar una asociación se
+mantiene el acceso explícito **Asociar este código manualmente**, con aviso de comprobar antes
+el código completo. Si no hay sugerencias, permanece el flujo habitual de búsqueda y asociación.
+
+La comparación conserva ceros iniciales y requiere al menos cinco dígitos en el código corto
+y ocho en el largo, con un máximo de 128 caracteres. No infiere sustituciones ni intercambios
+de dígitos, ni trata una coincidencia parecida como identificación segura. Reescanear, cancelar,
+cambiar de venta o perder las existencias invalida las opciones anteriores.
+
+## Registrar un código desconocido desde Ventas
+
+Una lectura sin coincidencia exacta ofrece **Registrar producto**. El botón está disponible una
+vez que terminan las lecturas pendientes y las ediciones del carrito. Abrirlo conserva la venta
+actual y reutiliza el formulario de Inventario con el código leído precargado. Mientras el
+formulario está abierto, el lector de Ventas y el cobro quedan en pausa.
+
+Se completan nombre, cantidad inicial de inventario, precio de compra y precio de venta. La
+cantidad del formulario es el stock que ingresa; la cantidad que se venderá se ajusta después
+en el carrito. Se aplican las mismas validaciones, transacción y restricciones de negocio cloud
+que al registrar desde Inventario.
+
+Al guardar, la app vuelve a la misma venta, relee el producto guardado y sus existencias, y lo
+incorpora una sola vez con su precio de venta. Si requiere elegir almacén, muestra esa elección.
+Un producto que ya esté en el carrito conserva su cantidad. Cancelar el formulario no crea el
+producto ni suma stock, y devuelve la lectura desconocida para reescanear, asociar o registrar.
+
+El registro en inventario y la incorporación al carrito son operaciones distintas. Si el producto
+se guardó pero no pudo añadirse a la venta, aparece **Producto registrado** con el aviso de revisar
+el error y volver a escanearlo. El producto y sus existencias iniciales se conservan; reintentar
+la lectura no vuelve a registrar ese stock. La solicitud y su resultado se correlacionan con el
+negocio y el carrito originales para impedir que una respuesta antigua modifique otra venta.
+
+## Registro desde Inventario
+
+**Inventario → Registrar productos** abre una pantalla dedicada a recibir lecturas del escáner
+físico HID. La pantalla principal muestra el inventario y los accesos de registro; el registro
+por lector se inicia desde este botón.
+
+Una lectura completa y válida busca el código exacto dentro del negocio activo. Si el producto
+ya existe, abre su detalle sin duplicarlo ni sumar existencias. Si el código es nuevo, abre
+automáticamente un formulario con el código precargado y de solo lectura. Se completan cuatro
+datos:
+
+1. nombre del producto;
+2. cantidad inicial, expresada en su unidad de inventario;
+3. precio de compra unitario;
+4. precio de venta unitario.
+
+El código conserva sus ceros iniciales, mayúsculas y minúsculas. Al guardar queda vinculado al
+producto para que **Vender → Escáner físico** lo reconozca mediante la misma búsqueda exacta.
+La cantidad debe ser positiva, el costo no negativo y el precio de venta positivo. El registro
+requiere unidad y almacén activos del negocio y una moneda compatible para ambos precios.
+
+Guardar confirma en una transacción local el producto, su código y precio de venta, las
+existencias iniciales, el costo y el movimiento de inventario. Si falla alguna escritura, se
+revierte todo el registro. Un reintento del mismo producto o un código ya registrado no vuelve
+a sumar existencias. Abrir o cancelar el formulario no crea productos ni mueve stock. Esta alta
+local con existencias está bloqueada para negocios que ya tienen un enlace durable a inventario
+cloud; no sustituye la autoridad del saldo compartido.
+
+Mientras se consulta un código, se abre el formulario o se muestra el detalle, la captura queda
+en pausa. Guardar correctamente o cancelar el formulario de un código nuevo vuelve automáticamente
+a **Registrar productos** y habilita la siguiente lectura. Un fallo de guardado conserva el
+formulario para corregirlo o reintentar. La edición normal de un producto permanece en el catálogo.
+Al volver desde el detalle de un código existente también se habilita una lectura nueva. Salir de esa
+pantalla o pausar la app descarta cualquier fragmento pendiente. El formulario permite completar
+los datos con teclado sin interpretar su texto como nuevas lecturas.
+
+Este flujo usa el lector físico; no fotografía facturas ni decodifica códigos por cámara.
 
 ## Venta a crédito y Deudores
 
-El tipo de venta se elige en **«Tipo de venta»** dentro del mismo carrito. **«Contado»** conserva el contrato v1 anterior y no
-crea una deuda. **«A crédito»** exige un nombre normalizado de 2 a 120 caracteres; el lector y la
+El tipo de venta se elige en la primera pantalla, **«Tipo de venta»**. **«Contado»** no crea una
+deuda. **«A crédito»** exige un nombre normalizado de 2 a 120 caracteres; el lector y la
 búsqueda manual siguen disponibles aunque el nombre todavía esté vacío, pero el checkout permanece
 bloqueado hasta completarlo.
 
-Entrar desde **Deudores → Registrar deuda** abre este mismo carrito con **«A crédito»**
-preseleccionado; aun así, el tipo visible sigue siendo la fuente explícita del comportamiento.
+Entrar desde **Deudores → Registrar deuda** abre la elección del modo con **«A crédito»**
+preseleccionado y conserva ese tipo al volver entre el lector y el catálogo.
 
 La confirmación a crédito es atómica con la venta y el inventario. Room crea una deuda `OPEN`, con
 saldo igual al total y una identidad determinística derivada de `saleId`; en cloud, `postSale` usa
@@ -82,6 +186,25 @@ funcional, de concurrencia y privacidad está en
 
 ## Lector USB o Bluetooth tipo teclado
 
+En Ventas, la franja junto al receptor confirma una incorporación nueva **después de guardar**,
+con su cantidad actual y almacén. Una relectura muestra **Ya está en la venta**, sin otra escritura
+del carrito. La franja permanece visible al desplazar la lista; si se edita o elimina esa línea,
+refleja el carrito guardado.
+
+Las lecturas se atienden en orden, con hasta 32 pendientes contando la que se procesa. Repeticiones
+consecutivas del mismo código se agrupan mientras su lectura siga pendiente o en proceso: una
+ráfaga de 32 códigos idénticos puede resolverse con una consulta y un guardado. Los códigos distintos
+conservan su orden. Tampoco se elimina la última lectura de una secuencia como
+`A → desconocido → A`: debe poder cerrar la elección desconocida, aunque A ya esté en el carrito.
+Esta agrupación no introduce un cargador que mueva la lista por cada disparo.
+
+Una lectura que todavía requiere seleccionar producto o almacén, o un error del lector pendiente
+de reconocer, impide iniciar un cobro nuevo. Reescanear, elegir la opción correspondiente o
+cancelar/reiniciar la lectura permite continuar. Un checkout ya persistido conserva su ruta de
+reintento. El cambio de comportamiento y el estado de validación de esta revisión se documentan en
+[`SCANNER_SINGLE_ADD_AND_REGISTRATION_2026-09-08.md`](SCANNER_SINGLE_ADD_AND_REGISTRATION_2026-09-08.md).
+[`SCANNER_REFINEMENT_2026-09-08.md`](SCANNER_REFINEMENT_2026-09-08.md) conserva la revisión anterior.
+
 FacturaStock no administra el emparejamiento. Android debe reconocer el dispositivo como un teclado
 físico HID/*keyboard wedge*:
 
@@ -91,21 +214,43 @@ físico HID/*keyboard wedge*:
 - Configurar el lector para enviar al final **Enter**, **Enter de teclado numérico** o **Tab**. Sin
   terminador, la aplicación no trata la ráfaga como una lectura completa.
 
-La entrada física se atiende únicamente cuando la app está desbloqueada y Ventas o
-**Inventario → Existencias** han activado de forma explícita **«Escáner físico»**. Cambiar de
-pantalla, pausar la app o desactivar ese modo descarta cualquier lectura parcial. Solo puede existir
-un receptor activo y la última lectura completa no queda almacenada en el ensamblador.
+La entrada física se atiende cuando la app está desbloqueada y se ha abierto
+**Vender → Contado/A crédito → Escáner físico** o **Inventario → Registrar productos**. Cambiar de pantalla,
+pausar la app o desactivar ese modo descarta cualquier lectura parcial. Solo puede existir un
+receptor activo y la última lectura completa no queda almacenada en el ensamblador. En Ventas,
+enfocar un campo de nombre, cantidad o precio pausa el lector para permitir escribir; se puede
+volver a **Escáner físico** para continuar.
 
-El ensamblador separa dispositivos y reinicia una lectura si transcurre más de un segundo entre
-teclas. Ignora repeticiones y duplicados del mismo evento. Si una ráfaga supera 128 caracteres,
-descarta la trama completa hasta el terminador: nunca entrega un código truncado.
+El adaptador admite eventos físicos `DOWN`/`UP` y texto agrupado `ACTION_MULTIPLE`. Conserva cada
+carácter para validar la trama completa, incluidos los caracteres que deban rechazarse. Enter,
+Enter numérico y Tab cierran la lectura; en texto agrupado, CR y LF se interpretan como Enter.
+Un cierre adicional del mismo dispositivo dentro de los siguientes **250 ms**, como el LF de
+un sufijo CRLF, se consume sin entregar una segunda lectura ni activar el botón que tenga foco.
+También se consume la liberación de una tecla ya capturada aunque la lectura haya abierto otra
+pantalla o un diálogo.
 
-La compatibilidad descrita es la del protocolo de teclado físico. No implica certificación de todos
-los modelos USB/Bluetooth, distribuciones de teclado o configuraciones de fabricante.
+Una pausa de más de **un segundo** entre caracteres o un cambio de dispositivo en mitad de la
+lectura invalida toda la trama. Los controles internos, como un separador GS, y los caracteres
+fuera del contrato ASCII también la invalidan. Superar **128 caracteres** invalida la trama por
+longitud. En estos casos se descarta el resto hasta Enter o Tab y se muestra un mensaje para
+repetir la lectura completa: no se entrega el sufijo restante como otro código válido. Las
+repeticiones y duplicados del mismo evento no duplican caracteres.
+
+Cada bloque de texto `ACTION_MULTIPLE` se conserva completo, incluso cuando contiene un solo
+dígito y coincide en tiempo con el bloque anterior. La detección de eventos `DOWN` físicos
+duplicados se mantiene separada: evita confundir dos caracteres repetidos legítimos con una
+reentrega del mismo evento físico.
+
+La compatibilidad descrita es la del protocolo de teclado físico reconocido por Android. No
+incluye lectores en modo serial/SPP, integraciones propietarias ni eventos de teclados virtuales.
+No implica certificación de todos los modelos USB/Bluetooth, distribuciones de teclado o
+configuraciones de fabricante.
 
 ### Checklist para el modelo físico
 
-Antes de usar un lector en producción, registrar sin datos comerciales reales:
+La marca y el modelo del lector del usuario siguen pendientes de confirmación. Las pruebas con
+eventos sintéticos comprueban el software, pero no acreditan la compatibilidad de ese lector.
+Antes de usar un modelo en producción, registrar sin datos comerciales reales:
 
 1. marca/modelo del lector, teléfono o tableta, versión de Android y adaptador OTG si corresponde;
 2. que Android lo muestre como teclado físico y que no requiera permisos dentro de FacturaStock;
@@ -113,17 +258,24 @@ Antes de usar un lector en producción, registrar sin datos comerciales reales:
    exacto que llega;
 4. en Ventas, un código conocido, uno desconocido que se asocia de forma explícita y un producto
    presente en dos almacenes;
-5. en **Inventario → Existencias**, que un código conocido abra la trazabilidad del producto exacto
-   y que uno desconocido no cree ni modifique ningún producto;
-6. dos lecturas seguidas del mismo producto en Ventas, verificando cantidad y un único descuento de
-   stock al confirmar;
+5. en **Inventario → Registrar productos**, que un código conocido abra su detalle y que uno nuevo
+   abra el formulario de cuatro campos con el código exacto; cancelar no debe escribir nada y
+   guardar debe registrar una sola vez producto, precios, cantidad y costo;
+6. varias lecturas del mismo producto en Ventas: debe aparecer una sola vez, sin aumentar la cantidad;
+   editar la cantidad, volver a leer su código o SKU y comprobar que se conserva; retirar el producto
+   y comprobar que otra lectura permite añadirlo; al confirmar se descuenta solo la cantidad elegida;
 7. pausa, rotación y bloqueo de la app en mitad de una lectura, verificando que el fragmento se
    descarte;
-8. navegación con teclado/TalkBack: Tab o Enter sin una lectura pendiente deben seguir llegando a
-   la interfaz.
+8. navegación con teclado/TalkBack: Tab o Enter sin lectura pendiente, fuera de la ventana del
+   sufijo duplicado, deben seguir llegando a la interfaz; editar nombres, cantidades y precios
+   con teclado físico no debe iniciar una búsqueda de código;
+9. si el modelo usa CRLF, texto agrupado o pausas configurables, verificar una entrega por
+   lectura y que una trama interrumpida o inválida muestre el error sin aceptar su fragmento;
+10. desde una lectura desconocida en Ventas, abrir **Registrar producto**: cancelar vuelve a la venta
+    sin crear; guardar registra una sola vez y vuelve al mismo carrito con el producto incorporado.
 
-Si cualquiera falla, conservar los modos **«Buscar»** de Ventas e Inventario y no declarar
-compatible ese modelo hasta corregir su perfil, sufijo o distribución de teclado.
+Si cualquiera falla, conservar la búsqueda manual disponible y no declarar compatible ese
+modelo hasta corregir su perfil, sufijo o distribución de teclado.
 
 ## Contrato del código
 
@@ -144,10 +296,13 @@ formato seguro de almacenamiento, no que GS1 o un fabricante hayan validado su a
 
 ## Asociación explícita en Ventas
 
-Si el código ya pertenece a un producto del negocio, la app propone ese producto. Cuando existe en
-varios almacenes, exige elegir la ubicación exacta antes de incorporarlo al carrito.
+Si el código ya pertenece a un producto del negocio, la app reconoce ese producto. Si todavía no
+está en el carrito y existe en varios almacenes, exige elegir la ubicación exacta antes de
+incorporarlo. Si ya está en cualquier línea del carrito, conserva su cantidad y ubicación.
 
-Si no existe, no crea un producto ni adivina una coincidencia:
+Si no existe una coincidencia exacta, primero se ofrecen los códigos parecidos que cumplan
+las reglas descritas arriba. Elegir una sugerencia conserva el código original. El flujo
+separado de asociación manual funciona así:
 
 1. muestra que la asociación requiere revisión;
 2. permite buscar un producto recibido con existencia positiva;
@@ -167,8 +322,8 @@ persistido.
 
 ## Precio, carrito, ganancias estimadas y checkout
 
-Al vincular o crear un producto durante el ingreso de una compra se solicita un **precio de venta**
-mayor que cero y se guarda en el catálogo del negocio con su moneda. También puede actualizarse
+Al registrar un producto desde el escáner de Inventario se solicita un **precio de venta** mayor
+que cero y se guarda en el catálogo del negocio con su moneda. También puede actualizarse
 después desde **«Ganancias por producto»**. **Nunca se deriva automáticamente del costo promedio de
 inventario:** siempre es una decisión humana y la venta gratuita no forma parte del alcance v1.
 
@@ -179,7 +334,7 @@ y el checkout continúa bloqueado hasta ingresar un precio válido.
 
 **«Ganancias por producto»** muestra una proyección, no utilidad contable realizada. Para cada
 producto suma el stock de sus almacenes y calcula el costo unitario promedio ponderado usando los
-costos que dejaron las compras publicadas:
+costos registrados en sus entradas de inventario:
 
 `ganancia unitaria = precio de venta - costo promedio ponderado`
 
@@ -213,9 +368,11 @@ los movimientos `SALE`, la auditoría y los saldos recibidos. Sin conexión, ses
 coherente o respaldo activo, el checkout queda bloqueado y no crea una venta local invisible para
 el otro teléfono.
 
-El carrito no admite dos líneas para el mismo par producto–almacén; una lectura repetida no puede
-crear una segunda línea silenciosa y la cantidad debe revisarse sobre la línea existente. Si el
-carrito o el inventario cambió concurrentemente, la operación falla sin aplicar un checkout parcial
+El carrito no admite dos líneas para el mismo par producto–almacén. En modo escáner, un producto
+que ya esté en cualquier línea no se incorpora otra vez; la cantidad se modifica manualmente.
+Las lecturas distintas recibidas mientras se procesa otra se atienden en orden y las repeticiones
+consecutivas pendientes se agrupan. Si la cola está llena, se informa que esa lectura debe repetirse.
+Si el carrito o el inventario cambió concurrentemente, la operación falla sin aplicar un checkout parcial
 y debe recargarse. Repetir la misma confirmación o tocar dos veces no crea un segundo descuento. El
 checkout **no permite stock negativo**.
 
@@ -248,11 +405,14 @@ Firebase en una restauración integral de la instalación: no recupera borradore
 todo el estado local, y las imágenes requieren su opt-in documental independiente.
 
 La ráfaga cruda del lector solo se mantiene en memoria mientras se ensambla en Ventas o Inventario y
-no se registra en logs, Analytics ni Crashlytics. Consultar desde Inventario no la persiste. Solo si
-la persona completa una asociación explícita en Ventas el valor deja de ser efímero y pasa a ser el
-campo `barcode` del producto. En el flavor `cloud`, ese dato de catálogo puede entrar en el respaldo
-opcional de catálogos cuando se cumplen sus condiciones. Si el negocio está enlazado y el respaldo
-activo, esa identidad de catálogo participa además en la venta remota compartida.
+no se registra en logs, Analytics ni Crashlytics. Un código nuevo leído en Inventario, o elegido para
+registrar desde Ventas, pasa al formulario recuperable para completar el registro. La solicitud de
+registro desde Ventas y su resultado se conservan en `SavedStateHandle` hasta resolver el retorno.
+Al guardar el formulario, o al completar una asociación
+explícita en Ventas, se persiste como campo `barcode` del producto. Consultar un código existente
+no modifica ese campo. En el flavor `cloud`, el dato de catálogo puede entrar en el respaldo
+opcional cuando se cumplen sus condiciones. Si el negocio está enlazado y el respaldo activo,
+esa identidad de catálogo participa además en la venta remota compartida.
 
 El JSON `ACCOUNTING_LEDGER` con `schemaVersion = 4` no incluye cabeceras/líneas de venta, deudas ni abonos. Sus
 saldos, movimientos genéricos y auditoría pueden reflejar el efecto sobre inventario, pero no
@@ -261,12 +421,13 @@ JSON ni considerar el pull de Firebase como copia integral del dispositivo.
 
 ## Fuera de alcance v1
 
-- Escaneo por cámara y decodificación de códigos con ML Kit. El modelo Barcode Scanning no se
-  empaqueta porque Ventas e Inventario utilizan exclusivamente un lector físico HID para códigos.
+- Escaneo por cámara dentro de estos flujos de Ventas y Registrar productos, lectores seriales/SPP
+  e integraciones propietarias que no entreguen entrada de teclado físico Android.
 - Consulta de catálogos GS1, validación universal de checksum o certificación de simbología.
 - Restauración integral del teléfono, de borradores o de preferencias desde Firebase; el pull solo
   materializa hechos remotos compartidos y sus saldos.
-- Anulación, devolución o reversión de una venta ya confirmada.
+- Devolución parcial o anulación de una venta compartida con autoridad cloud. Las ventas locales
+  admiten anulación completa desde Reportes, mediante recibo y movimientos compensatorios.
 - Conversión automática entre monedas o precio de venta calculado automáticamente desde el costo.
 - Utilidad contable realizada, gastos operativos, impuestos de la empresa o reportes por periodo;
   la pantalla de ganancias es una proyección del inventario actual.

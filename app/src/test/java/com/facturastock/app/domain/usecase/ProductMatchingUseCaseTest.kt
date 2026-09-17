@@ -9,6 +9,7 @@ import com.facturastock.app.domain.model.CatalogSearch
 import com.facturastock.app.domain.model.CatalogStatus
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.Money
+import com.facturastock.app.domain.model.MAX_CATALOG_PAGE_SIZE
 import com.facturastock.app.domain.model.Product
 import com.facturastock.app.domain.model.SupplierProductAlias
 import com.facturastock.app.domain.model.id.AliasId
@@ -24,6 +25,8 @@ import com.facturastock.app.testing.FakeSupplierProductAliasRepository
 import java.time.Instant
 import java.math.BigDecimal
 import java.util.UUID
+import java.util.Locale
+import kotlin.random.Random
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -244,6 +247,49 @@ class ProductMatchingUseCaseTest {
     }
 
     @Test
+    fun `dos letras requieren opt in y no cambian la busqueda ni el matching OCR por defecto`() = runTest {
+        val rice = seedProduct(10, name = "Arroz extra")
+
+        assertTrue(useCase.searchByName(businessId, "ar").isEmpty())
+        assertEquals(ProductMatchOutcome.NoMatch, useCase(query(description = "ar")))
+        val candidates = useCase.searchByName(businessId, "ar", minimumPrefixLength = 2)
+        assertEquals(listOf(rice.productId), candidates.map { it.product.productId })
+        assertEquals(ProductMatchReason.SIMILAR_NAME, candidates.single().reason)
+        assertTrue(useCase.searchByName(businessId, "a", minimumPrefixLength = 2).isEmpty())
+
+        // El mínimo es de esta llamada; no queda como configuración compartida de OCR.
+        assertTrue(useCase.searchByName(businessId, "ar").isEmpty())
+        assertTrue(useCase.search(businessId, supplierId = null, rawQuery = "ar").isEmpty())
+        assertEquals(ProductMatchOutcome.NoMatch, useCase(query(description = "ar")))
+        assertEquals(listOf(rice.productId), useCase.searchByName(businessId, "arr").map { it.product.productId })
+    }
+
+    @Test
+    fun `prefijos de dos letras pliegan acentos sin incluir archivados otro negocio ni codigos`() = runTest {
+        val rice = seedProduct(10, name = "Arroz extra")
+        val accented = seedProduct(11, name = "Árbol de canela")
+        seedProduct(12, name = "Arroz archivado", status = CatalogStatus.ARCHIVED)
+        seedProduct(13, name = "Arroz ajeno", ownerBusinessId = BusinessId.from(uuid(90)))
+        val coded = seedProduct(14, name = "Harina integral", sku = "AR", barcode = "ar")
+        seedAlias(20, supplierSeed = 30, product = coded, text = "ar")
+
+        val candidates = useCase.searchByName(businessId, " AR ", minimumPrefixLength = 2)
+        assertEquals(setOf(rice.productId, accented.productId), candidates.map { it.product.productId }.toSet())
+        assertTrue(candidates.all { it.product.status == CatalogStatus.ACTIVE && it.product.businessId == businessId })
+        assertTrue(candidates.all { it.reason == ProductMatchReason.SIMILAR_NAME })
+    }
+
+    @Test
+    fun `prefijos de dos letras mantienen el limite de candidatos`() = runTest {
+        (10..16).forEach { seed -> seedProduct(seed, name = "Arroz variedad $seed") }
+
+        val candidates = useCase.searchByName(businessId, "ar", minimumPrefixLength = 2)
+
+        assertEquals(ProductMatchingUseCase.MAX_CANDIDATES, candidates.size)
+        assertEquals(candidates.size, candidates.map { it.product.productId }.distinct().size)
+    }
+
+    @Test
     fun `busqueda por nombre no consulta puertos de codigos ni aliases`() = runTest {
         val sugar = seedProduct(10, name = "Azúcar rubia")
         val nameOnlyProducts = object : ProductRepository by products {
@@ -395,6 +441,119 @@ class ProductMatchingUseCaseTest {
         val outcome = useCase(query(description = "Vinagre Tinto 500ml"))
 
         assertEquals(ProductMatchOutcome.NoMatch, outcome)
+    }
+
+    @Test
+    fun `top cinco conserva puntuaciones desempates y corte de pagina de la referencia`() = runTest {
+        val template = seedProduct(10, name = "Producto base")
+        val names = listOf(
+            "Arroz extra", "ARROZ EXTRA", "Arroz", "Arroz extra premium", "Árbol de canela",
+            "Leche evaporada entera", "Leche entera", "Café molido", "Detergente líquido",
+        )
+        val catalog = List(260) { index ->
+            template.copy(
+                productId = ProductId.from(uuid(1_000 + index)),
+                name = names[index % names.size],
+                status = if (index % 17 == 0) CatalogStatus.ARCHIVED else CatalogStatus.ACTIVE,
+                businessId = if (index % 13 == 0) BusinessId.from(uuid(90)) else businessId,
+            )
+        }
+        for (seed in 1..3) {
+            val returned = catalog.shuffled(Random(seed)).let { it + it.take(20) }
+            val repository = object : ProductRepository by products {
+                override suspend fun findByNormalizedName(businessId: BusinessId, normalizedName: String): List<Product> =
+                    emptyList()
+
+                override suspend fun searchActiveByName(
+                    businessId: BusinessId,
+                    query: String,
+                    limit: Int,
+                ): List<Product> = returned
+            }
+            val matching = ProductMatchingUseCase(repository, aliases)
+            for ((name, minimumPrefixLength) in listOf("ar" to 2, "arroz" to 3, "leche ent" to 3, "zzz" to 3)) {
+                val baseline = requireNotNull(ProductNameSimilarityBaseline.scorer(name, minimumPrefixLength))
+                val expected = returned.distinctBy { it.productId }
+                    .filter { it.businessId == businessId && it.status == CatalogStatus.ACTIVE }
+                    .take(MAX_CATALOG_PAGE_SIZE)
+                    .map { product -> product to baseline.similarityPermille(product.name) }
+                    .filter { (_, score) -> score >= ProductMatchingUseCase.MIN_FUZZY_SCORE_PERMILLE }
+                    .sortedWith(
+                        compareByDescending<Pair<Product, Int>> { it.second }
+                            .thenBy { it.first.name }
+                            .thenBy { it.first.productId.value },
+                    )
+                    .take(ProductMatchingUseCase.MAX_CANDIDATES)
+                    .map { (product, score) -> ProductMatchCandidate(product, ProductMatchReason.SIMILAR_NAME, score) }
+
+                assertEquals(
+                    "orden de catálogo $seed, consulta $name",
+                    expected,
+                    matching.searchByName(businessId, name, minimumPrefixLength),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `cinco exactos evitan toda preseleccion y puntuacion difusa`() = runTest {
+        (10..16).forEach { seed -> seedProduct(seed, name = "Arroz") }
+        val repository = object : ProductRepository by products {
+            override suspend fun search(businessId: BusinessId, search: CatalogSearch): CatalogPage<Product> =
+                error("Los cinco exactos ya completaron la salida")
+
+            override suspend fun searchActiveByName(
+                businessId: BusinessId,
+                query: String,
+                limit: Int,
+            ): List<Product> = error("Los cinco exactos ya completaron la salida")
+        }
+        val matching = ProductMatchingUseCase(repository, aliases)
+        val expectedIds = (10..14).map { ProductId.from(uuid(it)) }
+
+        val manual = matching.search(businessId, supplierId = null, rawQuery = "arroz")
+        val nameOnly = matching.searchByName(businessId, "arroz")
+
+        assertEquals(expectedIds, manual.map { it.product.productId })
+        assertEquals(manual, nameOnly)
+        assertTrue(manual.all { it.reason == ProductMatchReason.EXACT_NAME && it.confidencePermille == 900 })
+    }
+
+    @Test
+    fun `seeds acotados conservan orden variantes y deduplicacion anteriores`() = runTest {
+        val unrelated = seedProduct(10, name = "Producto sin relación")
+        val calls = mutableListOf<String>()
+        val repository = object : ProductRepository by products {
+            override suspend fun findByNormalizedName(businessId: BusinessId, normalizedName: String): List<Product> =
+                emptyList()
+
+            override suspend fun searchActiveByName(
+                businessId: BusinessId,
+                query: String,
+                limit: Int,
+            ): List<Product> {
+                calls += query
+                return listOf(unrelated)
+            }
+        }
+        val matching = ProductMatchingUseCase(repository, aliases)
+        val variants = mapOf('a' to 'á', 'e' to 'é', 'i' to 'í', 'o' to 'ó', 'u' to 'ú', 'n' to 'ñ')
+        for (raw in listOf("azuc", "Cafe molido", "arroz arroz", "AR AR", "harina integral avena organica natural", " \tazuc\n RUBIA  ")) {
+            val name = raw.trim().replace(Regex("\\s+"), " ")
+            val base = name.split(' ').filter { it.length >= 3 }.distinct()
+                .sortedByDescending(String::length).takeIf { it.isNotEmpty() } ?: listOf(name.trim())
+            val accents = base.flatMap { seed ->
+                seed.lowercase(Locale.ROOT).mapIndexedNotNull { index, character ->
+                    variants[character]?.let { seed.replaceRange(index, index + 1, it.toString()) }
+                }
+            }
+            val expected = (base + accents).distinct().take(4)
+            calls.clear()
+
+            matching.searchByName(businessId, raw)
+
+            assertEquals(raw, expected, calls)
+        }
     }
 
     private fun query(

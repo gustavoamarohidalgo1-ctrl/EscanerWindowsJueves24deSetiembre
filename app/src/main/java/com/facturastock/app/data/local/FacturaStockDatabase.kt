@@ -1,6 +1,9 @@
 package com.facturastock.app.data.local
 
 import android.content.Context
+import com.facturastock.app.data.local.dao.InvoiceInventoryReceiptDao
+import com.facturastock.app.data.local.entity.InvoiceInventoryReceiptEntity
+import com.facturastock.app.data.local.entity.PendingSaleCheckoutEntity
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -28,6 +31,7 @@ import com.facturastock.app.data.local.dao.PurchaseLineDao
 import com.facturastock.app.data.local.dao.PurchasePostingDao
 import com.facturastock.app.data.local.dao.PurchaseVoidDao
 import com.facturastock.app.data.local.dao.SaleDao
+import com.facturastock.app.data.local.dao.SaleVoidDao
 import com.facturastock.app.data.local.dao.RemoteSyncDao
 import com.facturastock.app.data.local.dao.ProductDao
 import com.facturastock.app.data.local.dao.SupplierDao
@@ -56,6 +60,7 @@ import com.facturastock.app.data.local.entity.PurchaseEntity
 import com.facturastock.app.data.local.entity.PurchaseLineEntity
 import com.facturastock.app.data.local.entity.SaleEntity
 import com.facturastock.app.data.local.entity.SaleLineEntity
+import com.facturastock.app.data.local.entity.SaleVoidEntity
 import com.facturastock.app.data.local.entity.ProductEntity
 import com.facturastock.app.data.local.entity.SupplierEntity
 import com.facturastock.app.data.local.entity.SupplierProductAliasEntity
@@ -75,7 +80,7 @@ import com.facturastock.app.domain.model.CatalogCanonicalizer
  * literal permite que el gate estático siga auditando el esquema exportado y esta constante evita
  * que consumidores como restore queden una versión atrás silenciosamente.
  */
-const val FACTURA_STOCK_DATABASE_SCHEMA_VERSION: Int = 27
+const val FACTURA_STOCK_DATABASE_SCHEMA_VERSION: Int = 29
 
 /** Hashes exportados por Room para las versiones aceptadas por el snapshot v1. */
 const val FACTURA_STOCK_ROOM_IDENTITY_HASH_V24: String = "fd66144e0693b8448696bd6579bfb690"
@@ -83,11 +88,16 @@ const val FACTURA_STOCK_ROOM_IDENTITY_HASH_V25: String = "2f47e2315c70cd2582d81c
 const val FACTURA_STOCK_ROOM_IDENTITY_HASH_V26: String = "4bc1a91cad020ed2d95ec247cf8a92e7"
 const val FACTURA_STOCK_ROOM_IDENTITY_HASH_V27: String = "248df7b1461797641fcfaa14bdff5d3d"
 
+const val FACTURA_STOCK_ROOM_IDENTITY_HASH_V28: String = "1390efcca98d9a039d7b4cbd7ade9c7c"
+const val FACTURA_STOCK_ROOM_IDENTITY_HASH_V29: String = "6814b9206f465ac8e710d5afa59409b2"
+
 fun expectedFacturaStockRoomIdentityHash(schemaVersion: Int): String? = when (schemaVersion) {
     24 -> FACTURA_STOCK_ROOM_IDENTITY_HASH_V24
     25 -> FACTURA_STOCK_ROOM_IDENTITY_HASH_V25
     26 -> FACTURA_STOCK_ROOM_IDENTITY_HASH_V26
     27 -> FACTURA_STOCK_ROOM_IDENTITY_HASH_V27
+    28 -> FACTURA_STOCK_ROOM_IDENTITY_HASH_V28
+    29 -> FACTURA_STOCK_ROOM_IDENTITY_HASH_V29
     else -> null
 }
 
@@ -127,8 +137,11 @@ fun expectedFacturaStockRoomIdentityHash(schemaVersion: Int): String? = when (sc
         PreparedPurchaseEntity::class,
         PurchaseEntity::class,
         PurchaseLineEntity::class,
+        InvoiceInventoryReceiptEntity::class,
+        PendingSaleCheckoutEntity::class,
         SaleEntity::class,
         SaleLineEntity::class,
+        SaleVoidEntity::class,
         InventoryBalanceEntity::class,
         StockMovementEntity::class,
         AuditEventEntity::class,
@@ -142,7 +155,7 @@ fun expectedFacturaStockRoomIdentityHash(schemaVersion: Int): String? = when (sc
         DebtEntity::class,
         DebtPaymentEntity::class,
     ],
-    version = 27,
+    version = 29,
     exportSchema = true,
 )
 abstract class FacturaStockDatabase : RoomDatabase() {
@@ -165,7 +178,9 @@ abstract class FacturaStockDatabase : RoomDatabase() {
     abstract fun purchaseLineDao(): PurchaseLineDao
     abstract fun purchasePostingDao(): PurchasePostingDao
     abstract fun purchaseVoidDao(): PurchaseVoidDao
+    abstract fun invoiceInventoryReceiptDao(): InvoiceInventoryReceiptDao
     abstract fun saleDao(): SaleDao
+    abstract fun saleVoidDao(): SaleVoidDao
     abstract fun inventoryDao(): InventoryDao
     abstract fun auditEventDao(): AuditEventDao
     abstract fun outboxOperationDao(): OutboxOperationDao
@@ -176,6 +191,69 @@ abstract class FacturaStockDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "facturastock.db"
+
+        /** v29 añade anulaciones de venta sin reescribir ventas, deudas, cobros ni stock histórico. */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sale_voids` (" +
+                        "`saleId` TEXT NOT NULL, `businessId` TEXT NOT NULL, " +
+                        "`impactHash` TEXT NOT NULL, `refundedAmountMinorUnits` INTEGER NOT NULL, " +
+                        "`cancelledDebtBalanceMinorUnits` INTEGER NOT NULL, `currencyCode` TEXT NOT NULL, " +
+                        "`actorId` TEXT NOT NULL, `actorRole` TEXT NOT NULL, `voidedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`saleId`), " +
+                        "FOREIGN KEY(`saleId`) REFERENCES `sales`(`saleId`) " +
+                        "ON UPDATE NO ACTION ON DELETE RESTRICT, " +
+                        "FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) " +
+                        "ON UPDATE NO ACTION ON DELETE RESTRICT)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sale_voids_businessId` ON `sale_voids` (`businessId`)",
+                )
+                installPostingPersistenceInvariants(db)
+                installSalesPersistenceInvariants(db)
+                installSaleVoidPersistenceInvariants(db)
+                installDebtPersistenceInvariants(db)
+                installCloudBusinessBindingInvariants(db)
+                installCheckoutPersistenceInvariants(db)
+            }
+        }
+
+        /** v28 añade recibos de ingreso y confirmaciones pendientes sin alterar filas históricas. */
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `invoice_inventory_receipts` (" +
+                        "`draftId` TEXT NOT NULL, `businessId` TEXT NOT NULL, " +
+                        "`contentHash` TEXT NOT NULL, `appliedLineCount` INTEGER NOT NULL, " +
+                        "`appliedAt` INTEGER NOT NULL, PRIMARY KEY(`draftId`), " +
+                        "FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_invoice_inventory_receipts_businessId` " +
+                    "ON `invoice_inventory_receipts` (`businessId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pending_sale_checkouts` (" +
+                        "`saleId` TEXT NOT NULL, `businessId` TEXT NOT NULL, " +
+                        "`expectedVersion` INTEGER NOT NULL, `contentHash` TEXT NOT NULL, " +
+                        "`checkoutIdempotencyKey` TEXT NOT NULL, `debtorName` TEXT, " +
+                        "`debtDueAt` INTEGER, `cloudBusinessId` TEXT, `createdAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`saleId`), " +
+                        "FOREIGN KEY(`saleId`) REFERENCES `sales`(`saleId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                        "FOREIGN KEY(`businessId`) REFERENCES `businesses`(`businessId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_pending_sale_checkouts_businessId` " +
+                    "ON `pending_sale_checkouts` (`businessId`)")
+                // Conserva también las invariantes históricas al abrir un esquema exportado.
+                installPostingPersistenceInvariants(db)
+                installSalesPersistenceInvariants(db)
+                installDebtPersistenceInvariants(db)
+                installCloudBusinessBindingInvariants(db)
+                installCheckoutPersistenceInvariants(db)
+            }
+        }
 
         /**
          * v1 → v2: `businesses.ruc` pasa de `NOT NULL` a nullable (RUC opcional en onboarding
@@ -1556,6 +1634,8 @@ abstract class FacturaStockDatabase : RoomDatabase() {
                     MIGRATION_24_25,
                     MIGRATION_25_26,
                     MIGRATION_26_27,
+                    MIGRATION_27_28,
+                    MIGRATION_28_29,
                 )
                 .addCallback(postingPersistenceCallback)
                 // Sin fallbackToDestructiveMigration: la migración destructiva está prohibida.

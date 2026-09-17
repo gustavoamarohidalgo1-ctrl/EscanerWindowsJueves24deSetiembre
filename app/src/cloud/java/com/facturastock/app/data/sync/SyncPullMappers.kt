@@ -157,7 +157,7 @@ object SyncPullMappers {
                 is Short -> number.toLong()
                 is Int -> number.toLong()
                 is Long -> number
-                is BigInteger -> number.longValueExact()
+                is BigInteger -> BigDecimal(number).longValueExact()
                 is BigDecimal -> number.longValueExact()
                 // `valueOf`/`toString` conservan el valor decimal representado. Nunca se compara
                 // mediante Double ni se usa `toLong`, que truncaría silenciosamente una fracción.

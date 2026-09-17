@@ -10,7 +10,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Genera los perfiles base y de arranque desde el inicio del proceso hasta Home operativo.
+ * Genera los perfiles base y de arranque desde el inicio del proceso hasta Vender visible.
  *
  * La salida se copia a `benchmark/build/outputs/connected_android_test_additional_output` y queda
  * limitada al código de FacturaStock: las dependencias conservan sus perfiles publicados en cada
@@ -22,7 +22,7 @@ class FacturaStockBaselineProfile {
     val baselineProfileRule = BaselineProfileRule()
 
     @Before
-    fun ensureHomeReadyBeforeProfiling() {
+    fun ensureSalesReadyBeforeProfiling() {
         // Cada prueba parte de datos limpios; evita heredar jobs o perfiles parciales de otra
         // captura antes de completar onboarding fuera de la ventana observada.
         StartupJourney.prepare(resetPersistentState = true)
@@ -42,7 +42,7 @@ class FacturaStockBaselineProfile {
         ) {
             pressHome()
             startActivityAndWait()
-            StartupJourney.waitForHomeReady(
+            StartupJourney.waitForSalesReady(
                 UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()),
             )
         }

@@ -2,9 +2,13 @@ package com.facturastock.app.feature.sales
 
 import androidx.compose.runtime.Immutable
 import com.facturastock.app.domain.model.Money
+import com.facturastock.app.domain.model.Quantity
+import com.facturastock.app.domain.model.WeightSaleCalculator
 import com.facturastock.app.domain.model.normalizeDebtorName
 import com.facturastock.app.domain.model.id.LocationId
 import com.facturastock.app.domain.model.id.ProductId
+import com.facturastock.app.domain.model.id.BusinessId
+import com.facturastock.app.domain.model.id.SaleId
 import com.facturastock.app.feature.common.UiAction
 import com.facturastock.app.feature.common.UiEffect
 import com.facturastock.app.feature.common.UiState
@@ -15,7 +19,13 @@ object SalesContract {
 
     enum class EntryMode { SCANNER, MANUAL }
 
+    enum class EntryStep { SELECT_KIND, SELECT_MODE, SELL }
+
     enum class NameMatchKind { EXACT, SIMILAR }
+
+    enum class WeightEntryMode { AMOUNT, QUANTITY }
+
+    enum class WeightSaleFailure { PRODUCT_CHANGED, PRODUCT_UNAVAILABLE, STALE_CART, SAVE_FAILED }
 
     @Immutable
     data class CartLine(
@@ -31,6 +41,7 @@ object SalesContract {
         val quantityValid: Boolean = true,
         val priceValid: Boolean = true,
         val lineTotal: Money?,
+        val isWeightProduct: Boolean = false,
     )
 
     /** Una opción concreta de producto y almacén; nunca representa stock agregado ambiguo. */
@@ -47,6 +58,90 @@ object SalesContract {
         /** Sugerencia para una línea nueva; nunca revaloriza una línea ya guardada. */
         val suggestedSalePrice: Money? = null,
         val nameMatchKind: NameMatchKind? = null,
+        val isWeightProduct: Boolean = false,
+    )
+
+    @Immutable
+    data class WeightSaleEditor(
+        val product: ProductOption,
+        val cartId: String,
+        val cartVersion: Long,
+        val businessId: BusinessId,
+        val lineId: String? = null,
+        val mode: WeightEntryMode = WeightEntryMode.AMOUNT,
+        val amountInput: String = "",
+        val quantityInput: String = "",
+        val submitAttempted: Boolean = false,
+        val failure: WeightSaleFailure? = null,
+        /** Conserva los kilos elegidos si su importe redondeado no cambió al editar/toggle. */
+        val preservedQuantity: Quantity? = null,
+    ) {
+        val pricePerKg: Money? get() = product.suggestedSalePrice
+
+        private val enteredAmount: Money?
+            get() = pricePerKg?.let { price ->
+                runCatching { Money.fromMajor(amountInput.trim().replace(',', '.'), price.currency) }
+                    .getOrNull()?.takeIf { it.minorUnits > 0L }
+            }
+
+        val quantity: Quantity?
+            get() = when (mode) {
+                WeightEntryMode.AMOUNT -> enteredAmount?.let { amount ->
+                    pricePerKg?.let { price ->
+                        preservedQuantity?.takeIf { WeightSaleCalculator.fromQuantity(it, price) == amount }
+                            ?: WeightSaleCalculator.fromAmount(amount, price)
+                    }
+                }
+                WeightEntryMode.QUANTITY ->
+                    runCatching { Quantity.of(quantityInput.trim().replace(',', '.')) }.getOrNull()
+            }
+
+        val total: Money?
+            get() = quantity?.let { amount ->
+                pricePerKg?.let { WeightSaleCalculator.fromQuantity(amount, it) }
+            }
+
+        val exceedsStock: Boolean
+            get() = quantity?.value?.let { it > product.availableQuantity } == true
+
+        val isValid: Boolean
+            get() = quantity != null && total != null && !exceedsStock &&
+                failure != WeightSaleFailure.PRODUCT_UNAVAILABLE && failure != WeightSaleFailure.STALE_CART
+    }
+
+    /** Una lectura parecida sólo ofrece una elección; nunca cambia el código del producto. */
+    @Immutable
+    data class BarcodeSuggestion(
+        val product: ProductOption,
+        val missingDigits: Int,
+    )
+
+    /** Confirmación de una lectura ya guardada; nunca anticipa el resultado de una escritura. */
+    @Immutable
+    data class LastScanAdded(
+        val productId: ProductId,
+        val locationId: LocationId,
+        val productName: String,
+        val locationName: String,
+        val quantity: BigDecimal,
+        val unitCode: String,
+        val sequence: Long,
+        val alreadyInCart: Boolean = false,
+    )
+
+    @Immutable
+    data class ProductRegistrationRequest(
+        val requestId: String,
+        val barcode: String,
+        val businessId: BusinessId,
+        val saleId: SaleId,
+    )
+
+    @Immutable
+    data class ProductRegistrationResult(
+        val requestId: String,
+        val productId: ProductId? = null,
+        val businessId: BusinessId? = null,
     )
 
     @Immutable
@@ -72,9 +167,19 @@ object SalesContract {
         val isLoading: Boolean = true,
         /** Operación exclusiva: alta, retiro, asociación o confirmación de venta. */
         val isMutating: Boolean = false,
+        val isCheckoutPending: Boolean = false,
+        /** Mantiene el lector registrado mientras se guarda la lectura anterior. */
+        val isProcessingBarcode: Boolean = false,
+        val pendingBarcodeCount: Int = 0,
+        val lastScanAdded: LastScanAdded? = null,
+        val isTextInputFocused: Boolean = false,
+        val scannerFailure: ScannerFailure? = null,
         /** Persistencia serializada de inputs; no bloquea seguir editando las líneas. */
         val isSavingLineEdits: Boolean = false,
         val entryKind: EntryKind = EntryKind.CASH,
+        val entryStep: EntryStep = EntryStep.SELECT_KIND,
+        /** Una sola entrada para nombres y códigos; conserva el motor del lector. */
+        val unifiedInput: Boolean = false,
         val debtorNameInput: String = "",
         val mode: EntryMode = EntryMode.SCANNER,
         val scannerActive: Boolean = false,
@@ -83,13 +188,18 @@ object SalesContract {
         val cartVersion: Long = 0L,
         val cartContentHash: String? = null,
         val cartLines: List<CartLine> = emptyList(),
+        val availableProducts: List<ProductOption> = emptyList(),
         /** Hay una edición local aún no confirmada por Room. */
         val hasPendingEdits: Boolean = false,
         val total: Money? = null,
         val query: String = "",
+        val weightSaleEditor: WeightSaleEditor? = null,
         val isNameSearchRunning: Boolean = false,
         val productOptions: List<ProductOption> = emptyList(),
         val pendingAssociationBarcode: String? = null,
+        val productRegistration: ProductRegistrationRequest? = null,
+        val productRegisteredWithoutCartAdd: Boolean = false,
+        val barcodeSuggestions: List<BarcodeSuggestion> = emptyList(),
         /** La asociación se guardó, pero el alta posterior de la línea no se completó. */
         val barcodeAssociatedWithoutCartAdd: Boolean = false,
         val pendingLocations: List<ProductOption> = emptyList(),
@@ -108,6 +218,15 @@ object SalesContract {
         val isAssociating: Boolean
             get() = pendingAssociationBarcode != null
 
+        val canRegisterProduct: Boolean
+            get() = weightSaleEditor == null && entryStep == EntryStep.SELL && mode == EntryMode.SCANNER &&
+                pendingAssociationBarcode != null && productRegistration == null &&
+                !isLoading && !isMutating && !isSavingLineEdits && !hasPendingEdits &&
+                pendingBarcodeCount == 0 && !isCheckoutPending &&
+                !catalogLoadFailed && !cartLoadFailed && cartId != null &&
+                pendingLocations.isEmpty() && pendingReplacement == null &&
+                checkoutReview == null && !discardEditsReview
+
         val canonicalDebtorName: String?
             get() = runCatching { normalizeDebtorName(debtorNameInput) }.getOrNull()
 
@@ -118,18 +237,30 @@ object SalesContract {
             get() = checkoutReview != null
 
         val canCheckout: Boolean
-            get() = !isLoading && !isMutating && !isSavingLineEdits && !hasPendingEdits &&
+            get() = weightSaleEditor == null && ((isCheckoutPending && entryStep == EntryStep.SELL && !isLoading &&
+                !isMutating && !isSavingLineEdits && productRegistration == null && !cartLoadFailed && cartId != null &&
+                cartContentHash != null && total != null && checkoutReview == null) ||
+                entryStep == EntryStep.SELL &&
+                !isLoading && !isMutating && !isSavingLineEdits && !hasPendingEdits &&
+                pendingBarcodeCount == 0 &&
+                pendingAssociationBarcode == null && pendingLocations.isEmpty() &&
+                productRegistration == null &&
+                pendingReplacement == null && scannerFailure == null &&
                 cartLines.isNotEmpty() &&
                 cartLines.all { it.quantityValid && it.priceValid && it.lineTotal != null } &&
                 total != null &&
                 cartId != null && cartContentHash != null && cartVersion >= 0L && failure == null &&
                 isDebtorNameValid &&
                 !catalogLoadFailed && !cartLoadFailed &&
-                checkoutReview == null && !discardEditsReview
+                checkoutReview == null && !discardEditsReview)
 
         val canRouteScannerInput: Boolean
-            get() = mode == EntryMode.SCANNER && !isLoading && !isMutating &&
-                !isSavingLineEdits && !isAssociating && !hasPendingEdits &&
+            get() = weightSaleEditor == null && entryStep == EntryStep.SELL && mode == EntryMode.SCANNER && !isLoading &&
+                productRegistration == null &&
+                !isCheckoutPending &&
+                (!isMutating || isProcessingBarcode) && !isTextInputFocused &&
+                // Una lectura desconocida permite reescanear; los demás campos de edición lo pausan.
+                !isSavingLineEdits && !hasPendingEdits &&
                 cartId != null && cartContentHash != null &&
                 !catalogLoadFailed && !cartLoadFailed &&
                 pendingLocations.isEmpty() && pendingReplacement == null && checkoutReview == null &&
@@ -143,6 +274,8 @@ object SalesContract {
                     else -> false
                 }
     }
+
+    enum class ScannerFailure { INCOMPLETE, TOO_LONG, INVALID_CHARACTER, QUEUE_FULL }
 
     enum class Failure {
         NO_ACTIVE_BUSINESS,
@@ -164,17 +297,40 @@ object SalesContract {
     }
 
     sealed interface Action : UiAction {
+        data class RegisterProductRequested(val scannedBarcode: String) : Action
+        data class ProductRegistrationFinished(val result: ProductRegistrationResult) : Action
         data object Retry : Action
         data object RetryCatalog : Action
         data object RetryCart : Action
         data object RetrySearch : Action
+        data class InitializeEntry(
+            val kind: EntryKind,
+            val allowEntryKindSelection: Boolean,
+            val unifiedInput: Boolean = false,
+        ) : Action
         data class EntryKindChanged(val kind: EntryKind) : Action
         data class DebtorNameChanged(val value: String) : Action
         data class ModeChanged(val mode: EntryMode) : Action
         data class ScannerAvailabilityChanged(val active: Boolean) : Action
+        data class ScannerReadFailed(val failure: ScannerFailure) : Action
+        /** Limpia el aviso del lector; conserva las lecturas aceptadas y el carrito. */
+        data object ScannerReadReset : Action
+        data class TextInputFocusChanged(val fieldId: String, val focused: Boolean) : Action
+        data object ScannerSessionStopped : Action
         data class BarcodeScanned(val value: String) : Action
+        data class BarcodeSuggestionSelected(
+            val productId: ProductId,
+            val locationId: LocationId,
+            val scannedBarcode: String,
+        ) : Action
         data class SearchChanged(val value: String) : Action
         data class ProductSelected(val productId: ProductId, val locationId: LocationId) : Action
+        data class EditWeightSale(val lineId: String) : Action
+        data class WeightEntryModeChanged(val mode: WeightEntryMode) : Action
+        data class WeightAmountChanged(val value: String) : Action
+        data class WeightQuantityChanged(val value: String) : Action
+        data object WeightSaleConfirmed : Action
+        data object WeightSaleDismissed : Action
         data class LocationSelected(val productId: ProductId, val locationId: LocationId) : Action
         data object LocationSelectionDismissed : Action
         data object AssociationDismissed : Action
@@ -190,10 +346,14 @@ object SalesContract {
         data object CheckoutDismissed : Action
         data object DiscardEditsConfirmed : Action
         data object DiscardEditsDismissed : Action
+        data object OpenDebtorsSelected : Action
+        data object StepBackSelected : Action
         data object BackSelected : Action
     }
 
     sealed interface Effect : UiEffect {
+        data class RegisterProduct(val request: ProductRegistrationRequest) : Effect
+        data object OpenDebtors : Effect
         data object Back : Effect
         data object CreditSalePosted : Effect
         data class ShowMessage(val message: Message) : Effect

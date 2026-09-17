@@ -532,6 +532,7 @@ test("las guardas pseudónimas de borrado no son legibles ni mutables por client
   const client = (await clientFor(users.ownerA)).firestore;
   for (const collection of [
     "accountDeletionTombstones",
+    "accountDeletionJobs",
     "accountDeletionEmailLocks",
     "invitationRateLimits",
     "documentUploadRateLimits",

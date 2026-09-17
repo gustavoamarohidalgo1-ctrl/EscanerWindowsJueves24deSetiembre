@@ -1,6 +1,7 @@
 package com.facturastock.app.data.local.dao
 
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -50,6 +51,24 @@ data class InventoryProductHeaderReadRow(
     val productStatus: String,
     val unitCode: String,
     val unitSymbol: String?,
+)
+
+/** Conserva el producto aunque todavía no tenga ninguna posición de inventario. */
+data class InventoryListReadRow(
+    @Embedded val product: InventoryProductHeaderReadRow,
+    @Embedded val position: InventoryReadBalanceRow?,
+)
+
+/** Room deja todo este bloque en null cuando el LEFT JOIN no encuentra un saldo real. */
+data class InventoryReadBalanceRow(
+    val locationId: String,
+    val locationName: String,
+    val locationStatus: String,
+    val quantityOnHand: String,
+    val averageUnitCost: String,
+    val currencyCode: String,
+    val version: Long,
+    val updatedAt: Long,
 )
 
 /** Agregado pequeño para Inicio; no materializa posiciones ni mezcla cantidades entre productos. */
@@ -165,20 +184,40 @@ interface InventoryDao {
     fun observeHomeOverview(businessId: String): Flow<InventoryHomeOverviewRow>
 
     @Query(
-        "SELECT b.businessId, b.productId, p.name AS productName, p.sku, " +
+        "SELECT p.businessId, p.productId, p.name AS productName, p.sku, " +
             "p.status AS productStatus, u.code AS unitCode, u.symbol AS unitSymbol, " +
             "b.locationId, l.name AS locationName, l.status AS locationStatus, " +
             "b.quantityOnHand, b.averageUnitCost, b.currencyCode, b.version, b.updatedAt " +
-            "FROM inventory_balances b " +
-            "INNER JOIN products p ON p.productId = b.productId " +
-            "AND p.businessId = b.businessId " +
-            "INNER JOIN units u ON u.unitId = p.unitId AND u.businessId = b.businessId " +
-            "INNER JOIN inventory_locations l ON l.locationId = b.locationId " +
+            "FROM products p " +
+            "INNER JOIN units u ON u.unitId = p.unitId AND u.businessId = p.businessId " +
+            "LEFT JOIN inventory_balances b ON b.productId = p.productId " +
+            "AND b.businessId = p.businessId " +
+            "LEFT JOIN inventory_locations l ON l.locationId = b.locationId " +
             "AND l.businessId = b.businessId " +
-            "WHERE b.businessId = :businessId " +
+            "WHERE p.businessId = :businessId " +
             "ORDER BY p.normalizedName ASC, p.productId ASC, LOWER(l.name) ASC, l.locationId ASC",
     )
-    fun observeReadPositions(businessId: String): Flow<List<InventoryPositionReadRow>>
+    fun observeReadPositions(businessId: String): Flow<List<InventoryListReadRow>>
+
+    /** Una sola sentencia conserva la instantánea sin leer ni contar el libro de movimientos. */
+    @Query(
+        "SELECT p.businessId, p.productId, p.name AS productName, p.sku, " +
+            "p.status AS productStatus, u.code AS unitCode, u.symbol AS unitSymbol, " +
+            "b.locationId, l.name AS locationName, l.status AS locationStatus, " +
+            "b.quantityOnHand, b.averageUnitCost, b.currencyCode, b.version, b.updatedAt " +
+            "FROM products p " +
+            "INNER JOIN units u ON u.unitId = p.unitId AND u.businessId = p.businessId " +
+            "LEFT JOIN inventory_balances b ON b.productId = p.productId " +
+            "AND b.businessId = p.businessId " +
+            "LEFT JOIN inventory_locations l ON l.locationId = b.locationId " +
+            "AND l.businessId = b.businessId " +
+            "WHERE p.businessId = :businessId AND p.productId = :productId " +
+            "ORDER BY LOWER(l.name) ASC, l.locationId ASC",
+    )
+    fun observeReadProductPositions(
+        businessId: String,
+        productId: String,
+    ): Flow<List<InventoryListReadRow>>
 
     @Query(
         "SELECT p.businessId, p.productId, p.name AS productName, p.sku, " +
@@ -374,6 +413,9 @@ interface InventoryDao {
     @Query("SELECT * FROM stock_movements WHERE idempotencyKey = :idempotencyKey")
     suspend fun findMovementByIdempotencyKey(idempotencyKey: String): StockMovementEntity?
 
+    @Query("SELECT * FROM stock_movements WHERE idempotencyKey LIKE :pattern")
+    suspend fun listMovementsByIdempotencyPattern(pattern: String): List<StockMovementEntity>
+
     @Query(
         "SELECT * FROM stock_movements WHERE businessId = :businessId " +
             "AND purchaseId = :purchaseId " +
@@ -392,6 +434,16 @@ interface InventoryDao {
         businessId: String,
         saleId: String,
     ): List<StockMovementEntity>
+
+    @Query(
+        "SELECT MAX(MAX(occurredAt, createdAt)) FROM stock_movements " +
+            "WHERE businessId = :businessId AND productId = :productId AND locationId = :locationId",
+    )
+    suspend fun latestMovementTimestamp(
+        businessId: String,
+        productId: String,
+        locationId: String,
+    ): Long?
 
     @Query(
         "SELECT m.movementId, m.purchaseId, m.purchaseLineId, m.productId, " +

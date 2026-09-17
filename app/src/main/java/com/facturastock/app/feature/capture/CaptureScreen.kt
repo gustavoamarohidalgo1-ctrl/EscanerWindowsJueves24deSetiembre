@@ -140,7 +140,9 @@ private fun CaptureFrameOverlay(modifier: Modifier = Modifier) {
             .testTag(CaptureTestTags.FRAME),
     ) {
         // Proporción vertical tipo A4: la factura estándar es más alta que ancha.
-        val frameWidth = size.width * FRAME_WIDTH_FRACTION
+        val maxAllowedWidth = size.width * FRAME_WIDTH_FRACTION
+        val maxAllowedHeight = size.height * 0.78f
+        val frameWidth = minOf(maxAllowedWidth, maxAllowedHeight / FRAME_HEIGHT_PER_WIDTH)
         val frameHeight = frameWidth * FRAME_HEIGHT_PER_WIDTH
         val frameLeft = (size.width - frameWidth) / 2f
         val frameTop = (size.height - frameHeight) / 2f

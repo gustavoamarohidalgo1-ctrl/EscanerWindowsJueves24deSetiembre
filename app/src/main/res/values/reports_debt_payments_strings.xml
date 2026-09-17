@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reports_debt_payments_today">Cobros de deudas de hoy</string>
+    <string name="reports_debt_payments_period">Cobros de deudas del período</string>
+    <string name="reports_debt_payments_explanation">Dinero recibido en estas fechas por ventas a crédito. Incluye abonos y pagos completos.</string>
+    <string name="reports_debt_payments_total">Cobrado: %1$s</string>
+    <string name="reports_debt_payment_amount">Pago recibido: %1$s</string>
+    <string name="reports_debt_payments_no_double_count">La venta y el descuento de inventario se registraron al entregar los productos.</string>
+    <string name="reports_debt_payments_no_new_sales">Estos cobros corresponden a ventas a crédito registradas anteriormente.</string>
+</resources>

@@ -1758,4 +1758,4 @@ export {
 // Eliminación de cuenta: `deleteMyAccount` borra negocios propios sin más miembros,
 // membresías, invitaciones de cualquier estado ligadas al email verificado, referencias
 // históricas del caller y, al final, su usuario de Auth.
-export { deleteMyAccount } from "./accountDeletion.js";
+export { deleteMyAccount, resumeAccountDeletions } from "./accountDeletion.js";

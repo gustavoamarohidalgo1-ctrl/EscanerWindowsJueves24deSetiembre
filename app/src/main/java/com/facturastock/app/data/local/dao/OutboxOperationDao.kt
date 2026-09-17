@@ -20,6 +20,35 @@ interface OutboxOperationDao {
     @Query("SELECT * FROM outbox_operations WHERE operationId = :operationId")
     suspend fun findById(operationId: String): OutboxOperationEntity?
 
+    /** Una cuenta local no puede borrar identidades que ya pudieron alcanzar la nube. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM outbox_operations WHERE businessId = :businessId AND (" +
+            "targetCloudBusinessId IS NOT NULL OR remoteEntityId IS NOT NULL OR " +
+            "attemptCount != 0 OR (status != 'PENDING' AND NOT (status = 'RESOLVED' " +
+            "AND operationType = 'SYNC_DOCUMENT_UPLOAD' AND entityType = 'DOCUMENT' " +
+            "AND entityVersion = 1)) OR completedAt IS NOT NULL OR " +
+            "claimToken IS NOT NULL OR claimLeaseUntil IS NOT NULL OR " +
+            "conflictRemotePurchaseId IS NOT NULL OR conflictReceiptId IS NOT NULL OR " +
+            "conflictRemoteEntityId IS NOT NULL OR conflictCloudBusinessId IS NOT NULL))",
+    )
+    suspend fun hasRemoteDeletionRisk(businessId: String): Boolean
+
+    /** Cancela únicamente UPSERT locales nunca reclamados, dentro del borrado del producto. */
+    @Query(
+        "DELETE FROM outbox_operations WHERE businessId = :businessId " +
+            "AND entityType = 'PRODUCT' AND entityId = :productId AND operationType = 'SYNC_PRODUCT' " +
+            "AND targetCloudBusinessId IS NULL AND remoteEntityId IS NULL " +
+            "AND status = 'PENDING' AND attemptCount = 0 AND completedAt IS NULL " +
+            "AND claimToken IS NULL AND claimLeaseUntil IS NULL",
+    )
+    suspend fun deleteNeverAttemptedLocalProduct(businessId: String, productId: String): Int
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM outbox_operations WHERE businessId = :businessId " +
+            "AND entityType = 'PRODUCT' AND entityId = :productId)",
+    )
+    suspend fun hasProductOperations(businessId: String, productId: String): Boolean
+
     @Query(
         "SELECT * FROM outbox_operations WHERE operationId = :operationId " +
             "AND businessId = :businessId",

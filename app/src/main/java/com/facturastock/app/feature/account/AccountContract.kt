@@ -30,6 +30,7 @@ object AccountContract {
         /** Fallo exclusivo de los Flows requeridos para construir la primera pantalla. */
         val initialLoadFailure: AccountError? = null,
         val showSignOutDialog: Boolean = false,
+        val accountDeletionAvailable: Boolean = true,
         val showAccountDeletionDialog: Boolean = false,
         val accountDeletionPassword: String = "",
         val isDeletingAccount: Boolean = false,
@@ -67,6 +68,8 @@ object AccountContract {
         BUSINESS_CREATED,
         LINK_UPDATED,
         ACCOUNT_DELETED,
+        ACCOUNT_DELETION_PENDING,
+        ACCOUNT_DELETION_UNCONFIRMED,
     }
 
     sealed interface Action : UiAction {

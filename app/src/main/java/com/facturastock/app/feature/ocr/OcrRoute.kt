@@ -33,6 +33,7 @@ import com.facturastock.app.ui.theme.FacturaStockDesign
 fun OcrRoute(
     onOpenReview: (DraftId) -> Unit,
     onOpenManualReview: (DraftId) -> Unit,
+    onOpenMatching: (DraftId) -> Unit = {},
     onOpenProducts: (createdCount: Int, existingCount: Int, skippedCount: Int) -> Unit,
     onCancelled: () -> Unit,
     onBack: () -> Unit,
@@ -47,6 +48,7 @@ fun OcrRoute(
             effect = effect,
             onOpenReview = onOpenReview,
             onOpenManualReview = onOpenManualReview,
+            onOpenMatching = onOpenMatching,
             onOpenProducts = onOpenProducts,
             onCancelled = onCancelled,
             onBack = onBack,
@@ -65,6 +67,7 @@ internal fun handleOcrEffect(
     effect: OcrContract.Effect,
     onOpenReview: (DraftId) -> Unit,
     onOpenManualReview: (DraftId) -> Unit,
+    onOpenMatching: (DraftId) -> Unit = {},
     onOpenProducts: (createdCount: Int, existingCount: Int, skippedCount: Int) -> Unit,
     onCancelled: () -> Unit,
     onBack: () -> Unit,
@@ -73,6 +76,7 @@ internal fun handleOcrEffect(
     when (effect) {
         is OcrContract.Effect.OpenReview -> onOpenReview(effect.draftId)
         is OcrContract.Effect.OpenManualReview -> onOpenManualReview(effect.draftId)
+        is OcrContract.Effect.OpenMatching -> onOpenMatching(effect.draftId)
         is OcrContract.Effect.OpenProducts -> onOpenProducts(
             effect.createdCount,
             effect.existingCount,
@@ -233,6 +237,13 @@ fun OcrScreen(
                             .testTag(OcrTestTags.RETRY),
                     )
                 }
+                item {
+                    FacturaStockSecondaryButton(
+                        text = stringResource(R.string.ocr_action_continue_manual),
+                        onClick = { onAction(OcrContract.Action.ContinueToMatching) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             OcrContract.Failure.PRODUCT_SAVE_FAILED -> {
@@ -258,6 +269,21 @@ fun OcrScreen(
             }
 
             null -> {
+                if (!state.isRunning && !state.isSavingProducts && !state.isCancelling &&
+                    !state.isEnteringManually && !state.isRecoveringInterruptedOcr &&
+                    state.completedPageCount > 0
+                ) {
+                    item {
+                        Text(text = stringResource(R.string.matching_ocr_complete))
+                    }
+                    item {
+                        FacturaStockPrimaryButton(
+                            text = stringResource(R.string.matching_resume_review),
+                            onClick = { onAction(OcrContract.Action.ContinueToMatching) },
+                            modifier = Modifier.fillMaxWidth().testTag(OcrTestTags.CONTINUE_REVIEW),
+                        )
+                    }
+                } else {
                 item {
                     Box(modifier = Modifier.testTag(OcrTestTags.PROGRESS)) {
                         LoadingState(
@@ -279,7 +305,7 @@ fun OcrScreen(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (state.isRunning || state.isCancelling) {
+                if ((state.isRunning && !state.isSavingProducts) || state.isCancelling) {
                     item {
                         FacturaStockPrimaryButton(
                             text = if (state.isCancelling) {
@@ -291,9 +317,12 @@ fun OcrScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag(OcrTestTags.CANCEL),
-                            enabled = state.isRunning && !state.isCancelling,
+                            enabled = state.isRunning &&
+                                !state.isSavingProducts &&
+                                !state.isCancelling,
                         )
                     }
+                }
                 }
             }
         }
@@ -303,8 +332,7 @@ fun OcrScreen(
             !state.isSavingProducts &&
             !state.isCancelling &&
             !state.isEnteringManually &&
-            !state.isRecoveringInterruptedOcr &&
-            state.completedPageCount == 0
+            !state.isRecoveringInterruptedOcr
         ) {
             item {
                 FacturaStockSecondaryButton(
@@ -333,6 +361,7 @@ object OcrTestTags {
     const val ENTER_MANUALLY = "ocr_enter_manually"
     const val BACK = "ocr_back"
     const val ERROR = "ocr_error"
+    const val CONTINUE_REVIEW = "ocr_continue_review"
 }
 
 @StringRes

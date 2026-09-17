@@ -22,6 +22,7 @@ import com.facturastock.app.domain.normalization.CandidateEvidence
 import com.facturastock.app.domain.normalization.HeaderField
 import com.facturastock.app.domain.normalization.InvoiceHeaderParseResult
 import com.facturastock.app.domain.normalization.InvoiceLineItemsParseResult
+import com.facturastock.app.domain.normalization.InvoiceLineItemWarning
 import com.facturastock.app.domain.normalization.InvoiceTotalsParseResult
 import com.facturastock.app.domain.normalization.InvoiceUnitCode
 import com.facturastock.app.domain.normalization.ParsedInvoice
@@ -154,6 +155,23 @@ class ImportScannedInvoiceProductsUseCaseTest {
         val failure = result as ImportScannedInvoiceProductsResult.Failure
         assertEquals(ScannedInvoiceProductImportError.NO_ELIGIBLE_PRODUCTS, failure.error)
         assertEquals(0, failure.counts.eligibleProductCount)
+        assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
+        assertTrue(fixture.products.observeForBusiness(BUSINESS_ID).first().isEmpty())
+    }
+
+    @Test
+    fun `a row with a blocking parser warning is never imported automatically`() = runTest {
+        val fixture = Fixture()
+        fixture.seedBusinessAndDraft()
+        fixture.seedUnit("NIU")
+
+        val doubtfulRow = line(name = "Producto ambiguo", position = 0).copy(
+            warnings = listOf(InvoiceLineItemWarning.AMBIGUOUS_COLUMN_ASSIGNMENT),
+        )
+        val result = fixture.useCase(DRAFT_ID, parsedInvoice(doubtfulRow))
+
+        val failure = result as ImportScannedInvoiceProductsResult.Failure
+        assertEquals(ScannedInvoiceProductImportError.NO_ELIGIBLE_PRODUCTS, failure.error)
         assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
         assertTrue(fixture.products.observeForBusiness(BUSINESS_ID).first().isEmpty())
     }

@@ -14,6 +14,10 @@ import com.facturastock.app.data.local.dao.SaleWithLines
 import com.facturastock.app.data.local.entity.AuditEventEntity
 import com.facturastock.app.data.local.entity.DebtEntity
 import com.facturastock.app.data.local.entity.InventoryBalanceEntity
+import com.facturastock.app.data.local.entity.PendingSaleCheckoutEntity
+import com.facturastock.app.domain.model.PendingSaleCheckout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.facturastock.app.data.local.entity.SaleEntity
 import com.facturastock.app.data.local.entity.SaleLineEntity
 import com.facturastock.app.data.local.entity.StockMovementEntity
@@ -30,6 +34,7 @@ import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.ProductProfitDecimalPolicy
 import com.facturastock.app.domain.model.Quantity
 import com.facturastock.app.domain.model.RealizedProfitIssue
+import com.facturastock.app.domain.model.RealizedSaleLineProfit
 import com.facturastock.app.domain.model.RealizedSaleProfit
 import com.facturastock.app.domain.model.SaleCart
 import com.facturastock.app.domain.model.SaleCartLine
@@ -69,6 +74,7 @@ import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -83,6 +89,7 @@ class RoomSaleRepository @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val remoteSales: RemoteSaleSyncRepository = DisabledRemoteSaleSyncRepository,
 ) : SaleRepository {
+    private val checkoutMutex = Mutex()
     override fun observe(saleId: SaleId): Flow<SaleCart?> =
         database.saleDao().observeWithLines(saleId.value)
             .map { graph -> graph?.toDomain() }
@@ -241,6 +248,7 @@ class RoomSaleRepository @Inject constructor(
         val sale = graph.sale
         if (sale.businessId != businessId.value) return SaleCartMutationResult.NotFound
         if (sale.status != SaleStatus.DRAFT.name) return SaleCartMutationResult.NotDraft
+        if (graph.pendingCheckout != null) return SaleCartMutationResult.CheckoutPending
         if (sale.version != command.expectedVersion) return SaleCartMutationResult.Stale
         if (listOfNotNull(command.unitPrice, command.discount, command.tax).any {
                 it.currency.value != sale.currencyCode
@@ -342,6 +350,7 @@ class RoomSaleRepository @Inject constructor(
                 if (sale.status != SaleStatus.DRAFT.name) {
                     return@withTransaction SaleCartMutationResult.NotDraft
                 }
+                if (graph.pendingCheckout != null) return@withTransaction SaleCartMutationResult.CheckoutPending
                 if (sale.version != expectedVersion) {
                     return@withTransaction SaleCartMutationResult.Stale
                 }
@@ -412,6 +421,7 @@ class RoomSaleRepository @Inject constructor(
             ?: return SaleCartMutationResult.NotFound
         if (sale.businessId != businessId.value) return SaleCartMutationResult.NotFound
         if (sale.status != SaleStatus.DRAFT.name) return SaleCartMutationResult.NotDraft
+        if (database.saleDao().findPendingCheckout(saleId.value) != null) return SaleCartMutationResult.CheckoutPending
         return if (sale.version != expectedVersion) {
             SaleCartMutationResult.Stale
         } else {
@@ -440,6 +450,11 @@ class RoomSaleRepository @Inject constructor(
     override suspend fun checkout(
         businessId: BusinessId,
         command: CheckoutSaleCommand,
+    ): CheckoutSaleResult = checkoutMutex.withLock { checkoutLocked(businessId, command) }
+
+    private suspend fun checkoutLocked(
+        businessId: BusinessId,
+        command: CheckoutSaleCommand,
     ): CheckoutSaleResult = withContext(dispatchers.io) {
         val checkoutKey = SaleContentIdentity.checkoutKey(command)
         val preparation = try {
@@ -464,30 +479,45 @@ class RoomSaleRepository @Inject constructor(
         } catch (_: Exception) {
             RemoteSalePostResult.OnlineRequired
         }
-        when (remote) {
-            RemoteSalePostResult.NotRequired -> commitCheckout(
-                businessId = businessId,
-                command = command,
-                checkoutKey = checkoutKey,
-                authorization = null,
-            )
-            is RemoteSalePostResult.Authorized -> {
-                if (remote.saleId != command.saleId) {
-                    CheckoutSaleResult.RemoteRejected
-                } else {
-                    commitCheckout(businessId, command, checkoutKey, remote)
+        // Solo una respuesta definitiva libera la intención; también si el commit local falla
+        // o se cancela. Un resultado remoto ambiguo debe sobrevivir al cierre de la pantalla.
+        val canReleasePending = remote is RemoteSalePostResult.InsufficientStock ||
+            remote == RemoteSalePostResult.InventoryMigrationRequired ||
+            (remote == RemoteSalePostResult.NotRequired && preparation.cloudBusinessId == null)
+        try {
+            when (remote) {
+                RemoteSalePostResult.NotRequired -> if (preparation.cloudBusinessId != null) {
+                    CheckoutSaleResult.OnlineRequired
+                } else commitCheckout(
+                    businessId = businessId,
+                    command = command,
+                    checkoutKey = checkoutKey,
+                    authorization = null,
+                )
+                is RemoteSalePostResult.Authorized -> {
+                    if (remote.saleId != command.saleId) {
+                        CheckoutSaleResult.RemoteRejected
+                    } else {
+                        commitCheckout(businessId, command, checkoutKey, remote)
+                    }
+                }
+                is RemoteSalePostResult.InsufficientStock -> CheckoutSaleResult.InsufficientStock(
+                    productId = remote.productId,
+                    locationId = remote.locationId,
+                    requested = remote.requested,
+                    available = remote.available,
+                )
+                RemoteSalePostResult.InventoryMigrationRequired ->
+                    CheckoutSaleResult.InventoryMigrationRequired
+                RemoteSalePostResult.OnlineRequired -> CheckoutSaleResult.OnlineRequired
+                RemoteSalePostResult.Rejected -> CheckoutSaleResult.RemoteRejected
+            }
+        } finally {
+            if (canReleasePending) {
+                withContext(NonCancellable) {
+                    database.withTransaction { database.saleDao().deletePendingCheckout(command.saleId.value) }
                 }
             }
-            is RemoteSalePostResult.InsufficientStock -> CheckoutSaleResult.InsufficientStock(
-                productId = remote.productId,
-                locationId = remote.locationId,
-                requested = remote.requested,
-                available = remote.available,
-            )
-            RemoteSalePostResult.InventoryMigrationRequired ->
-                CheckoutSaleResult.InventoryMigrationRequired
-            RemoteSalePostResult.OnlineRequired -> CheckoutSaleResult.OnlineRequired
-            RemoteSalePostResult.Rejected -> CheckoutSaleResult.RemoteRejected
         }
     }
 
@@ -544,6 +574,19 @@ class RoomSaleRepository @Inject constructor(
         if (sale.contentHash != command.expectedContentHash) {
             return SaleCheckoutPreparation.Rejected(CheckoutSaleResult.CartChanged)
         }
+        val pending = graph.pendingCheckout
+        val cloudBusinessId = database.cloudBusinessBindingDao().findByLocal(businessId.value)?.cloudBusinessId
+        if (pending != null && (
+                pending.businessId != businessId.value || pending.expectedVersion != command.expectedVersion ||
+                    pending.contentHash != command.expectedContentHash ||
+                    pending.checkoutIdempotencyKey != checkoutKey ||
+                    pending.debtorName != command.debtorName?.let(::normalizeDebtorName) ||
+                    pending.debtDueAt != command.debtDueAt?.toEpochMilli()
+            )
+        ) return SaleCheckoutPreparation.Rejected(CheckoutSaleResult.CartChanged)
+        if (pending != null && pending.cloudBusinessId != cloudBusinessId) {
+            return SaleCheckoutPreparation.Rejected(CheckoutSaleResult.OnlineRequired)
+        }
         val lines = graph.lines.sortedBy(SaleLineEntity::position)
         if (lines.isEmpty()) return SaleCheckoutPreparation.Rejected(CheckoutSaleResult.EmptyCart)
         val totals = SaleCartTotals.of(sale.currencyCode, lines)
@@ -575,16 +618,16 @@ class RoomSaleRepository @Inject constructor(
             val unit = database.unitDao().findById(line.unitId)
             if (
                 product == null || product.businessId != businessId.value ||
-                product.status != CatalogStatus.ACTIVE.name || product.unitId != line.unitId ||
+                (pending == null && product.status != CatalogStatus.ACTIVE.name) || product.unitId != line.unitId ||
                 unit == null || unit.businessId != businessId.value ||
-                unit.status != CatalogStatus.ACTIVE.name
+                (pending == null && unit.status != CatalogStatus.ACTIVE.name)
             ) {
                 return SaleCheckoutPreparation.Rejected(CheckoutSaleResult.ProductUnavailable)
             }
             val location = database.inventoryLocationDao().findById(line.locationId)
             if (
                 location == null || location.businessId != businessId.value ||
-                location.status != CatalogStatus.ACTIVE.name
+                (pending == null && location.status != CatalogStatus.ACTIVE.name)
             ) {
                 return SaleCheckoutPreparation.Rejected(CheckoutSaleResult.LocationUnavailable)
             }
@@ -606,6 +649,21 @@ class RoomSaleRepository @Inject constructor(
             )
         }
         val updatedAt = Instant.ofEpochMilli(sale.updatedAt)
+        if (pending == null) {
+            database.saleDao().insertPendingCheckout(
+                PendingSaleCheckoutEntity(
+                    saleId = sale.saleId,
+                    businessId = sale.businessId,
+                    expectedVersion = command.expectedVersion,
+                    contentHash = command.expectedContentHash,
+                    checkoutIdempotencyKey = checkoutKey,
+                    debtorName = command.debtorName?.let(::normalizeDebtorName),
+                    debtDueAt = command.debtDueAt?.toEpochMilli(),
+                    cloudBusinessId = cloudBusinessId,
+                    createdAt = maxOf(appClock.now().toEpochMilli(), sale.updatedAt),
+                ),
+            )
+        }
         return SaleCheckoutPreparation.Ready(
             SharedSaleDocument(
                 saleId = command.saleId,
@@ -629,6 +687,7 @@ class RoomSaleRepository @Inject constructor(
                     )
                 },
             ),
+            cloudBusinessId = cloudBusinessId,
         )
     }
 
@@ -680,6 +739,20 @@ class RoomSaleRepository @Inject constructor(
             return CheckoutSaleResult.NoActiveBusiness
         }
 
+        // Un ACK definitivo completa la intención histórica congelada, aunque el catálogo
+        // se haya archivado mientras se esperaba la red. El checkout local sigue exigiendo
+        // catálogo activo y nunca puede aprovechar esta excepción.
+        val pending = graph.pendingCheckout
+        val completingAuthorizedCheckout = authorization != null && pending != null &&
+            pending.businessId == businessId.value && pending.expectedVersion == command.expectedVersion &&
+            pending.contentHash == command.expectedContentHash && pending.checkoutIdempotencyKey == checkoutKey &&
+            pending.debtorName == command.debtorName?.let(::normalizeDebtorName) &&
+            pending.debtDueAt == command.debtDueAt?.toEpochMilli() &&
+            pending.cloudBusinessId == database.cloudBusinessBindingDao().findByLocal(businessId.value)?.cloudBusinessId
+        if (authorization != null && !completingAuthorizedCheckout) {
+            return CheckoutSaleResult.RemoteRejected
+        }
+
         val authorizedByKey = authorization?.balances?.let { authorized ->
             val indexed = authorized.associateBy { it.productId.value to it.locationId.value }
             if (indexed.size != authorized.size) return CheckoutSaleResult.RemoteRejected
@@ -691,16 +764,17 @@ class RoomSaleRepository @Inject constructor(
             val unit = database.unitDao().findById(line.unitId)
             if (
                 product == null || product.businessId != businessId.value ||
-                product.status != CatalogStatus.ACTIVE.name || product.unitId != line.unitId ||
+                (!completingAuthorizedCheckout && product.status != CatalogStatus.ACTIVE.name) ||
+                product.unitId != line.unitId ||
                 unit == null || unit.businessId != businessId.value ||
-                unit.status != CatalogStatus.ACTIVE.name
+                (!completingAuthorizedCheckout && unit.status != CatalogStatus.ACTIVE.name)
             ) {
                 return CheckoutSaleResult.ProductUnavailable
             }
             val location = database.inventoryLocationDao().findById(line.locationId)
             if (
                 location == null || location.businessId != businessId.value ||
-                location.status != CatalogStatus.ACTIVE.name
+                (!completingAuthorizedCheckout && location.status != CatalogStatus.ACTIVE.name)
             ) {
                 return CheckoutSaleResult.LocationUnavailable
             }
@@ -887,6 +961,7 @@ class RoomSaleRepository @Inject constructor(
                 ),
             )
         }
+        database.saleDao().deletePendingCheckout(sale.saleId)
         return CheckoutSaleResult.Posted(command.saleId)
     }
 
@@ -966,6 +1041,9 @@ class RoomSaleRepository @Inject constructor(
             createdAt = Instant.ofEpochMilli(sale.createdAt),
             updatedAt = Instant.ofEpochMilli(sale.updatedAt),
             postedAt = sale.postedAt?.let(Instant::ofEpochMilli),
+            pendingCheckout = pendingCheckout?.takeIf { sale.status == SaleStatus.DRAFT.name }?.let {
+                PendingSaleCheckout(it.debtorName, it.debtDueAt?.let(Instant::ofEpochMilli))
+            },
         )
     }
 }
@@ -1058,65 +1136,26 @@ private fun realizedSaleProfitFromRows(rows: List<PostedSaleProfitRow>): Realize
     }) { "Las filas del reporte no comparten la misma cabecera de venta" }
 
     val currency = CurrencyCode.of(first.saleCurrencyCode)
-    var netRevenueMinorUnits = 0L
-    var accumulatedCost = BigDecimal.ZERO
+    val lines = rows
+        .groupBy(PostedSaleProfitRow::saleLineId)
+        .values
+        .map { lineRows -> realizedSaleLineProfitFromRows(lineRows, currency) }
+        .sortedWith(
+            compareBy<RealizedSaleLineProfit>(RealizedSaleLineProfit::position)
+                .thenBy { it.saleLineId.value },
+        )
+    val netRevenueMinorUnits = lines.fold(0L) { total, line ->
+        Math.addExact(total, line.netRevenue.minorUnits)
+    }
     val issues = linkedSetOf<RealizedProfitIssue>()
-    val lineGroups = rows.groupBy(PostedSaleProfitRow::saleLineId)
-
-    lineGroups.values.forEach { lineRows ->
-        val line = lineRows.first()
-        require(lineRows.all { row ->
-            row.lineQuantity == line.lineQuantity &&
-                row.lineTotalMinorUnits == line.lineTotalMinorUnits &&
-                row.lineTaxMinorUnits == line.lineTaxMinorUnits
-        }) { "Las filas del reporte no comparten la misma cabecera de línea" }
-        val lineTotal = requireNotNull(line.lineTotalMinorUnits) {
-            "Una venta confirmada no puede tener una línea sin total"
-        }
-        val lineNet = Math.subtractExact(lineTotal, line.lineTaxMinorUnits)
-        require(lineNet >= 0L) { "El impuesto de línea no puede superar su total" }
-        netRevenueMinorUnits = Math.addExact(netRevenueMinorUnits, lineNet)
-
-        if (lineRows.size != 1) {
-            issues += RealizedProfitIssue.INVALID_PERSISTED_DATA
-            return@forEach
-        }
-        if (
-            line.movementId == null || line.movementQuantityDelta == null ||
-            line.movementUnitCost == null || line.movementCurrencyCode == null
-        ) {
-            issues += RealizedProfitIssue.MISSING_HISTORICAL_COST
-            return@forEach
-        }
-
-        val lineQuantity = line.lineQuantity.toPersistedReportDecimalOrNull()
-        val movementQuantity = line.movementQuantityDelta.toPersistedReportDecimalOrNull()
-        val unitCost = line.movementUnitCost.toPersistedReportDecimalOrNull()
-        val costCurrency = runCatching {
-            CurrencyCode.of(line.movementCurrencyCode)
-        }.getOrNull()
-        if (
-            lineQuantity == null || lineQuantity.signum() <= 0 ||
-            movementQuantity == null || movementQuantity.signum() >= 0 ||
-            movementQuantity.abs().compareTo(lineQuantity) != 0 ||
-            unitCost == null || unitCost.signum() < 0 || costCurrency == null
-        ) {
-            issues += RealizedProfitIssue.INVALID_PERSISTED_DATA
-            return@forEach
-        }
-        if (costCurrency != currency) {
-            issues += RealizedProfitIssue.COST_CURRENCY_MISMATCH
-            return@forEach
-        }
-
-        val extendedCost = movementQuantity.abs().multiply(unitCost)
-        if (!ProductProfitDecimalPolicy.supports(extendedCost)) {
-            issues += RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED
-            return@forEach
-        }
-        accumulatedCost = accumulatedCost.add(extendedCost)
-        if (!ProductProfitDecimalPolicy.supports(accumulatedCost)) {
-            issues += RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED
+    lines.forEach { line -> issues += line.issues }
+    var accumulatedCost = BigDecimal.ZERO
+    if (issues.isEmpty()) {
+        lines.forEach { line ->
+            accumulatedCost = accumulatedCost.add(requireNotNull(line.historicalCost).amount)
+            if (!ProductProfitDecimalPolicy.supports(accumulatedCost)) {
+                issues += RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED
+            }
         }
     }
 
@@ -1135,9 +1174,96 @@ private fun realizedSaleProfitFromRows(rows: List<PostedSaleProfitRow>): Realize
         netRevenue = netRevenue,
         historicalCost = historicalCost,
         grossProfit = grossProfit,
-        lineCount = lineGroups.size,
+        lines = lines,
         postedAt = Instant.ofEpochMilli(first.postedAt),
-        issues = issues,
+        issues = issues.toSet(),
+    )
+}
+
+private fun realizedSaleLineProfitFromRows(
+    rows: List<PostedSaleProfitRow>,
+    saleCurrency: CurrencyCode,
+): RealizedSaleLineProfit {
+    require(rows.isNotEmpty())
+    val first = rows.first()
+    require(rows.all { row ->
+        row.saleLineId == first.saleLineId && row.productId == first.productId &&
+            row.linePosition == first.linePosition &&
+            row.productNameSnapshot == first.productNameSnapshot &&
+            row.unitCodeSnapshot == first.unitCodeSnapshot &&
+            row.locationNameSnapshot == first.locationNameSnapshot &&
+            row.lineCurrencyCode == first.lineCurrencyCode &&
+            row.lineQuantity == first.lineQuantity &&
+            row.lineTotalMinorUnits == first.lineTotalMinorUnits &&
+            row.lineTaxMinorUnits == first.lineTaxMinorUnits
+    }) { "Las filas del reporte no comparten la misma cabecera de línea" }
+
+    val lineTotalMinorUnits = requireNotNull(first.lineTotalMinorUnits) {
+        "Una venta confirmada no puede tener una línea sin total"
+    }
+    val lineNetMinorUnits = Math.subtractExact(lineTotalMinorUnits, first.lineTaxMinorUnits)
+    require(lineNetMinorUnits >= 0L) { "El impuesto de línea no puede superar su total" }
+    val lineQuantity = first.lineQuantity.toPersistedReportDecimalOrNull()
+    val quantity = lineQuantity
+        ?.takeIf { it.signum() > 0 }
+        ?.let { persisted -> runCatching { Quantity.of(persisted) }.getOrNull() }
+    val issues = linkedSetOf<RealizedProfitIssue>()
+    val lineCurrency = runCatching { CurrencyCode.of(first.lineCurrencyCode) }.getOrNull()
+    if (lineCurrency != saleCurrency) issues += RealizedProfitIssue.INVALID_PERSISTED_DATA
+    if (quantity == null) issues += RealizedProfitIssue.INVALID_PERSISTED_DATA
+
+    var historicalCostAmount: BigDecimal? = null
+    when {
+        rows.size != 1 -> issues += RealizedProfitIssue.INVALID_PERSISTED_DATA
+        first.movementId == null || first.movementQuantityDelta == null ||
+            first.movementUnitCost == null || first.movementCurrencyCode == null -> {
+            issues += RealizedProfitIssue.MISSING_HISTORICAL_COST
+        }
+        else -> {
+            val movementQuantity = first.movementQuantityDelta.toPersistedReportDecimalOrNull()
+            val unitCost = first.movementUnitCost.toPersistedReportDecimalOrNull()
+            val costCurrency = runCatching {
+                CurrencyCode.of(first.movementCurrencyCode)
+            }.getOrNull()
+            if (
+                lineQuantity == null || lineQuantity.signum() <= 0 ||
+                movementQuantity == null || movementQuantity.signum() >= 0 ||
+                movementQuantity.abs().compareTo(lineQuantity) != 0 ||
+                unitCost == null || unitCost.signum() < 0 || costCurrency == null
+            ) {
+                issues += RealizedProfitIssue.INVALID_PERSISTED_DATA
+            } else if (costCurrency != saleCurrency) {
+                issues += RealizedProfitIssue.COST_CURRENCY_MISMATCH
+            } else {
+                val extendedCost = movementQuantity.abs().multiply(unitCost)
+                if (ProductProfitDecimalPolicy.supports(extendedCost)) {
+                    historicalCostAmount = extendedCost
+                } else {
+                    issues += RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED
+                }
+            }
+        }
+    }
+
+    val netRevenue = Money.ofMinor(lineNetMinorUnits, saleCurrency)
+    val historicalCost = historicalCostAmount
+        ?.takeIf { issues.isEmpty() }
+        ?.let { ExactMonetaryAmount(it, saleCurrency) }
+    return RealizedSaleLineProfit(
+        saleLineId = checkNotNull(SaleLineId.parse(first.saleLineId)),
+        productId = checkNotNull(ProductId.parse(first.productId)),
+        position = first.linePosition,
+        productName = first.productNameSnapshot,
+        unitCode = first.unitCodeSnapshot,
+        locationName = first.locationNameSnapshot,
+        quantity = quantity,
+        totalCharged = Money.ofMinor(lineTotalMinorUnits, saleCurrency),
+        netRevenue = netRevenue,
+        historicalCost = historicalCost,
+        grossProfit = historicalCost?.let { cost ->
+            ExactMonetaryAmount(netRevenue.toMajor().subtract(cost.amount), saleCurrency)
+        },
+        issues = issues.toSet(),
     )
 }
 
@@ -1149,7 +1275,7 @@ private fun String.toPersistedReportDecimalOrNull(): BigDecimal? {
 }
 
 private sealed interface SaleCheckoutPreparation {
-    data class Ready(val document: SharedSaleDocument) : SaleCheckoutPreparation
+    data class Ready(val document: SharedSaleDocument, val cloudBusinessId: String?) : SaleCheckoutPreparation
     data class Rejected(val result: CheckoutSaleResult) : SaleCheckoutPreparation
 }
 

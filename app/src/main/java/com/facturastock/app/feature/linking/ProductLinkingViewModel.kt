@@ -103,6 +103,24 @@ class ProductLinkingViewModel @Inject constructor(
         val priceRequiredProduct: Product? = null,
     )
 
+    private sealed interface LineMatchStep {
+        data class Resolved(val resolution: LineResolution) : LineMatchStep
+
+        data class AutoLink(
+            val line: InvoiceLineEdit,
+            val candidate: ProductMatchCandidate,
+        ) : LineMatchStep
+    }
+
+    private data class CatalogLinkSpec(
+        val lineId: LineId,
+        val productId: ProductId,
+        val unitId: UnitId,
+        val confidencePermille: Int,
+        val provenance: PurchaseProductProvenance,
+        val stagedProduct: StagedPurchaseProduct?,
+    )
+
     private sealed interface DraftResolution {
         data object NotEditable : DraftResolution
 
@@ -242,8 +260,8 @@ class ProductLinkingViewModel @Inject constructor(
 
     /**
      * Carga el snapshot, resuelve el proveedor y ejecuta la cascada por línea. Los auto-enlaces
-     * se persisten en orden con el CAS de revisiones; ante un conflicto se recarga una vez y se
-     * reintenta la cascada completa (los enlaces ya guardados se respetan como CONFIRMED).
+     * exactos se persisten en un solo CAS; ante un conflicto se recarga y se reintenta la cascada
+     * (los enlaces ya guardados se respetan como CONFIRMED).
      */
     private suspend fun resolveDraft(
         draftId: DraftId,
@@ -261,84 +279,72 @@ class ProductLinkingViewModel @Inject constructor(
         var reloads = 0
         do {
             conflicted = false
-            val accumulated = mutableListOf<LineResolution>()
+            val steps = ArrayList<LineMatchStep>(edit.activeLines.size)
+            val matchCache = LinkedHashMap<ProductMatchQuery, ProductMatchOutcome>()
             for (line in edit.activeLines) {
-                when {
-                    line.linkedProductId != null -> accumulated += resolvePersistedLink(
+                steps += if (line.linkedProductId != null) {
+                    LineMatchStep.Resolved(
+                        resolvePersistedLink(
+                            line = line,
+                            businessId = snapshot.draft.businessId,
+                            currency = currency,
+                        ),
+                    )
+                } else {
+                    matchUnlinkedLine(
                         line = line,
                         businessId = snapshot.draft.businessId,
+                        supplierId = supplierId,
                         currency = currency,
+                        matchCache = matchCache,
                     )
-
-                    conflicted -> accumulated += LineResolution(
-                        line = line.toLinking(LinkStatus.NEEDS_CHOICE),
+                }
+            }
+            val pendingAutoLinks = steps.mapNotNull { step -> step as? LineMatchStep.AutoLink }
+            var autoLinksApplied = pendingAutoLinks.isEmpty()
+            if (pendingAutoLinks.isNotEmpty()) {
+                when (
+                    val application = applyCatalogLinks(
+                        edit = edit,
+                        expectedRevision = revision,
+                        links = pendingAutoLinks.map { pending ->
+                            CatalogLinkSpec(
+                                lineId = pending.line.lineId,
+                                productId = pending.candidate.product.productId,
+                                unitId = pending.candidate.product.unitId,
+                                confidencePermille = pending.candidate.confidencePermille,
+                                provenance = PurchaseProductProvenance.EXISTING,
+                                stagedProduct = null,
+                            )
+                        },
                     )
-
-                    else -> {
-                        val query = buildQuery(snapshot.draft.businessId, supplierId, line)
-                        val outcome = query?.let { productMatchingUseCase(it) }
-                            ?: ProductMatchOutcome.NoMatch
-                        when (outcome) {
-                            is ProductMatchOutcome.AutoLinked -> if (
-                                outcome.candidate.product.salePrice?.currency != currency
-                            ) {
-                                accumulated += LineResolution(
-                                    line = line.toLinking(LinkStatus.NEEDS_CHOICE),
-                                    candidates = listOf(outcome.candidate),
-                                )
-                            } else when (
-                                val application = applyLink(
-                                    edit,
-                                    revision,
-                                    line.lineId,
-                                    outcome.candidate.product,
-                                    outcome.candidate.confidencePermille,
-                                )
-                            ) {
-                                is LinkApplication.Applied -> {
-                                    edit = application.edit
-                                    revision = application.edit.revision
-                                    accumulated += LineResolution(
-                                        line = line.toLinking(
-                                            status = LinkStatus.AUTO_LINKED,
-                                            linkedProductName = outcome.candidate.product.name,
-                                            linkReason = outcome.candidate.reason,
-                                        ),
-                                    )
-                                }
-
-                                LinkApplication.Conflict -> {
-                                    conflicted = true
-                                    accumulated += LineResolution(
-                                        line = line.toLinking(LinkStatus.NEEDS_CHOICE),
-                                    )
-                                }
-
-                                LinkApplication.NotEditable -> return DraftResolution.NotEditable
-
-                                LinkApplication.Unavailable -> accumulated += LineResolution(
-                                    line = line.toLinking(LinkStatus.NEEDS_CHOICE),
-                                )
-                            }
-
-                            is ProductMatchOutcome.Ambiguous -> accumulated += LineResolution(
-                                line = line.toLinking(LinkStatus.NEEDS_CHOICE),
-                                candidates = outcome.candidates,
-                            )
-
-                            is ProductMatchOutcome.Suggestions -> accumulated += LineResolution(
-                                line = line.toLinking(LinkStatus.NEEDS_CHOICE),
-                                candidates = outcome.candidates,
-                            )
-
-                            ProductMatchOutcome.NoMatch -> accumulated += LineResolution(
-                                line = line.toLinking(LinkStatus.NO_MATCH),
-                            )
-                        }
+                ) {
+                    is LinkApplication.Applied -> {
+                        edit = application.edit
+                        revision = application.edit.revision
+                        autoLinksApplied = true
+                    }
+                    LinkApplication.Conflict -> conflicted = true
+                    LinkApplication.NotEditable -> return DraftResolution.NotEditable
+                    LinkApplication.Unavailable -> Unit
+                }
+            }
+            resolutions = steps.map { step ->
+                when (step) {
+                    is LineMatchStep.Resolved -> step.resolution
+                    is LineMatchStep.AutoLink -> if (autoLinksApplied) {
+                        LineResolution(
+                            line = step.line.toLinking(
+                                status = LinkStatus.AUTO_LINKED,
+                                linkedProductName = step.candidate.product.name,
+                                linkReason = step.candidate.reason,
+                            ),
+                        )
+                    } else {
+                        LineResolution(line = step.line.toLinking(LinkStatus.NEEDS_CHOICE))
                     }
                 }
             }
-            resolutions = accumulated
             if (conflicted) {
                 reloads += 1
                 snapshot = loadInvoiceLinesReviewUseCase(draftId)
@@ -483,6 +489,53 @@ class ProductLinkingViewModel @Inject constructor(
                     priceRequiredProduct = product,
                 )
             }
+        }
+    }
+
+    private suspend fun matchUnlinkedLine(
+        line: InvoiceLineEdit,
+        businessId: BusinessId,
+        supplierId: SupplierId?,
+        currency: CurrencyCode,
+        matchCache: MutableMap<ProductMatchQuery, ProductMatchOutcome>,
+    ): LineMatchStep {
+        val query = buildQuery(businessId, supplierId, line)
+        val outcome = if (query == null) {
+            ProductMatchOutcome.NoMatch
+        } else {
+            matchCache.getOrPut(query) { productMatchingUseCase(query) }
+        }
+        return when (outcome) {
+            is ProductMatchOutcome.AutoLinked -> if (
+                outcome.candidate.product.salePrice?.currency != currency
+            ) {
+                LineMatchStep.Resolved(
+                    LineResolution(
+                        line = line.toLinking(LinkStatus.NEEDS_CHOICE),
+                        candidates = listOf(outcome.candidate),
+                    ),
+                )
+            } else {
+                LineMatchStep.AutoLink(line = line, candidate = outcome.candidate)
+            }
+
+            is ProductMatchOutcome.Ambiguous -> LineMatchStep.Resolved(
+                LineResolution(
+                    line = line.toLinking(LinkStatus.NEEDS_CHOICE),
+                    candidates = outcome.candidates,
+                ),
+            )
+
+            is ProductMatchOutcome.Suggestions -> LineMatchStep.Resolved(
+                LineResolution(
+                    line = line.toLinking(LinkStatus.NEEDS_CHOICE),
+                    candidates = outcome.candidates,
+                ),
+            )
+
+            ProductMatchOutcome.NoMatch -> LineMatchStep.Resolved(
+                LineResolution(line = line.toLinking(LinkStatus.NO_MATCH)),
+            )
         }
     }
 
@@ -1150,27 +1203,50 @@ class ProductLinkingViewModel @Inject constructor(
         confidencePermille: Int,
         provenance: PurchaseProductProvenance,
         stagedProduct: StagedPurchaseProduct?,
+    ): LinkApplication = applyCatalogLinks(
+        edit = edit,
+        expectedRevision = expectedRevision,
+        links = listOf(
+            CatalogLinkSpec(
+                lineId = lineId,
+                productId = productId,
+                unitId = unitId,
+                confidencePermille = confidencePermille,
+                provenance = provenance,
+                stagedProduct = stagedProduct,
+            ),
+        ),
+    )
+
+    private suspend fun applyCatalogLinks(
+        edit: InvoiceLinesEdit,
+        expectedRevision: Long,
+        links: List<CatalogLinkSpec>,
     ): LinkApplication {
-        val index = edit.lines.indexOfFirst { it.lineId == lineId }
-        if (index < 0) return LinkApplication.Unavailable
-        val linkedLine = edit.lines[index].copy(
-            linkedProductId = productId,
-            linkedUnitId = unitId,
-            linkConfidence = confidencePermille,
-            productProvenance = provenance,
-            stagedProduct = stagedProduct,
-        )
+        if (links.isEmpty()) return LinkApplication.Applied(edit)
+        val byLineId = links.associateBy(CatalogLinkSpec::lineId)
+        if (byLineId.size != links.size) return LinkApplication.Unavailable
+        val knownLineIds = edit.lines.mapTo(mutableSetOf()) { it.lineId }
+        if (!byLineId.keys.all { it in knownLineIds }) return LinkApplication.Unavailable
+        val updatedLines = edit.lines.map { line ->
+            val spec = byLineId[line.lineId] ?: return@map line
+            line.copy(
+                linkedProductId = spec.productId,
+                linkedUnitId = spec.unitId,
+                linkConfidence = spec.confidencePermille,
+                productProvenance = spec.provenance,
+                stagedProduct = spec.stagedProduct,
+            )
+        }
         val updated = edit.copy(
-            lines = edit.lines.mapIndexed { position, item ->
-                if (position == index) linkedLine else item
-            },
+            lines = updatedLines,
             revision = Math.incrementExact(edit.revision),
         )
         return when (
             saveInvoiceLinesEditUseCase(
                 edit = updated,
                 expectedRevision = expectedRevision,
-                catalogLinkLineIds = setOf(lineId),
+                catalogLinkLineIds = byLineId.keys,
             )
         ) {
             SaveInvoiceLinesEditResult.SAVED,

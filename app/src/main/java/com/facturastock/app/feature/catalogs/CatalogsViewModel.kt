@@ -10,30 +10,35 @@ import com.facturastock.app.domain.model.CatalogMutationResult
 import com.facturastock.app.domain.model.CatalogPage
 import com.facturastock.app.domain.model.CatalogSearch
 import com.facturastock.app.domain.model.CatalogStatus
+import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.InventoryLocation
+import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.Product
 import com.facturastock.app.domain.model.RucValidator
 import com.facturastock.app.domain.model.Supplier
 import com.facturastock.app.domain.model.UnitOfMeasure
+import com.facturastock.app.domain.model.UnitCost
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.LocationId
 import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.domain.model.id.SupplierId
 import com.facturastock.app.domain.model.id.UnitId
 import com.facturastock.app.domain.repository.InventoryLocationRepository
+import com.facturastock.app.domain.repository.ProductEditingRepository
+import com.facturastock.app.domain.repository.ProductEditingResult
+import com.facturastock.app.domain.repository.ProductEditingSnapshot
 import com.facturastock.app.domain.repository.ProductInventoryRepository
 import com.facturastock.app.domain.repository.ProductRepository
+import com.facturastock.app.domain.repository.ProductRegistrationRepository
 import com.facturastock.app.domain.repository.SupplierProductAliasRepository
 import com.facturastock.app.domain.repository.SupplierRepository
 import com.facturastock.app.domain.repository.UnitRepository
 import com.facturastock.app.domain.usecase.ArchiveInventoryLocationCatalogUseCase
-import com.facturastock.app.domain.usecase.ArchiveProductCatalogUseCase
 import com.facturastock.app.domain.usecase.ArchiveSupplierCatalogUseCase
 import com.facturastock.app.domain.usecase.ArchiveUnitCatalogUseCase
 import com.facturastock.app.domain.usecase.LoadProductCatalogDetailUseCase
 import com.facturastock.app.domain.usecase.ObserveAppConfigurationUseCase
 import com.facturastock.app.domain.usecase.RestoreInventoryLocationCatalogUseCase
-import com.facturastock.app.domain.usecase.RestoreProductCatalogUseCase
 import com.facturastock.app.domain.usecase.RestoreSupplierCatalogUseCase
 import com.facturastock.app.domain.usecase.RestoreUnitCatalogUseCase
 import com.facturastock.app.domain.usecase.SaveInventoryLocationCatalogUseCase
@@ -47,19 +52,19 @@ import com.facturastock.app.feature.catalogs.CatalogsContract.Form
 import com.facturastock.app.feature.catalogs.CatalogsContract.Row
 import com.facturastock.app.feature.catalogs.CatalogsContract.Section
 import com.facturastock.app.feature.catalogs.CatalogsContract.State
+import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 
 /**
@@ -67,7 +72,6 @@ import kotlinx.coroutines.flow.map
  * nunca materializa los 5.000 productos para filtrarlos en Compose. Los cambios de consulta se
  * cancelan con `collectLatest` y esperan 250 ms para no saturar SQLite mientras se escribe.
  */
-@OptIn(FlowPreview::class)
 @HiltViewModel
 class CatalogsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
@@ -77,10 +81,12 @@ class CatalogsViewModel @Inject constructor(
     private val units: UnitRepository,
     private val locations: InventoryLocationRepository,
     aliases: SupplierProductAliasRepository,
-    productInventory: ProductInventoryRepository,
+    private val productInventory: ProductInventoryRepository,
     private val uuidGenerator: UuidGenerator,
     private val clock: AppClock,
     dispatcherProvider: DispatcherProvider,
+    private val productRegistration: ProductRegistrationRepository,
+    private val productEditing: ProductEditingRepository,
 ) : UdfViewModel<State, Action, CatalogsContract.Effect>(
     initialState = restoredCatalogsState(savedStateHandle),
     dispatcherProvider = dispatcherProvider,
@@ -99,8 +105,6 @@ class CatalogsViewModel @Inject constructor(
     private val saveLocation = SaveInventoryLocationCatalogUseCase(locations)
     private val archiveSupplier = ArchiveSupplierCatalogUseCase(suppliers)
     private val restoreSupplier = RestoreSupplierCatalogUseCase(suppliers)
-    private val archiveProduct = ArchiveProductCatalogUseCase(products)
-    private val restoreProduct = RestoreProductCatalogUseCase(products)
     private val archiveUnit = ArchiveUnitCatalogUseCase(units)
     private val restoreUnit = RestoreUnitCatalogUseCase(units)
     private val archiveLocation = ArchiveInventoryLocationCatalogUseCase(locations)
@@ -113,20 +117,83 @@ class CatalogsViewModel @Inject constructor(
     )
     private val searchRequests = MutableStateFlow<SearchRequest?>(null)
     private var activeBusinessId: BusinessId? = null
+    private var activeCurrency: CurrencyCode = CurrencyCode.of("PEN")
     private var loadMoreJob: Job? = null
     private var searchVersion: Long = 0L
+    private var saveInFlight = false
+    private var formClosePending = false
+    private var scannerLookupJob: Job? = null
+    private var scannerLookupVersion = 0L
+    private var specialLookupJob: Job? = null
+    private var specialLookupVersion = 0L
+    private var inventoryLookupJob: Job? = null
+    private var inventoryLookupVersion = 0L
+    private val isSalesRegistration = savedStateHandle.contains(RouteArgumentKeys.REGISTRATION_REQUEST_ID) ||
+        savedStateHandle.contains(RouteArgumentKeys.REGISTRATION_BUSINESS_ID)
+    private val salesRegistrationRequestId = savedStateHandle.get<String>(RouteArgumentKeys.REGISTRATION_REQUEST_ID)
+        ?.takeIf { it.isNotBlank() && it.length <= 128 }
+    private val salesRegistrationBusinessId = BusinessId.parse(
+        savedStateHandle.get<String>(RouteArgumentKeys.REGISTRATION_BUSINESS_ID),
+    )
+    private var salesRegistrationEffectSent = false
 
     init {
         executeMain {
-            searchRequests
-                .filterNotNull()
-                .debounce(SEARCH_DEBOUNCE_MILLIS)
-                .collectLatest(::runFirstPageSearch)
+            searchRequests.collectLatest { request ->
+                // Cancelar también al salir del catálogo: null no puede dejar viva una
+                // observación anterior detrás de un editor o de otro negocio.
+                if (request != null) {
+                    delay(SEARCH_DEBOUNCE_MILLIS)
+                    runFirstPageSearch(request)
+                }
+            }
         }
         executeMain {
             observeAppConfiguration().collectLatest { configuration ->
+                if (isSalesRegistration) {
+                    if (salesRegistrationRequestId == null ||
+                        salesRegistrationBusinessId == null ||
+                        configuration.activeBusinessId != salesRegistrationBusinessId
+                    ) {
+                        cancelInventoryLookup()
+                        cancelScannerLookup()
+                        clearInventoryForm()
+                        clearScannedForm()
+                        loadMoreJob?.cancel()
+                        searchRequests.value = null
+                        activeBusinessId = null
+                        updateState {
+                            copy(form = null, detail = null, rows = emptyList(), unitOptions = emptyList(),
+                                locationOptions = emptyList(), isLoading = false, isSaving = false,
+                                failure = Failure.NO_ACTIVE_BUSINESS)
+                        }
+                        savedStateHandle[SALES_REGISTRATION_RESULT_KEY] = arrayListOf("", "")
+                        completeSalesRegistration()
+                        return@collectLatest
+                    }
+                    if (savedStateHandle.contains(SALES_REGISTRATION_RESULT_KEY)) {
+                        emitSalesRegistrationCompletion()
+                        return@collectLatest
+                    }
+                }
+                activeCurrency = configuration.currency
+                updateState { copy(currency = configuration.currency) }
                 val nextBusinessId = configuration.activeBusinessId
+                val specialBusiness = savedStateHandle.get<ArrayList<String>>(SPECIAL_FORM_KEY)?.firstOrNull()
+                if (hasSpecialEntry() && (nextBusinessId == null ||
+                        (activeBusinessId != null && activeBusinessId != nextBusinessId) ||
+                        (specialBusiness != null && specialBusiness != nextBusinessId.value))) {
+                    clearSpecialForm()
+                    updateState { copy(form = null, isSaving = false) }
+                    emitEffect(CatalogsContract.Effect.Back)
+                }
                 if (nextBusinessId == null) {
+                    val leavingInventoryEditor = activeBusinessId != null && hasInventoryEntry()
+                    cancelInventoryLookup()
+                    if (leavingInventoryEditor) clearInventoryForm()
+                    cancelScannerLookup()
+                    clearScannedForm()
+                    savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
                     loadMoreJob?.cancel()
                     searchRequests.value = null
                     activeBusinessId = null
@@ -147,7 +214,19 @@ class CatalogsViewModel @Inject constructor(
                             showRucChecksumWarning = false,
                         )
                     }
+                    if (leavingInventoryEditor) emitEffect(CatalogsContract.Effect.Back)
+                    else if (hasInventoryEntry()) updateState {
+                        copy(isInventoryEntryPending = true, inventoryEntryFailure = Failure.NO_ACTIVE_BUSINESS)
+                    }
                 } else if (nextBusinessId != activeBusinessId) {
+                    val leavingInventoryEditor = activeBusinessId != null && hasInventoryEntry()
+                    cancelInventoryLookup()
+                    if (leavingInventoryEditor) clearInventoryForm()
+                    cancelScannerLookup()
+                    if (activeBusinessId != null) {
+                        clearScannedForm()
+                        savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
+                    }
                     loadMoreJob?.cancel()
                     searchRequests.value = null
                     activeBusinessId = nextBusinessId
@@ -168,6 +247,12 @@ class CatalogsViewModel @Inject constructor(
                             showRucChecksumWarning = false,
                         )
                     }
+                    when {
+                        hasSpecialEntry() -> applySpecialRegistration()
+                        hasInventoryEntry() -> applyInventoryEdit()
+                        else -> applyBarcodePrefill()
+                    }
+                    if (leavingInventoryEditor) emitEffect(CatalogsContract.Effect.Back)
                     requestFirstPage()
                     loadOptions(nextBusinessId)
                 }
@@ -176,12 +261,52 @@ class CatalogsViewModel @Inject constructor(
     }
 
     override fun onAction(action: Action) {
+        if (formClosePending && (action == Action.SaveForm ||
+                action == Action.AcceptRucChecksumAndSave || action == Action.CloseForm)) return
+        if (isSalesRegistration && (savedStateHandle.contains(SALES_REGISTRATION_RESULT_KEY) ||
+                salesRegistrationRequestId == null || activeBusinessId != salesRegistrationBusinessId)) {
+            if (action == Action.CloseForm) executeMain { completeSalesRegistration() }
+            return
+        }
+        // Esta ruta edita metadatos del producto resuelto; no puede abrir altas ni
+        // cambiar la identidad primaria o las unidades por eventos rezagados.
+        if (hasInventoryEntry() && when (action) {
+            is Action.ProductNameChanged, is Action.ProductPriceChanged,
+            is Action.ProductSkuChanged, is Action.ProductBarcodeChanged,
+            is Action.ProductQuantityChanged, is Action.ProductPurchasePriceChanged,
+            is Action.ProductLocationSelected,
+            Action.SaveForm, Action.CloseForm, Action.Retry -> false
+            else -> true
+        }) return
+        if (hasSpecialEntry() && when (action) {
+            is Action.ProductNameChanged, is Action.ProductPriceChanged,
+            is Action.ProductQuantityChanged, is Action.ProductPurchasePriceChanged,
+            is Action.ProductLocationSelected, Action.SaveForm, Action.CloseForm, Action.Retry -> false
+            else -> true
+        }) return
+        if (uiState.value.isSpecialEntryPending && action != Action.Retry && action != Action.CloseForm) return
+        if (uiState.value.isInventoryEntryPending && action != Action.Retry && action != Action.CloseForm) return
+        if (uiState.value.isScannerEntryPending && action != Action.Retry && action != Action.CloseForm) return
         when (action) {
             is Action.SectionSelected -> changeSearch(section = action.section)
             is Action.QueryChanged -> changeSearch(query = action.value.take(MAX_QUERY_LENGTH))
-            is Action.StatusFilterSelected -> changeSearch(statusFilter = action.filter)
+            is Action.StatusFilterSelected -> if (uiState.value.section != Section.PRODUCTS) {
+                changeSearch(statusFilter = action.filter)
+            }
             Action.LoadMore -> loadMore()
             Action.Retry -> executeMain {
+                if (uiState.value.isSpecialEntryPending) {
+                    applySpecialRegistration()
+                    return@executeMain
+                }
+                if (uiState.value.isInventoryEntryPending) {
+                    applyInventoryEdit()
+                    return@executeMain
+                }
+                if (uiState.value.isScannerEntryPending) {
+                    applyBarcodePrefill()
+                    return@executeMain
+                }
                 updateState { copy(failure = null, isLoading = true) }
                 requestFirstPage()
             }
@@ -190,13 +315,35 @@ class CatalogsViewModel @Inject constructor(
             is Action.RowSelected -> openDetail(action.row)
             Action.CloseDetail -> executeMain { updateState { copy(detail = null, failure = null) } }
             Action.EditSelected -> openEditForm()
-            Action.CloseForm -> executeMain {
-                updateState {
-                    copy(
-                        form = null,
-                        failure = null,
-                        showRucChecksumWarning = false,
-                    )
+            Action.CloseForm -> {
+                if (saveInFlight) return
+                // La cancelación gana a cualquier Guardar rezagado aunque Main aún no haya
+                // ejecutado la limpieza del formulario. Un guardado ya aceptado sí conserva su turno.
+                formClosePending = true
+                executeMain {
+                    try {
+                        val returnToSpecial = hasSpecialEntry()
+                        clearSpecialForm()
+                        val returnToInventory = hasInventoryEntry()
+                        cancelInventoryLookup()
+                        clearInventoryForm()
+                        val returnToScanner = uiState.value.isScannerEntryPending ||
+                            (uiState.value.form as? Form.ProductForm)?.isScannerOrigin == true
+                        cancelScannerLookup()
+                        clearScannedForm()
+                        savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
+                        updateState {
+                            copy(
+                                form = null,
+                                failure = null,
+                                showRucChecksumWarning = false,
+                            )
+                        }
+                        if (isSalesRegistration) completeSalesRegistration()
+                        else if (returnToScanner || returnToInventory || returnToSpecial) emitEffect(CatalogsContract.Effect.Back)
+                    } finally {
+                        formClosePending = false
+                    }
                 }
             }
 
@@ -205,16 +352,43 @@ class CatalogsViewModel @Inject constructor(
             Action.DismissRucChecksumWarning -> executeMain {
                 updateState { copy(showRucChecksumWarning = false) }
             }
-            is Action.ProductNameChanged -> updateProductForm { copy(title = action.value) }
-            is Action.ProductSkuChanged -> updateProductForm { copy(sku = action.value.take(64)) }
+            is Action.ProductNameChanged -> updateProductForm {
+                copy(title = if (isInventoryOrigin) action.value.take(201) else action.value)
+            }
+            is Action.ProductSkuChanged -> updateProductForm {
+                if (isInventoryOrigin) copy(
+                    sku = action.value.take(65),
+                    isSkuInputTooLong = action.value.length > 65,
+                ) else copy(sku = action.value.take(64))
+            }
             is Action.ProductBarcodeChanged -> updateProductForm {
-                // No truncar: guardar otro identificador distinto al pegado sería una asociación
-                // silenciosa. El contrato BarcodeValue lo mostrará inválido al enviar.
-                copy(barcode = action.value)
+                // El borrador de Inventario está acotado. Un exceso queda marcado inválido:
+                // jamás se guarda un identificador distinto por recortar el texto pegado.
+                when {
+                    isScannerOrigin -> this
+                    isInventoryOrigin -> copy(
+                        barcode = action.value.take(BarcodeValue.MAX_LENGTH + 1),
+                        isBarcodeInputTooLong = action.value.length > BarcodeValue.MAX_LENGTH + 1,
+                    )
+                    else -> copy(barcode = action.value)
+                }
+            }
+            is Action.ProductPriceChanged -> updateProductForm {
+                // El carácter 25 conserva el exceso: el parser lo rechaza antes de trim.
+                copy(salePrice = if (isInventoryOrigin) action.value.take(25) else action.value)
+            }
+            is Action.ProductPurchasePriceChanged -> updateProductForm {
+                if (isInventoryOrigin && (inventorySnapshot?.inventoryEditable != true || locationId == null)) this
+                else copy(purchasePrice = if (isInventoryOrigin) action.value.take(129) else action.value)
+            }
+            is Action.ProductQuantityChanged -> updateProductForm {
+                if (isInventoryOrigin && (inventorySnapshot?.inventoryEditable != true || locationId == null)) this
+                else copy(quantity = if (isInventoryOrigin) action.value.take(129) else action.value)
             }
             is Action.ProductUnitSelected -> updateProductForm { copy(unitId = action.unitId) }
             is Action.ProductLocationSelected -> updateProductForm {
-                copy(locationId = action.locationId)
+                if (isInventoryOrigin) selectInventoryLocation(action.locationId)
+                else copy(locationId = action.locationId)
             }
             is Action.ProductPurchaseUnitSelected -> updateProductForm {
                 copy(
@@ -262,12 +436,15 @@ class CatalogsViewModel @Inject constructor(
         statusFilter: CatalogsContract.StatusFilter? = null,
     ) {
         executeMain {
+            clearScannedForm()
             loadMoreJob?.cancel()
             updateState {
                 copy(
                     section = section ?: this.section,
                     query = query ?: this.query,
-                    statusFilter = statusFilter ?: this.statusFilter,
+                    statusFilter = if ((section ?: this.section) == Section.PRODUCTS) {
+                        CatalogsContract.StatusFilter.ACTIVE
+                    } else statusFilter ?: this.statusFilter,
                     rows = emptyList(),
                     total = 0,
                     hasMore = false,
@@ -288,12 +465,21 @@ class CatalogsViewModel @Inject constructor(
 
     private fun requestFirstPage() {
         val businessId = activeBusinessId ?: return
+        if (hasSpecialEntry() || hasInventoryEntry() || uiState.value.isScannerEntryPending) {
+            searchRequests.value = null
+            updateState { copy(isLoading = false, isLoadingMore = false) }
+            return
+        }
+        if (uiState.value.section == Section.PRODUCTS) {
+            updateState { copy(statusFilter = CatalogsContract.StatusFilter.ACTIVE) }
+            savedStateHandle[STATUS_KEY] = CatalogsContract.StatusFilter.ACTIVE.name
+        }
         val state = uiState.value
         searchRequests.value = SearchRequest(
             businessId = businessId,
             section = state.section,
             query = state.query,
-            status = state.statusFilter.status,
+            status = if (state.section == Section.PRODUCTS) CatalogStatus.ACTIVE else state.statusFilter.status,
             version = ++searchVersion,
         )
     }
@@ -335,7 +521,7 @@ class CatalogsViewModel @Inject constructor(
             businessId = businessId,
             section = state.section,
             query = state.query,
-            status = state.statusFilter.status,
+            status = if (state.section == Section.PRODUCTS) CatalogStatus.ACTIVE else state.statusFilter.status,
             version = searchRequests.value?.version ?: searchVersion,
         )
         loadMoreJob = executeIo(
@@ -403,8 +589,11 @@ class CatalogsViewModel @Inject constructor(
     private fun openCreateForm() {
         val businessId = activeBusinessId ?: return
         executeMain {
+            clearScannedForm()
+            val defaultUnitId = uiState.value.unitOptions.firstOrNull { it.status == CatalogStatus.ACTIVE }?.unitId
+            val defaultLocationId = uiState.value.locationOptions.firstOrNull { it.status == CatalogStatus.ACTIVE }?.locationId
             val form = when (uiState.value.section) {
-                Section.PRODUCTS -> Form.ProductForm()
+                Section.PRODUCTS -> Form.ProductForm(unitId = defaultUnitId, locationId = defaultLocationId)
                 Section.SUPPLIERS -> Form.SupplierForm()
                 Section.UNITS -> Form.UnitForm()
                 Section.LOCATIONS -> Form.LocationForm()
@@ -416,11 +605,347 @@ class CatalogsViewModel @Inject constructor(
         }
     }
 
+    private fun hasInventoryEntry(): Boolean =
+        savedStateHandle.get<String>(RouteArgumentKeys.EDIT_PRODUCT_ID) != null ||
+            savedStateHandle.get<ArrayList<String>>(INVENTORY_FORM_KEY) != null
+
+    /** El ID de navegación es la única identidad; también admite productos sin código de barras. */
+    private fun applyInventoryEdit() {
+        val businessId = activeBusinessId ?: return
+        val fields = savedStateHandle.get<ArrayList<String>>(INVENTORY_FORM_KEY)
+        val rawId = savedStateHandle.get<String>(RouteArgumentKeys.EDIT_PRODUCT_ID)
+        if (fields == null && rawId == null) return
+        cancelInventoryLookup()
+        cancelScannerLookup()
+        searchRequests.value = null
+        loadMoreJob?.cancel()
+        loadMoreJob = null
+        clearScannedForm()
+        savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
+        val requestVersion = inventoryLookupVersion
+        val currency = activeCurrency
+        updateState {
+            copy(section = Section.PRODUCTS, form = null, detail = null, failure = null,
+                isLoading = false, isLoadingMore = false,
+                isInventoryEntryPending = true, inventoryEntryFailure = null,
+                isInventoryBalanceLoading = true, inventoryBalanceFailure = null,
+                inventoryBalances = emptyList())
+        }
+        savedStateHandle[SECTION_KEY] = Section.PRODUCTS.name
+        inventoryLookupJob = executeIo(
+            operation = {
+                val draft = fields?.let {
+                    restoreInventoryProductForm(it) ?: throw InventoryEntryException(Failure.INVALID_FIELDS)
+                }
+                val productId = ProductId.parse(rawId ?: draft?.productId?.value.orEmpty())
+                    ?: throw InventoryEntryException(Failure.NOT_FOUND)
+                if (draft != null && (draft.original?.businessId != businessId || draft.productId != productId)) {
+                    throw InventoryEntryException(Failure.NOT_FOUND)
+                }
+                val loaded = productEditing.load(businessId, productId, currency)
+                    ?.takeIf { it.product.businessId == businessId && it.product.productId == productId }
+                    ?: throw InventoryEntryException(Failure.NOT_FOUND)
+                // Releer verifica existencia/capacidad, sin renovar versiones producto/saldos.
+                if (draft?.inventorySnapshot != null) {
+                    draft.copy(inventorySnapshot = draft.inventorySnapshot.copy(inventoryEditable = loaded.inventoryEditable))
+                } else {
+                    val base = draft ?: inventoryProductForm(loaded.product, currency)
+                    base.withInventorySnapshot(loaded.copy(product = requireNotNull(base.original)))
+                }
+            },
+            onSuccess = { form ->
+                if (businessId != activeBusinessId || requestVersion != inventoryLookupVersion) return@executeIo
+                inventoryLookupJob = null
+                updateState {
+                    copy(form = form, isInventoryEntryPending = false, inventoryEntryFailure = null,
+                        isInventoryBalanceLoading = false, inventoryBalanceFailure = null,
+                        inventoryBalances = requireNotNull(form.inventorySnapshot).toBalanceOptions(),
+                        isInventoryStockEditable = form.inventorySnapshot.inventoryEditable)
+                }
+                persistInventoryForm()
+            },
+            onFailure = { error ->
+                if (businessId != activeBusinessId || requestVersion != inventoryLookupVersion) return@executeIo
+                inventoryLookupJob = null
+                updateState {
+                    val failure = (error as? InventoryEntryException)?.failure ?: Failure.LOAD_FAILED
+                    copy(inventoryEntryFailure = failure, isInventoryBalanceLoading = false, inventoryBalanceFailure = failure)
+                }
+            },
+        )
+    }
+
+    private fun cancelInventoryLookup() {
+        inventoryLookupVersion++
+        inventoryLookupJob?.cancel()
+        inventoryLookupJob = null
+        updateState {
+            copy(isInventoryEntryPending = false, inventoryEntryFailure = null,
+                isInventoryBalanceLoading = false, inventoryBalanceFailure = null, inventoryBalances = emptyList())
+        }
+    }
+
+    private fun persistInventoryForm() {
+        val form = uiState.value.form as? Form.ProductForm ?: return
+        if (!form.isInventoryOrigin || form.original?.businessId != activeBusinessId) return
+        savedStateHandle[INVENTORY_FORM_KEY] = form.inventoryDraftFields()
+    }
+
+    private fun clearInventoryForm() {
+        savedStateHandle.remove<ArrayList<String>>(INVENTORY_FORM_KEY)
+        savedStateHandle[RouteArgumentKeys.EDIT_PRODUCT_ID] = null
+    }
+
+    private class InventoryEntryException(val failure: Failure) : RuntimeException()
+
+    /** Resuelve la identidad antes de permitir guardar; un fallo de lectura nunca equivale a alta. */
+    private fun hasSpecialEntry(): Boolean =
+        savedStateHandle.get<String>(SPECIAL_ROUTE_KEY) == "true" || savedStateHandle.contains(SPECIAL_FORM_KEY)
+
+    private fun clearSpecialForm() {
+        specialLookupVersion += 1
+        specialLookupJob?.cancel()
+        specialLookupJob = null
+        savedStateHandle.remove<ArrayList<String>>(SPECIAL_FORM_KEY)
+        savedStateHandle[SPECIAL_ROUTE_KEY] = null
+        updateState { copy(isSpecialEntryPending = false, specialEntryFailure = null) }
+    }
+
+    private fun persistSpecialForm() {
+        val form = uiState.value.form as? Form.ProductForm ?: return
+        if (!form.isSpecialRegistration) return
+        val businessId = activeBusinessId ?: return
+        val productId = form.registrationProductId ?: return
+        savedStateHandle[SPECIAL_FORM_KEY] = arrayListOf(
+            businessId.value, productId.value, form.title, form.quantity, form.purchasePrice,
+            form.salePrice, form.unitId?.value.orEmpty(), form.locationId?.value.orEmpty(),
+        )
+    }
+
+    /** El identificador reservado evita repetir las existencias si el proceso cae tras el commit. */
+    private fun applySpecialRegistration() {
+        val businessId = activeBusinessId ?: return
+        val fields = savedStateHandle.get<ArrayList<String>>(SPECIAL_FORM_KEY)
+        val restoredId = fields?.getOrNull(1)?.let(ProductId::parse)
+        if (fields != null && (fields.size != 8 || fields[0] != businessId.value || restoredId == null)) {
+            clearSpecialForm()
+            executeMain { emitEffect(CatalogsContract.Effect.Back) }
+            return
+        }
+        val productId = restoredId ?: ProductId.from(uuidGenerator.newUuid())
+        val draft = Form.ProductForm(
+            isSpecialRegistration = true, registrationProductId = productId,
+            title = fields?.getOrNull(2).orEmpty().take(201),
+            quantity = fields?.getOrNull(3).orEmpty().take(25),
+            purchasePrice = fields?.getOrNull(4).orEmpty().take(25),
+            salePrice = fields?.getOrNull(5).orEmpty().take(25),
+            locationId = fields?.getOrNull(7)?.takeIf(String::isNotBlank)?.let(LocationId::parse),
+        )
+        // Guardar identidad y campos antes de la primera lectura suspendida.
+        savedStateHandle[SPECIAL_FORM_KEY] = arrayListOf(
+            businessId.value, productId.value, draft.title, draft.quantity, draft.purchasePrice,
+            draft.salePrice, "", draft.locationId?.value.orEmpty(),
+        )
+        specialLookupJob?.cancel()
+        val generation = ++specialLookupVersion
+        updateState { copy(form = null, detail = null, isSpecialEntryPending = true, specialEntryFailure = null) }
+        specialLookupJob = executeIo(
+            operation = {
+                val existing = products.findById(productId)
+                val kilogram = findActiveKilogram(businessId)
+                val locationId = draft.locationId
+                    ?: locations.search(businessId, CatalogSearch(status = CatalogStatus.ACTIVE, limit = 1)).items.firstOrNull()?.locationId
+                existing to draft.copy(unitId = kilogram?.unitId, locationId = locationId)
+            },
+            onSuccess = { (existing, form) ->
+                if (activeBusinessId != businessId || generation != specialLookupVersion) return@executeIo
+                specialLookupJob = null
+                if (existing != null) {
+                    // Un alta confirmada conserva su identidad; nunca vuelve a sumar kilos.
+                    clearSpecialForm()
+                    emitEffect(CatalogsContract.Effect.Back)
+                } else {
+                    updateState { copy(form = form, isSpecialEntryPending = false, specialEntryFailure = null, failure = null) }
+                    persistSpecialForm()
+                }
+            },
+            onFailure = {
+                if (activeBusinessId == businessId && generation == specialLookupVersion) {
+                    updateState { copy(specialEntryFailure = Failure.LOAD_FAILED) }
+                }
+            },
+        )
+    }
+
+    private suspend fun findActiveKilogram(businessId: BusinessId): UnitOfMeasure? =
+        units.findByCode(businessId, "KGM")?.takeIf { it.businessId == businessId && it.status == CatalogStatus.ACTIVE }
+            ?: units.findByCode(businessId, "KG")?.takeIf { it.businessId == businessId && it.status == CatalogStatus.ACTIVE }
+
+    private suspend fun resolveSpecialRegistration(form: Form.ProductForm, businessId: BusinessId): Form.ProductForm {
+        if (activeBusinessId != businessId || !hasSpecialEntry()) throw InventoryEntryException(Failure.STALE)
+        val warehouse = form.locationId?.let { locations.findById(it) }
+            ?.takeIf { it.businessId == businessId && it.status == CatalogStatus.ACTIVE }
+            ?: throw InventoryEntryException(Failure.INVALID_FIELDS)
+        var kilogram = findActiveKilogram(businessId)
+        if (kilogram == null) {
+            val code = listOf("KGM", "KG").firstOrNull { units.findByCode(businessId, it) == null }
+                ?: throw InventoryEntryException(Failure.INVALID_FIELDS)
+            if (activeBusinessId != businessId || !hasSpecialEntry()) throw InventoryEntryException(Failure.STALE)
+            val now = clock.now()
+            val unit = UnitOfMeasure(UnitId.from(uuidGenerator.newUuid()), businessId, code, "Kilogramo", "kg",
+                createdAt = now, updatedAt = now)
+            // Crear solo tras validar el formulario y el almacén. El alta de producto + kilos
+            // continúa en la única transacción de ProductRegistrationRepository.
+            when (val result = saveUnit(unit)) {
+                is CatalogMutationResult.Saved -> kilogram = result.value
+                is CatalogMutationResult.Duplicate -> kilogram = findActiveKilogram(businessId)
+                else -> throw InventoryEntryException(Failure.INVALID_FIELDS)
+            }
+        }
+        return form.copy(unitId = kilogram?.unitId ?: throw InventoryEntryException(Failure.INVALID_FIELDS),
+            locationId = warehouse.locationId, barcode = "", purchaseUnitId = null, purchaseFactor = "")
+    }
+
+    private fun applyBarcodePrefill() {
+        val businessId = activeBusinessId ?: return
+        val fields = savedStateHandle.get<ArrayList<String>>(SCANNED_FORM_KEY)
+        val raw = savedStateHandle.get<String>(RouteArgumentKeys.PREFILL_BARCODE)
+        if (fields == null && raw == null) return
+        val barcode = BarcodeValue.parse(fields?.getOrNull(1) ?: raw.orEmpty())?.value
+        if (fields != null && (fields.size !in setOf(8, SCANNED_FORM_FIELD_COUNT) ||
+                fields.firstOrNull() != businessId.value || barcode == null || barcode != fields[1])) {
+            clearScannedForm()
+            savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
+            return
+        }
+        // La ruta con argumento vacío conserva el alta manual normal.
+        if (fields == null && raw.isNullOrBlank()) {
+            openCreateForm()
+            savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
+            return
+        }
+        cancelScannerLookup()
+        val requestVersion = scannerLookupVersion
+        updateState {
+            copy(section = Section.PRODUCTS, form = null, detail = null,
+                isScannerEntryPending = true, scannerEntryFailure = null)
+        }
+        savedStateHandle[SECTION_KEY] = Section.PRODUCTS.name
+        scannerLookupJob = executeIo(
+            operation = {
+                if (barcode == null) throw ScannerEntryException(Failure.INVALID_FIELDS)
+                val existingId = fields?.getOrNull(8)?.takeIf(String::isNotBlank)
+                val product = if (existingId != null) {
+                    val id = ProductId.parse(existingId)
+                        ?: throw ScannerEntryException(Failure.NOT_FOUND)
+                    products.findById(id)?.takeIf { it.businessId == businessId && it.barcode == barcode }
+                        ?: throw ScannerEntryException(Failure.NOT_FOUND)
+                } else {
+                    products.findByBarcode(businessId, barcode)
+                }
+                val base = if (product != null) {
+                    val expectedVersion = fields?.getOrNull(9)?.toLongOrNull() ?: product.version
+                    scannerEditForm(product.copy(version = expectedVersion))
+                } else {
+                    Form.ProductForm(barcode = barcode, isScannedRegistration = true)
+                }
+                // Si un alta pendiente ya existe al restaurar, se abre su ficha sin aplicar la
+                // cantidad del alta como existencias totales ni registrar un segundo movimiento.
+                if (fields == null || (product != null && existingId == null)) base else base.copy(
+                    title = fields[2], quantity = fields[3], purchasePrice = fields[4],
+                    salePrice = fields[5], unitId = UnitId.parse(fields[6]),
+                    locationId = LocationId.parse(fields[7]),
+                    sku = fields.getOrNull(10) ?: base.sku,
+                    purchaseUnitId = if (fields.size == SCANNED_FORM_FIELD_COUNT) UnitId.parse(fields[11]) else base.purchaseUnitId,
+                    purchaseFactor = fields.getOrNull(12) ?: base.purchaseFactor,
+                )
+            },
+            onSuccess = { resolved ->
+                if (businessId != activeBusinessId || requestVersion != scannerLookupVersion) return@executeIo
+                scannerLookupJob = null
+                if (resolved.isEditing) {
+                    // El escaneo de un producto existente usa el mismo editor de Inventario.
+                    // Conserva metadatos y CAS del borrador anterior; cantidad/costo se releen
+                    // como existencias actuales, nunca se trasladan desde un alta pendiente.
+                    val draft = inventoryProductForm(requireNotNull(resolved.original), activeCurrency).copy(
+                        title = resolved.title,
+                        sku = resolved.sku,
+                        salePrice = resolved.salePrice,
+                    )
+                    savedStateHandle[INVENTORY_FORM_KEY] = draft.inventoryDraftFields()
+                    savedStateHandle[RouteArgumentKeys.EDIT_PRODUCT_ID] = requireNotNull(draft.productId).value
+                    applyInventoryEdit()
+                    return@executeIo
+                }
+                val form = resolved.copy(
+                    unitId = resolved.unitId ?: uiState.value.unitOptions.firstOrNull { it.status == CatalogStatus.ACTIVE }?.unitId,
+                    locationId = resolved.locationId ?: uiState.value.locationOptions.firstOrNull { it.status == CatalogStatus.ACTIVE }?.locationId,
+                )
+                updateState { copy(form = form, isScannerEntryPending = false, scannerEntryFailure = null, failure = null) }
+                persistScannedForm()
+                savedStateHandle[RouteArgumentKeys.PREFILL_BARCODE] = null
+            },
+            onFailure = { error ->
+                if (businessId != activeBusinessId || requestVersion != scannerLookupVersion) return@executeIo
+                scannerLookupJob = null
+                updateState { copy(scannerEntryFailure = (error as? ScannerEntryException)?.failure ?: Failure.LOAD_FAILED) }
+            },
+        )
+    }
+
+    private fun scannerEditForm(product: Product) = Form.ProductForm(
+        productId = product.productId, title = product.name, sku = product.sku.orEmpty(),
+        barcode = product.barcode.orEmpty(), unitId = product.unitId, locationId = product.locationId,
+        purchaseUnitId = product.purchaseUnitId,
+        purchaseFactor = product.purchaseFactor?.toPlainString().orEmpty(),
+        salePrice = product.salePrice?.toMajor()?.toPlainString().orEmpty(),
+        // No precargar existencias: guardar solo metadatos no debe generar un ajuste de stock.
+        quantity = "", original = product, isScannerOrigin = true,
+    )
+
+    private fun cancelScannerLookup() {
+        scannerLookupVersion++
+        scannerLookupJob?.cancel()
+        scannerLookupJob = null
+        updateState { copy(isScannerEntryPending = false, scannerEntryFailure = null) }
+    }
+
+    private class ScannerEntryException(val failure: Failure) : RuntimeException()
+
+    /** Un solo valor compatible con SavedState conserva campos, identidad y versión CAS. */
+    private fun persistScannedForm() {
+        if (uiState.value.isScannerEntryPending) return
+        val businessId = activeBusinessId ?: return
+        val form = uiState.value.form as? Form.ProductForm
+        if (form == null || !form.isScannerOrigin) {
+            clearScannedForm()
+            return
+        }
+        savedStateHandle[SCANNED_FORM_KEY] = arrayListOf(
+            businessId.value, form.barcode, form.title, form.quantity, form.purchasePrice,
+            form.salePrice, form.unitId?.value.orEmpty(), form.locationId?.value.orEmpty(),
+            form.productId?.value.orEmpty(), form.original?.version?.toString().orEmpty(),
+            form.sku, form.purchaseUnitId?.value.orEmpty(), form.purchaseFactor,
+        )
+    }
+
+    private fun clearScannedForm() {
+        savedStateHandle.remove<ArrayList<String>>(SCANNED_FORM_KEY)
+    }
+
     private fun openEditForm() {
         executeMain {
             val row = uiState.value.detail?.row ?: return@executeMain
+            clearScannedForm()
             val form = when (row) {
                 is Row.ProductRow -> row.value.let { product ->
+                    val productDetail = uiState.value.detail as? Detail.ProductDetail
+                    val preferredStock = productDetail?.catalogDetail?.inventory?.positions
+                        ?.firstOrNull { position -> position.locationId == product.locationId }
+                        ?.quantityOnHand
+                        ?.toPlainString()
+                    val currentStock = preferredStock
+                        ?: productDetail?.positions?.firstOrNull()?.quantity.orEmpty()
                     Form.ProductForm(
                         productId = product.productId,
                         title = product.name,
@@ -430,6 +955,8 @@ class CatalogsViewModel @Inject constructor(
                         locationId = product.locationId,
                         purchaseUnitId = product.purchaseUnitId,
                         purchaseFactor = product.purchaseFactor?.toPlainString().orEmpty(),
+                        salePrice = product.salePrice?.toMajor()?.toPlainString().orEmpty(),
+                        quantity = currentStock,
                         original = product,
                     )
                 }
@@ -531,9 +1058,22 @@ class CatalogsViewModel @Inject constructor(
     }
 
     private fun saveForm(checksumAccepted: Boolean) {
+        if (saveInFlight || formClosePending) return
         val form = uiState.value.form ?: return
         val businessId = activeBusinessId ?: return
-        if (form is Form.ProductForm && !BarcodeValue.isValidOptional(form.barcode)) {
+        if (isSalesRegistration && (salesRegistrationRequestId == null ||
+                businessId != salesRegistrationBusinessId || savedStateHandle.contains(SALES_REGISTRATION_RESULT_KEY))) return
+        if (form is Form.ProductForm && form.isInventoryOrigin &&
+            (uiState.value.isInventoryBalanceLoading || uiState.value.inventoryBalanceFailure != null)
+        ) return
+        val currency = (form as? Form.ProductForm)?.saleCurrency ?: activeCurrency
+        if (form is Form.ProductForm && form.isInventoryOrigin &&
+            (form.original?.businessId != businessId || form.productId != form.original.productId)
+        ) {
+            executeMain { updateState { copy(failure = Failure.NOT_FOUND) } }
+            return
+        }
+        if (form is Form.ProductForm && !form.hasValidProductFields(currency)) {
             executeMain { updateState { copy(failure = Failure.INVALID_FIELDS) } }
             return
         }
@@ -549,11 +1089,7 @@ class CatalogsViewModel @Inject constructor(
                 return
             }
         }
-        val candidate = buildCandidate(form, businessId)
-        if (candidate == null) {
-            executeMain { updateState { copy(failure = Failure.INVALID_FIELDS) } }
-            return
-        }
+        saveInFlight = true
         executeIo(
             before = {
                 updateState {
@@ -565,8 +1101,70 @@ class CatalogsViewModel @Inject constructor(
                 }
             },
             operation = {
+                val resolvedForm = if (form is Form.ProductForm && form.isSpecialRegistration) {
+                    resolveSpecialRegistration(form, businessId)
+                } else if (form is Form.ProductForm && !form.isInventoryOrigin &&
+                    (form.unitId == null || (form.locationId == null &&
+                        (!form.isScannerOrigin || !form.isEditing || form.quantity.isNotBlank())))
+                ) {
+                    val defaultUnit = form.unitId ?: units.search(businessId, CatalogSearch(limit = 10)).items
+                        .firstOrNull { it.status == CatalogStatus.ACTIVE }?.unitId
+                    val defaultLocation = form.locationId ?: locations.search(businessId, CatalogSearch(limit = 10)).items
+                        .firstOrNull { it.status == CatalogStatus.ACTIVE }?.locationId
+                    form.copy(unitId = defaultUnit, locationId = defaultLocation)
+                } else {
+                    form
+                }
+                val candidate = buildCandidate(resolvedForm, businessId, currency)
+                    ?: throw IllegalArgumentException("Campos inválidos en formulario")
                 when (candidate) {
-                    is Product -> saveProduct(candidate)
+                    is Product -> {
+                        if (resolvedForm is Form.ProductForm && (resolvedForm.isScannedRegistration || resolvedForm.isSpecialRegistration)) {
+                            if (resolvedForm.isSpecialRegistration) {
+                                if (activeBusinessId != businessId || !hasSpecialEntry()) throw InventoryEntryException(Failure.STALE)
+                                val existing = products.findById(candidate.productId)
+                                if (existing != null) {
+                                    if (existing.businessId != businessId || existing.barcode != null || existing.unitId != candidate.unitId) {
+                                        return@executeIo CatalogMutationResult.Stale
+                                    }
+                                    return@executeIo CatalogMutationResult.Saved(existing)
+                                }
+                            }
+                            if (resolvedForm.isSpecialRegistration && (activeBusinessId != businessId || !hasSpecialEntry())) {
+                                throw InventoryEntryException(Failure.STALE)
+                            }
+                            return@executeIo productRegistration.register(
+                                product = candidate,
+                                quantity = requireNotNull(resolvedForm.quantity.productDecimalOrNull()),
+                                unitCost = UnitCost.of(
+                                    requireNotNull(resolvedForm.purchasePrice.productDecimalOrNull()),
+                                    currency,
+                                ),
+                            )
+                        }
+                        val result = if ((resolvedForm as? Form.ProductForm)?.isInventoryOrigin == true) {
+                            productEditing.save(
+                                expected = requireNotNull(resolvedForm.inventorySnapshot),
+                                candidate = candidate,
+                                stockEdits = requireNotNull(resolvedForm.inventoryStockEditsOrNull()),
+                            ).toCatalogResult()
+                        } else saveProduct(candidate)
+                        val productForm = resolvedForm as? Form.ProductForm
+                        if (result is CatalogMutationResult.Saved && productForm != null && !productForm.isInventoryOrigin && productForm.quantity.isNotBlank()) {
+                            val qty = productForm.quantity.productDecimalOrNull()
+                            val locId = candidate.locationId
+                            if (qty != null && locId != null) {
+                                productInventory.setStock(
+                                    businessId = businessId,
+                                    productId = result.value.productId,
+                                    locationId = locId,
+                                    quantity = qty,
+                                    currency = currency,
+                                )
+                            }
+                        }
+                        result
+                    }
                     is Supplier -> saveSupplier(candidate)
                     is UnitOfMeasure -> saveUnit(candidate)
                     is InventoryLocation -> saveLocation(candidate)
@@ -574,16 +1172,34 @@ class CatalogsViewModel @Inject constructor(
                 }
             },
             onSuccess = { result ->
-                if (activeBusinessId == businessId) handleMutation(result)
+                saveInFlight = false
+                if (activeBusinessId == businessId) {
+                    val returnToReader = form is Form.ProductForm && (form.isScannerOrigin || form.isInventoryOrigin || form.isSpecialRegistration)
+                    handleMutation(result, refreshCatalog = !returnToReader)
+                    if (result is CatalogMutationResult.Saved<*> && returnToReader) {
+                        // El catálogo no recibe lecturas: volver al registro reactiva el lector.
+                        if (isSalesRegistration) {
+                            val product = result.value as? Product
+                            if (product != null && product.businessId == salesRegistrationBusinessId) {
+                                completeSalesRegistration(product)
+                            }
+                        } else emitEffect(CatalogsContract.Effect.Back)
+                    }
+                }
             },
-            onFailure = {
+            onFailure = { error ->
+                saveInFlight = false
                 if (activeBusinessId != businessId) return@executeIo
-                updateState { copy(isSaving = false, failure = Failure.SAVE_FAILED) }
+                updateState { copy(isSaving = false, failure = (error as? InventoryEntryException)?.failure ?: Failure.SAVE_FAILED) }
+            },
+            onCancellation = {
+                saveInFlight = false
+                if (activeBusinessId == businessId) updateState { copy(isSaving = false) }
             },
         )
     }
 
-    private fun buildCandidate(form: Form, businessId: BusinessId): Any? = runCatching {
+    private fun buildCandidate(form: Form, businessId: BusinessId, currency: CurrencyCode): Any? = runCatching {
         val now = clock.now()
         when (form) {
             is Form.ProductForm -> {
@@ -593,8 +1209,23 @@ class CatalogsViewModel @Inject constructor(
                 val purchaseFactor = form.purchaseFactor.trim().ifEmpty { null }?.let(::BigDecimal)
                 if ((form.purchaseUnitId == null) != (purchaseFactor == null)) return null
                 if (purchaseFactor != null && purchaseFactor.signum() <= 0) return null
+                val salePriceMoney = form.salePrice.trim().takeIf { it.isNotEmpty() }?.let { raw ->
+                    val decimal = raw.productDecimalOrNull()
+                    if (decimal != null && decimal.signum() > 0) {
+                        Money.fromMajor(decimal, currency, RoundingMode.UNNECESSARY)
+                    } else null
+                }
+                if (form.isInventoryOrigin) {
+                    val original = form.original?.takeIf { it.productId == form.productId && it.businessId == businessId } ?: return null
+                    return original.copy(
+                        name = name,
+                        sku = if (form.sku == original.sku.orEmpty()) original.sku else form.sku.trim().ifEmpty { null },
+                        barcode = if (form.barcode == original.barcode.orEmpty()) original.barcode else BarcodeValue.optionalOf(form.barcode)?.value,
+                        salePrice = salePriceMoney,
+                    )
+                }
                 Product(
-                    productId = form.productId ?: ProductId.from(uuidGenerator.newUuid()),
+                    productId = form.productId ?: form.registrationProductId ?: ProductId.from(uuidGenerator.newUuid()),
                     businessId = businessId,
                     unitId = unitId,
                     name = name,
@@ -603,6 +1234,7 @@ class CatalogsViewModel @Inject constructor(
                     barcode = BarcodeValue.optionalOf(form.barcode)?.value,
                     purchaseUnitId = form.purchaseUnitId,
                     purchaseFactor = purchaseFactor,
+                    salePrice = salePriceMoney,
                     status = form.original?.status ?: CatalogStatus.ACTIVE,
                     createdAt = form.original?.createdAt ?: now,
                     updatedAt = form.original?.updatedAt ?: now,
@@ -648,9 +1280,12 @@ class CatalogsViewModel @Inject constructor(
         }
     }.getOrNull()
 
-    private suspend fun handleMutation(result: CatalogMutationResult<*>) {
+    private suspend fun handleMutation(result: CatalogMutationResult<*>, refreshCatalog: Boolean = true) {
         when (result) {
             is CatalogMutationResult.Saved<*> -> {
+                clearSpecialForm()
+                clearInventoryForm()
+                clearScannedForm()
                 updateState {
                     copy(
                         isSaving = false,
@@ -661,8 +1296,10 @@ class CatalogsViewModel @Inject constructor(
                         failure = null,
                     )
                 }
-                requestFirstPage()
-                activeBusinessId?.let(::loadOptions)
+                if (refreshCatalog) {
+                    requestFirstPage()
+                    activeBusinessId?.let(::loadOptions)
+                }
             }
             is CatalogMutationResult.Duplicate -> updateState {
                 copy(isSaving = false, failure = result.field.toFailure())
@@ -679,9 +1316,38 @@ class CatalogsViewModel @Inject constructor(
         }
     }
 
+    /** Conserva el resultado hasta que la ruta vuelva a Ventas, incluso al recrear el formulario. */
+    private suspend fun completeSalesRegistration(product: Product? = null) {
+        if (!savedStateHandle.contains(SALES_REGISTRATION_RESULT_KEY)) {
+            savedStateHandle[SALES_REGISTRATION_RESULT_KEY] = arrayListOf(
+                product?.productId?.value.orEmpty(),
+                product?.businessId?.value.orEmpty(),
+            )
+        }
+        emitSalesRegistrationCompletion()
+    }
+
+    private suspend fun emitSalesRegistrationCompletion() {
+        if (salesRegistrationEffectSent) return
+        val result = savedStateHandle.get<ArrayList<String>>(SALES_REGISTRATION_RESULT_KEY) ?: return
+        salesRegistrationEffectSent = true
+        val productId = ProductId.parse(result.getOrNull(0))
+        val businessId = BusinessId.parse(result.getOrNull(1))
+        val requestId = salesRegistrationRequestId
+        if (requestId != null && productId != null && businessId == salesRegistrationBusinessId && businessId != null) {
+            emitEffect(CatalogsContract.Effect.ProductSaved(requestId, productId, businessId))
+        } else {
+            emitEffect(CatalogsContract.Effect.Back)
+        }
+    }
+
     private fun requestStatusChange() {
         executeMain {
             val row = uiState.value.detail?.row ?: return@executeMain
+            if (row is Row.ProductRow) {
+                updateState { copy(pendingStatusChange = null) }
+                return@executeMain
+            }
             val target = if (row.status == CatalogStatus.ACTIVE) {
                 CatalogStatus.ARCHIVED
             } else {
@@ -695,6 +1361,10 @@ class CatalogsViewModel @Inject constructor(
 
     private fun confirmStatusChange() {
         val pending = uiState.value.pendingStatusChange ?: return
+        if (pending.row is Row.ProductRow) {
+            executeMain { updateState { copy(pendingStatusChange = null) } }
+            return
+        }
         val businessId = activeBusinessId ?: return
         if (pending.row.businessId() != businessId) {
             executeMain { updateState { copy(pendingStatusChange = null) } }
@@ -705,8 +1375,7 @@ class CatalogsViewModel @Inject constructor(
             operation = {
                 val archive = pending.target == CatalogStatus.ARCHIVED
                 when (val row = pending.row) {
-                    is Row.ProductRow -> if (archive) archiveProduct(row.value.productId)
-                    else restoreProduct(row.value.productId)
+                    is Row.ProductRow -> CatalogMutationResult.NotFound
                     is Row.SupplierRow -> if (archive) archiveSupplier(row.value.supplierId)
                     else restoreSupplier(row.value.supplierId)
                     is Row.UnitRow -> if (archive) archiveUnit(row.value.unitId)
@@ -735,7 +1404,22 @@ class CatalogsViewModel @Inject constructor(
             onSuccess = { (loadedUnits, loadedLocations) ->
                 if (activeBusinessId != businessId) return@executeIo
                 updateState {
+                    val currentForm = form
+                    val updatedForm = if (currentForm is Form.ProductForm &&
+                        !(currentForm.isInventoryOrigin || (currentForm.isScannerOrigin && currentForm.isEditing))
+                    ) {
+                        currentForm.copy(
+                            unitId = currentForm.unitId ?: if (currentForm.isSpecialRegistration) {
+                                loadedUnits.firstOrNull { it.code == "KGM" && it.status == CatalogStatus.ACTIVE }?.unitId
+                                    ?: loadedUnits.firstOrNull { it.code == "KG" && it.status == CatalogStatus.ACTIVE }?.unitId
+                            } else loadedUnits.firstOrNull { it.status == CatalogStatus.ACTIVE }?.unitId,
+                            locationId = currentForm.locationId ?: loadedLocations.firstOrNull { it.status == CatalogStatus.ACTIVE }?.locationId,
+                        )
+                    } else {
+                        currentForm
+                    }
                     copy(
+                        form = updatedForm,
                         unitOptions = loadedUnits.map { unit ->
                             CatalogsContract.UnitOption(
                                 unitId = unit.unitId,
@@ -753,14 +1437,31 @@ class CatalogsViewModel @Inject constructor(
                         },
                     )
                 }
+                persistScannedForm()
+                persistSpecialForm()
             },
             onFailure = { /* La lista principal sigue siendo utilizable sin abrir producto. */ },
         )
     }
 
     private fun updateProductForm(transform: Form.ProductForm.() -> Form.ProductForm) = executeMain {
+        if (saveInFlight) return@executeMain
         val form = uiState.value.form as? Form.ProductForm ?: return@executeMain
-        updateState { copy(form = form.transform(), failure = null) }
+        val transformed = form.transform()
+        val changed = if (form.isSpecialRegistration) transformed.copy(
+            title = transformed.title.take(201), quantity = transformed.quantity.take(25),
+            purchasePrice = transformed.purchasePrice.take(25), salePrice = transformed.salePrice.take(25),
+        ) else transformed
+        val updated = if (changed.isInventoryOrigin && changed.locationId != null) {
+            changed.copy(inventoryBalanceDrafts = changed.inventoryBalanceDrafts.map { draft ->
+                if (draft.locationId == changed.locationId) draft.copy(quantity = changed.quantity, purchasePrice = changed.purchasePrice)
+                else draft
+            })
+        } else changed
+        updateState { copy(form = updated, failure = null) }
+        persistScannedForm()
+        persistInventoryForm()
+        persistSpecialForm()
     }
 
     private fun updateSupplierForm(transform: Form.SupplierForm.() -> Form.SupplierForm) = executeMain {
@@ -794,19 +1495,33 @@ class CatalogsViewModel @Inject constructor(
         const val SECTION_KEY = "catalogs.section"
         const val QUERY_KEY = "catalogs.query"
         const val STATUS_KEY = "catalogs.status"
+        const val INVENTORY_FORM_KEY = "catalogs.inventoryProductEditor"
+        const val SCANNED_FORM_KEY = "catalogs.scannedRegistration"
+        const val SPECIAL_FORM_KEY = "catalogs.specialRegistration"
+        const val SPECIAL_ROUTE_KEY = "specialProduct"
+        const val SALES_REGISTRATION_RESULT_KEY = "catalogs.salesRegistrationResult"
+        const val SCANNED_FORM_FIELD_COUNT = 13
         val UNIT_CODE = Regex("^[A-Z0-9]{1,16}$")
     }
 }
 
-private fun restoredCatalogsState(savedStateHandle: SavedStateHandle): State = State(
-    section = savedStateHandle.get<String>("catalogs.section")
+private fun restoredCatalogsState(savedStateHandle: SavedStateHandle): State {
+    val section = savedStateHandle.get<String>("catalogs.section")
         ?.let { runCatching { Section.valueOf(it) }.getOrNull() }
-        ?: Section.PRODUCTS,
-    query = savedStateHandle.get<String>("catalogs.query").orEmpty(),
-    statusFilter = savedStateHandle.get<String>("catalogs.status")
-        ?.let { runCatching { CatalogsContract.StatusFilter.valueOf(it) }.getOrNull() }
-        ?: CatalogsContract.StatusFilter.ALL,
-)
+        ?: Section.PRODUCTS
+    val status = if (section == Section.PRODUCTS) {
+        CatalogsContract.StatusFilter.ACTIVE
+    } else {
+        savedStateHandle.get<String>("catalogs.status")
+            ?.let { runCatching { CatalogsContract.StatusFilter.valueOf(it) }.getOrNull() }
+            ?: CatalogsContract.StatusFilter.ALL
+    }
+    return State(
+        section = section,
+        query = savedStateHandle.get<String>("catalogs.query").orEmpty(),
+        statusFilter = status,
+    )
+}
 
 private fun <T, R> CatalogPage<T>.map(transform: (T) -> R): CatalogPage<R> = CatalogPage(
     items = items.map(transform),
@@ -843,4 +1558,21 @@ private fun Row.businessId(): BusinessId = when (this) {
     is Row.SupplierRow -> value.businessId
     is Row.UnitRow -> value.businessId
     is Row.LocationRow -> value.businessId
+}
+
+
+private fun ProductEditingSnapshot.toBalanceOptions(): List<CatalogsContract.InventoryBalanceOption> = positions.map { position ->
+    CatalogsContract.InventoryBalanceOption(
+        locationId = position.locationId, locationName = position.locationName,
+        quantity = position.displayQuantity(), unitCost = position.displayUnitCost(),
+        currency = position.currency,
+    )
+}
+
+private fun ProductEditingResult.toCatalogResult(): CatalogMutationResult<Product> = when (this) {
+    is ProductEditingResult.Saved -> CatalogMutationResult.Saved(snapshot.product)
+    ProductEditingResult.Stale -> CatalogMutationResult.Stale
+    ProductEditingResult.NotFound -> CatalogMutationResult.NotFound
+    is ProductEditingResult.Duplicate -> CatalogMutationResult.Duplicate(field)
+    is ProductEditingResult.Invalid -> CatalogMutationResult.Invalid(com.facturastock.app.domain.model.CatalogInvalidField.NAME)
 }

@@ -23,6 +23,7 @@ import com.facturastock.app.domain.repository.RecordDebtPaymentCommand
 import com.facturastock.app.domain.repository.RecordDebtPaymentResult
 import com.facturastock.app.domain.usecase.ObserveDebtDetailUseCase
 import com.facturastock.app.domain.usecase.ObserveDebtsUseCase
+import com.facturastock.app.domain.usecase.VoidSaleUseCase
 import com.facturastock.app.domain.usecase.RecordDebtPaymentUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.testing.FakeAppConfigurationRepository
@@ -88,7 +89,7 @@ class DebtorsViewModelTest {
             val viewModel = createViewModel(DEBT_ID)
             runCurrent()
 
-            viewModel.onAction(DebtorsContract.Action.PaymentRequested)
+            viewModel.onAction(DebtorsContract.Action.PartialPaymentRequested)
             runCurrent()
             viewModel.onAction(DebtorsContract.Action.PaymentAmountChanged("5.00"))
             runCurrent()
@@ -118,7 +119,7 @@ class DebtorsViewModelTest {
             val viewModel = createViewModel(DEBT_ID)
             runCurrent()
 
-            viewModel.onAction(DebtorsContract.Action.PaymentRequested)
+            viewModel.onAction(DebtorsContract.Action.PartialPaymentRequested)
             runCurrent()
             viewModel.onAction(DebtorsContract.Action.PaymentAmountChanged("4.00"))
             runCurrent()
@@ -157,6 +158,8 @@ class DebtorsViewModelTest {
         recordPayment = RecordDebtPaymentUseCase(configuration, repository),
         clock = AppClock { NOW },
         dispatcherProvider = TestDispatcherProvider(mainDispatcherRule.dispatcher),
+        voidSale = VoidSaleUseCase(configuration, FakeDebtVoidRepository()),
+        configuration = configuration,
     )
 
     private class RecordingDebtRepository : DebtRepository {

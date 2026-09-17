@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sales_verify_pending_checkout">Verificar venta pendiente</string>
+    <string name="sales_pending_checkout_message">La confirmación de esta venta sigue pendiente. Conservamos sus productos e importes para comprobar el resultado sin duplicarla. Conéctate y verifica la venta antes de editarla.</string>
+</resources>

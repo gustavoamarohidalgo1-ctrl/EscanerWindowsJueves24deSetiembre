@@ -6,6 +6,7 @@ import com.facturastock.app.domain.model.DebtDetail
 import com.facturastock.app.domain.model.DebtPaymentMethod
 import com.facturastock.app.domain.model.DebtSummary
 import com.facturastock.app.domain.model.Money
+import com.facturastock.app.domain.repository.SaleVoidPreview
 import com.facturastock.app.domain.model.id.DebtId
 import com.facturastock.app.feature.common.UiAction
 import com.facturastock.app.feature.common.UiEffect
@@ -59,7 +60,17 @@ object DebtorsContract {
         val totalOpenBalance: Money? = null,
         val paymentEditor: PaymentEditor? = null,
         val failure: Failure? = null,
+        val deleteTarget: DebtSummary? = null,
+        val deletePreview: SaleVoidPreview? = null,
+        val isLoadingDeletePreview: Boolean = false,
+        val isDeletingDebt: Boolean = false,
+        val deleteFailure: DeleteFailure? = null,
     ) : UiState
+
+    enum class DeleteFailure {
+        LOAD_FAILED, OPERATION_FAILED, STALE, CONTEXT_CHANGED, NO_ACTIVE_BUSINESS,
+        NOT_FOUND, UNAUTHORIZED, SHARED_BUSINESS_UNSUPPORTED, INVALID_HISTORY,
+    }
 
     enum class Failure {
         INVALID_DEBT_ID,
@@ -80,6 +91,7 @@ object DebtorsContract {
         data object NewDebtSelected : Action
         data class DebtSelected(val debtId: DebtId) : Action
         data object PaymentRequested : Action
+        data object PartialPaymentRequested : Action
         data class PaymentAmountChanged(val value: String) : Action
         data class PaymentMethodChanged(val method: DebtPaymentMethod) : Action
         data class PaymentNoteChanged(val value: String) : Action
@@ -87,12 +99,18 @@ object DebtorsContract {
         data object PaymentConfirmed : Action
         data object PaymentDismissed : Action
         data object BackSelected : Action
+        data object DeleteRequested : Action
+        data object DeleteConfirmed : Action
+        data object DeleteDismissed : Action
+        data object DeletePreviewRetry : Action
     }
 
     sealed interface Effect : UiEffect {
         data object OpenNewDebt : Effect
         data class OpenDebt(val debtId: DebtId) : Effect
         data object PaymentSaved : Effect
+        data object FullPaymentSaved : Effect
+        data object DebtDeleted : Effect
         data object Back : Effect
         data object CloseInvalidRoute : Effect
     }

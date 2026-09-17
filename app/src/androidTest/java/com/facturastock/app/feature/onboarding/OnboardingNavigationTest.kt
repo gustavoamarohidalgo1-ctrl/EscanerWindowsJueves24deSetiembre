@@ -20,8 +20,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.facturastock.app.MainActivity
 import com.facturastock.app.R
 import com.facturastock.app.domain.config.AppConfiguration
-import com.facturastock.app.feature.home.HomeTestTags
 import com.facturastock.app.feature.inventory.InventoryTestTags
+import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.testing.TestAppConfigurationState
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
@@ -33,7 +33,7 @@ import org.junit.runner.RunWith
 
 /**
  * Recorrido de la compuerta de primer inicio: con la configuración incompleta la app arranca
- * en onboarding y solo se llega a HOME tras completarla. El fake de configuración (que
+ * en onboarding y solo se llega a Vender tras completarla. El fake de configuración (que
  * reemplaza al módulo real con `@TestInstallIn`) arranca incompleto y su `completeOnboarding`
  * reacciona como el DataStore real.
  *
@@ -76,17 +76,14 @@ class OnboardingNavigationTest {
             .onNodeWithContentDescription(context.getString(R.string.action_back))
             .assertDoesNotExist()
         composeRule
-            .onNodeWithText(context.getString(R.string.navigation_home))
+            .onNodeWithText(context.getString(R.string.navigation_sales))
             .assertDoesNotExist()
 
-        // Formulario mínimo: nombre comercial y almacén (RUC opcional vacío, IGV 18 %).
+        // Formulario mínimo: nombre comercial (RUC opcional vacío, IGV 18 %).
         val businessName = "Bodega Nav Test ${System.currentTimeMillis()}"
         composeRule.onNodeWithTag(OnboardingTestTags.BUSINESS_NAME)
             .performScrollTo()
             .performTextInput(businessName)
-        composeRule.onNodeWithTag(OnboardingTestTags.WAREHOUSE)
-            .performScrollTo()
-            .performTextInput("Almacén principal")
         composeRule.waitForIdle()
 
         composeRule
@@ -94,8 +91,8 @@ class OnboardingNavigationTest {
             .performScrollTo()
             .performClick()
 
-        // Tras completar, la compuerta reacciona y se llega a HOME; onboarding queda fuera.
-        waitUntilTag(HomeTestTags.DRAFTS_LIST)
+        // Tras completar, la compuerta reacciona y se llega a Vender; onboarding queda fuera.
+        waitUntilTag(SalesTestTags.SCREEN)
         composeRule
             .onAllNodesWithText(context.getString(R.string.onboarding_title))
             .assertCountEquals(0)

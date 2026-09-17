@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reports_pdf_actions_title">Deudores y reportes PDF</string>
+    <string name="reports_pdf_open_debtors">Ver deudores</string>
+    <string name="reports_pdf_daily_action">Guardar PDF de hoy</string>
+    <string name="reports_pdf_debtors_action">Guardar PDF de deudores</string>
+    <string name="reports_pdf_daily_help">El PDF de hoy incluye las ventas de hoy y los deudores pendientes de todas las fechas. Siempre corresponde a hoy, aunque abajo consultes semana o mes.</string>
+    <string name="reports_pdf_debtors_help">El PDF de deudores contiene solo las deudas pendientes de todas las fechas. Tú eliges dónde guardar cada archivo.</string>
+    <string name="reports_pdf_preparing">Preparando el reporte…</string>
+    <string name="reports_pdf_choosing">Elige dónde guardar el PDF.</string>
+    <string name="reports_pdf_writing">Guardando el PDF…</string>
+    <string name="reports_pdf_saved">PDF guardado en la ubicación elegida.</string>
+    <string name="reports_pdf_preparation_failed">No se pudo preparar el reporte. Vuelve a intentarlo.</string>
+    <string name="reports_pdf_no_business">Selecciona un negocio antes de guardar un reporte.</string>
+    <string name="reports_pdf_context_changed">El negocio o su configuración cambiaron. Vuelve a generar el PDF para usar los datos actuales.</string>
+    <string name="reports_pdf_destination_clean">No se pudo guardar el PDF. El destino no contiene un reporte completo. Vuelve a intentarlo y elige otra ubicación.</string>
+    <string name="reports_pdf_destination_partial">No se pudo completar el PDF. El archivo elegido puede contener datos parciales; elimínalo antes de volver a guardar el reporte.</string>
+    <string name="reports_pdf_interrupted">La preparación del PDF se interrumpió. El archivo elegido puede estar vacío; vuelve a generar y guardar el reporte.</string>
+    <string name="reports_pdf_dismiss_notice">Cerrar aviso</string>
+    <string name="reports_pdf_open_saved">Abrir PDF</string>
+    <string name="reports_pdf_no_viewer">El PDF está guardado. No se pudo abrir un visor; puedes buscarlo en la ubicación elegida desde Archivos.</string>
+</resources>

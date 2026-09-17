@@ -29,6 +29,8 @@ fun DebtorsRoute(
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DebtorsViewModel = hiltViewModel(),
+    onDebtDeleted: () -> Unit = onCloseInvalidRoute,
+    onFullPaymentSaved: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -42,13 +44,15 @@ fun DebtorsRoute(
             DebtorsContract.Effect.PaymentSaved -> scope.launch {
                 snackbarHostState.showSnackbar(paymentSaved)
             }
+            DebtorsContract.Effect.FullPaymentSaved -> if (viewModel.claimFullPaymentNavigation()) onFullPaymentSaved()
+            DebtorsContract.Effect.DebtDeleted -> onDebtDeleted()
             DebtorsContract.Effect.Back -> onBack()
             DebtorsContract.Effect.CloseInvalidRoute -> onCloseInvalidRoute()
         }
     }
 
-    BackHandler(enabled = state.paymentEditor != null) {
-        viewModel.onAction(DebtorsContract.Action.PaymentDismissed)
+    BackHandler(enabled = state.paymentEditor != null || state.deleteTarget != null || state.isDeletingDebt || state.isSavingPayment) {
+        viewModel.onAction(DebtorsContract.Action.BackSelected)
     }
 
     if (state.failure == DebtorsContract.Failure.DEBT_NOT_FOUND && state.detail == null) {

@@ -1645,4 +1645,37 @@ if (!ENABLED) {
       "borra índice de membresía",
     );
   });
+
+  test("membresías paginan después de cien sin perder nombres repetidos", async () => {
+    users.paged = await createUser("paged", true);
+    const firestore = await clientFor(users.paged);
+    const {
+      collection, documentId, getDocs, limit, orderBy, query, startAfter,
+    } = await import("firebase/firestore");
+    const ids = [];
+    try {
+      for (let index = 0; index < 101; index += 1) {
+        const id = randomUUID();
+        ids.push(id);
+        await createBusiness(firestore, users.paged, id);
+      }
+      const base = query(
+        collection(firestore, `users/${users.paged.uid}/memberships`),
+        orderBy("displayName"), orderBy(documentId()), limit(100),
+      );
+      const found = [];
+      let cursor = null;
+      let page;
+      do {
+        page = await getDocs(cursor === null ? base : query(base, startAfter(cursor)));
+        found.push(...page.docs.map((document) => document.id));
+        cursor = page.docs.at(-1) ?? null;
+      } while (page.size === 100);
+      assert.equal(found.length, 101);
+      assert.deepEqual([...found].sort(), [...ids].sort());
+    } finally {
+      for (const id of ids) await adminDb.recursiveDelete(adminDb.doc(`businesses/${id}`));
+    }
+  });
+
 }

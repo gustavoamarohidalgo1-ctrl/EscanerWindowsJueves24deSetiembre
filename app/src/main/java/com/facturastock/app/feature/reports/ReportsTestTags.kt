@@ -1,6 +1,11 @@
 package com.facturastock.app.feature.reports
 
 object ReportsTestTags {
+    const val DEBT_PAYMENTS = "reports_debt_payments"
+    const val DEBT_PAYMENT_TOTALS = "reports_debt_payment_totals"
+    fun debtPayment(paymentId: String): String = "reports_debt_payment_$paymentId"
+    const val PDF_OPEN_SAVED = "reports_pdf_open_saved"
+    const val PDF_NO_VIEWER = "reports_pdf_no_viewer"
     const val SCREEN = "reports_screen"
     const val PERIOD_SELECTOR = "reports_period_selector"
     const val PERIOD_DAY = "reports_period_day"
@@ -8,6 +13,7 @@ object ReportsTestTags {
     const val PERIOD_MONTH = "reports_period_month"
     const val RANGE = "reports_range"
     const val LOADING = "reports_loading"
+    const val REFRESHING = "reports_refreshing"
     const val ERROR = "reports_error"
     const val STALE_NOTICE = "reports_stale_notice"
     const val HERO = "reports_profit_hero"
@@ -16,6 +22,27 @@ object ReportsTestTags {
     const val OTHER_CURRENCIES = "reports_other_currencies"
     const val EMPTY = "reports_empty"
     const val SALES_LIST = "reports_sales_list"
+    const val VOID_DIALOG = "reports_void_dialog"
+    const val VOID_ERROR = "reports_void_error"
+    const val VOID_SUCCESS = "reports_void_success"
+    const val VOID_IMPACT = "reports_void_impact"
+    const val PDF_ACTIONS = "reports_pdf_actions"
+    const val OPEN_DEBTORS = "reports_open_debtors"
+    const val PDF_DAILY = "reports_pdf_daily"
+    const val PDF_DEBTORS = "reports_pdf_debtors"
+    const val PDF_PROGRESS = "reports_pdf_progress"
+    const val PDF_ERROR = "reports_pdf_error"
+    const val PDF_SUCCESS = "reports_pdf_success"
 
     fun sale(saleId: String): String = "reports_sale_$saleId"
+    fun saleTotal(saleId: String): String = "reports_sale_total_$saleId"
+    fun saleVoid(saleId: String): String = "reports_sale_void_$saleId"
+    fun saleProducts(saleId: String): String = "reports_sale_products_$saleId"
+    fun saleToggle(saleId: String): String = "reports_sale_toggle_$saleId"
+    fun saleDetails(saleId: String): String = "reports_sale_details_$saleId"
+    fun saleWarning(saleId: String): String = "reports_sale_warning_$saleId"
+    fun saleLine(saleId: String, saleLineId: String): String =
+        "reports_sale_line_${saleId}_$saleLineId"
+    fun saleLineProfit(saleId: String, saleLineId: String): String =
+        "reports_sale_line_profit_${saleId}_$saleLineId"
 }

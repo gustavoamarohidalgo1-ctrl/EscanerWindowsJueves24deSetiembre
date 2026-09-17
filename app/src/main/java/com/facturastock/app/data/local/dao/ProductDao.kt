@@ -5,6 +5,8 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.facturastock.app.data.local.entity.ProductEntity
+import com.facturastock.app.data.local.entity.InvoiceLinesEditEntity
+import com.facturastock.app.data.local.entity.PreparedPurchaseEntity
 import kotlinx.coroutines.flow.Flow
 
 /** Fila cruda: SQLite no suma ni convierte los decimales de inventario. */
@@ -128,6 +130,50 @@ interface ProductDao {
 
     @Query("SELECT * FROM products WHERE productId = :productId")
     suspend fun findById(productId: String): ProductEntity?
+
+    /** Incluye borradores y alias: no se permite perder enlaces mediante SET_NULL/CASCADE. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM invoice_lines WHERE productId = :productId) OR " +
+            "EXISTS(SELECT 1 FROM purchase_lines WHERE productId = :productId) OR " +
+            "EXISTS(SELECT 1 FROM sale_lines WHERE productId = :productId) OR " +
+            "EXISTS(SELECT 1 FROM stock_movements WHERE productId = :productId) OR " +
+            "EXISTS(SELECT 1 FROM supplier_product_aliases WHERE productId = :productId)",
+    )
+    suspend fun hasDeletionReferences(productId: String): Boolean
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM catalog_sync_links " +
+            "WHERE localBusinessId = :businessId) OR " +
+            "EXISTS(SELECT 1 FROM remote_catalog_changes WHERE entityType = 'PRODUCT' " +
+            "AND (localEntityId = :productId OR remoteEntityId = :productId)) OR " +
+            "EXISTS(SELECT 1 FROM remote_movement_summaries WHERE productId = :productId)",
+    )
+    suspend fun hasRemoteDeletionReferences(businessId: String, productId: String): Boolean
+
+    /** Los codecs guardan UUID como UTF-8; el repositorio confirma la referencia decodificada. */
+    @Query(
+        "SELECT e.* FROM invoice_line_edits e INNER JOIN invoice_drafts d " +
+            "ON d.draftId = e.draftId WHERE d.businessId = :businessId " +
+            "AND INSTR(e.payload, CAST(:productId AS BLOB)) > 0",
+    )
+    suspend fun listDeletionEditCandidates(businessId: String, productId: String): List<InvoiceLinesEditEntity>
+
+    @Query(
+        "SELECT p.* FROM prepared_purchases p INNER JOIN invoice_drafts d " +
+            "ON d.draftId = p.draftId WHERE d.businessId = :businessId " +
+            "AND INSTR(p.payload, CAST(:productId AS BLOB)) > 0",
+    )
+    suspend fun listDeletionPreparedCandidates(businessId: String, productId: String): List<PreparedPurchaseEntity>
+
+    /** Sólo después de verificar exactamente todos los decimales cero en la misma transacción. */
+    @Query("DELETE FROM inventory_balances WHERE businessId = :businessId AND productId = :productId")
+    suspend fun deleteUnusedBalances(businessId: String, productId: String): Int
+
+    @Query(
+        "DELETE FROM products WHERE businessId = :businessId AND productId = :productId " +
+            "AND version = :expectedVersion",
+    )
+    suspend fun deletePermanently(businessId: String, productId: String, expectedVersion: Long): Int
 
     /** Lectura acotada por las 100 líneas activas máximas de una revisión. */
     @Query("SELECT * FROM products WHERE productId IN (:productIds)")

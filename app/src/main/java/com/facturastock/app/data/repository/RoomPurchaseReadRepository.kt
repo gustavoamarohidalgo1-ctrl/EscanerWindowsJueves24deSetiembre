@@ -57,6 +57,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -139,6 +140,9 @@ class RoomPurchaseReadRepository @Inject constructor(
         purchaseId: PurchaseId,
     ): Flow<PurchaseReadDetail?> = database.purchaseDao()
         .observeReadHeader(businessId.value, purchaseId.value)
+        // Una cabecera identica no debe cancelar y reconstruir las cinco lecturas del detalle.
+        // Sus flujos interiores siguen observando cambios propios de lineas, auditoria e imagenes.
+        .distinctUntilChanged()
         .flatMapLatest { header ->
             if (header == null) {
                 flowOf(null)

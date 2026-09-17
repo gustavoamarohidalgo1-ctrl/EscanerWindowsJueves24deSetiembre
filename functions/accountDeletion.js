@@ -3,8 +3,10 @@
 // sobreviven se eliminan sus membresías e invitaciones dirigidas a su email verificado,
 // y las referencias históricas a su uid se sustituyen por un sentinel cerrado.
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { randomUUID } from "node:crypto";
 import { getAuth } from "firebase-admin/auth";
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import {
   ACCOUNT_DELETION_CALLABLE_OPTIONS,
   ACCOUNT_DELETION_LOCK_FIELD,
@@ -33,14 +35,46 @@ const EMAIL_LOCK_TTL_MILLIS = 24 * 60 * 60 * 1000;
 // Mayor que el timeout de los callables documentales: ningún file.save reservado antes del
 // lock puede aterrizar después de la última pasada programada de este prefijo.
 const STORAGE_LATE_WRITE_GRACE_MILLIS = 10 * 60 * 1000;
+// El lease supera el timeout de 300 s del callable/scheduler. Un proceso caído deja trabajo
+// elegible sin necesitar otro login ni conservar un token de autenticación.
+const DELETION_LEASE_MILLIS = 6 * 60 * 1000;
+const DELETION_RETRY_MILLIS = 60 * 1000;
+const DELETION_RECOVERY_LIMIT = 20;
+export const accountDeletionJobRef = (uid) =>
+  db.collection("accountDeletionJobs").doc(accountDeletionTombstoneRef(uid).id);
+
+function validDeletionJob(job, id) {
+  return job?.schemaVersion === 1 && typeof job.uid === "string" &&
+    job.uid.length > 0 && job.uid.length <= 128 &&
+    accountDeletionJobRef(job.uid).id === id &&
+    (job.email === null || (typeof job.email === "string" &&
+      normalizeEmail(job.email) === job.email)) &&
+    ["CLEANUP", "AUTH"].includes(job.phase) &&
+    Array.isArray(job.summary?.businessesDeleted) &&
+    job.summary.businessesDeleted.every((value) => UUID_REGEX.test(value)) &&
+    Number.isSafeInteger(job.summary?.membershipsRemoved) &&
+    job.summary.membershipsRemoved >= 0 &&
+    typeof job.leaseToken === "string" &&
+    job.nextAttemptAt instanceof Timestamp;
+}
+
+function completedSummary(tombstone) {
+  return tombstone.deletionSummary ?? {
+    businessesDeleted: tombstone.retiredBusinessIds ?? [],
+    membershipsRemoved: 0,
+  };
+}
 
 function requireAccountDeletionPayload(value) {
   const data = value ?? {};
   if (
     typeof data !== "object" || Array.isArray(data) ||
-    Object.keys(data).some((key) => key !== "expectedUid")
+    Object.keys(data).some((key) => !["expectedUid", "responseVersion"].includes(key))
   ) {
     throw invalid("ACCOUNT_DELETION_FIELDS");
+  }
+  if (data.responseVersion !== undefined && data.responseVersion !== 2) {
+    throw invalid("ACCOUNT_DELETION_RESPONSE_VERSION");
   }
   return data;
 }
@@ -122,15 +156,70 @@ function addUpdate(mutations, document, field) {
  * tombstone pseudónimo se conserva para bloquear JWT viejos; los locks de negocio impiden que
  * otro usuario acepte una invitación o escriba bajo un árbol que va a desaparecer.
  */
-export async function lockAccountDeletion(uid, email = null) {
+export async function lockAccountDeletion(
+  uid,
+  email = null,
+  { nowMillis = Date.now(), leaseToken = randomUUID() } = {},
+) {
   return db.runTransaction(async (tx) => {
     const tombstoneRef = accountDeletionTombstoneRef(uid);
-    const emailLockRef = email === null ? null : accountDeletionEmailLockRef(email);
+    const jobRef = accountDeletionJobRef(uid);
     const deletionLocks = await tx.getAll(
       tombstoneRef,
-      ...(emailLockRef === null ? [] : [emailLockRef]),
+      jobRef,
     );
     const tombstone = deletionLocks[0];
+    const savedJob = deletionLocks[1];
+    if (savedJob.exists) {
+      const job = savedJob.data();
+      if (!validDeletionJob(job, jobRef.id) || !tombstone.exists) {
+        throw new HttpsError("internal", "ACCOUNT_DELETION_DATA_INCONSISTENT");
+      }
+      if (job.nextAttemptAt.toMillis() > nowMillis) {
+        return { pending: true, summary: job.summary };
+      }
+      // Una cuenta verificada después de iniciar un borrado no puede ampliar la autorización
+      // durable para barrer invitaciones de email que no formaban parte de la solicitud.
+      email = job.email;
+      if (job.phase === "AUTH") {
+        tx.update(jobRef, {
+          leaseToken,
+          nextAttemptAt: Timestamp.fromMillis(nowMillis + DELETION_LEASE_MILLIS),
+        });
+        return { authOnly: true, summary: job.summary, email, leaseToken };
+      }
+    } else if (tombstone.data()?.authDeleted === true) {
+      // Un JWT todavía vigente nunca vuelve a borrar invitaciones de una cuenta nueva que
+      // reutilizó el correo. El cierre terminal se puede consultar idempotentemente.
+      return { completed: true, summary: completedSummary(tombstone.data()) };
+    } else if (tombstone.data()?.cleanupComplete === true &&
+        tombstone.data()?.deletionSummary !== undefined) {
+      // Un cierre moderno perdió el job después de confirmar el barrido pero antes de Auth.
+      const summary = completedSummary(tombstone.data());
+      tx.create(jobRef, {
+        schemaVersion: 1, uid, email: null, phase: "AUTH", summary, leaseToken,
+        nextAttemptAt: Timestamp.fromMillis(nowMillis + DELETION_LEASE_MILLIS),
+      });
+      return { authOnly: true, summary, email: null, leaseToken };
+    } else if (tombstone.exists) {
+      // Los tombstones legacy de cuentas sin negocio propio podían marcar cleanupComplete
+      // antes del barrido. Solo Auth ausente permite tratarlos como terminales sin volver a
+      // tocar invitaciones de un correo que ya pudo reutilizarse.
+      let authDeleted = false;
+      try {
+        await getAuth().getUser(uid);
+      } catch (failure) {
+        if (failure?.code !== "auth/user-not-found") throw failure;
+        authDeleted = true;
+      }
+      if (authDeleted) {
+        const summary = completedSummary(tombstone.data());
+        tx.set(tombstoneRef, { authDeleted: true, deletionSummary: summary }, { merge: true });
+        return { completed: true, summary };
+      }
+    }
+    const emailLockRef = email === null ? null : accountDeletionEmailLockRef(email);
+    if (emailLockRef !== null) await tx.get(emailLockRef);
     const memberships = await tx.get(
       db.collectionGroup("members").where("uid", "==", uid),
     );
@@ -196,7 +285,7 @@ export async function lockAccountDeletion(uid, email = null) {
     tx.set(tombstoneRef, {
       schemaVersion: 1,
       blocksMutations: true,
-      cleanupComplete: businessRefs.length === 0,
+      cleanupComplete: false,
       storageCleanupBusinessIds: businessRefs.map((businessRef) => businessRef.id),
       retiredBusinessIds: [...new Set([
         ...retiredBusinessIds,
@@ -204,17 +293,18 @@ export async function lockAccountDeletion(uid, email = null) {
       ])].sort(),
       storageCleanupPending: businessRefs.length > 0,
       storageCleanupEligibleAt: Timestamp.fromMillis(
-        Date.now() + STORAGE_LATE_WRITE_GRACE_MILLIS,
+        nowMillis + STORAGE_LATE_WRITE_GRACE_MILLIS,
       ),
     });
     if (emailLockRef !== null) {
       tx.set(emailLockRef, {
         schemaVersion: 1,
         blocksInvitations: true,
+        deletionJobId: jobRef.id,
         // Defensa de recuperación: si Auth se elimina pero falla el delete final de esta guarda,
         // nunca puede inmovilizar ese correo para siempre. inviteMember limpia una guarda vencida
         // dentro de la misma transacción que crea la nueva invitación.
-        expiresAt: Timestamp.fromMillis(Date.now() + EMAIL_LOCK_TTL_MILLIS),
+        expiresAt: Timestamp.fromMillis(nowMillis + EMAIL_LOCK_TTL_MILLIS),
       });
     }
     for (const { businessRef, business } of checks) {
@@ -223,15 +313,29 @@ export async function lockAccountDeletion(uid, email = null) {
       }
     }
     const deletedBusinessPaths = new Set(businessRefs.map((ref) => ref.path));
+    const survivingMembers = memberships.docs.filter(
+      (member) => !deletedBusinessPaths.has(directBusinessRefFor(member.ref).path),
+    );
+    const summary = savedJob.data()?.summary ?? {
+      businessesDeleted: businessRefs.map((ref) => ref.id),
+      membershipsRemoved: survivingMembers.length,
+    };
+    // Único almacenamiento temporal de UID/email: solo Admin SDK, sin índices de identidad,
+    // sin tokens ni contraseñas, eliminado atómicamente al confirmar el cierre de Auth.
+    tx.set(jobRef, {
+      schemaVersion: 1, uid, email, phase: "CLEANUP", summary, leaseToken,
+      nextAttemptAt: Timestamp.fromMillis(nowMillis + DELETION_LEASE_MILLIS),
+    });
     return {
+      email,
+      leaseToken,
+      summary,
       soleOwnedRefs: businessRefs,
       retiredBusinessIds: [...new Set([
         ...retiredBusinessIds,
         ...businessRefs.map((businessRef) => businessRef.id),
       ])].sort(),
-      survivingMembers: memberships.docs.filter(
-        (member) => !deletedBusinessPaths.has(directBusinessRefFor(member.ref).path),
-      ),
+      survivingMembers,
     };
   });
 }
@@ -327,20 +431,36 @@ export async function purgeOwnedBusinessDocuments(
   }
 }
 
-export const deleteMyAccount = onCall(ACCOUNT_DELETION_CALLABLE_OPTIONS, async (request) => {
-  requireExpectedUid(request);
-  requireAccountDeletionPayload(request.data);
-  const auth = requireRecentAuth(request);
-  const uid = auth.uid;
-  // Solo un email verificado autoriza a borrar invitaciones dirigidas a ese email.
-  const rawEmail = auth.token.email;
-  const email =
-    auth.token.email_verified === true && typeof rawEmail === "string"
-      ? normalizeEmail(rawEmail)
-      : null;
+/** Cierre recuperable compartido por la solicitud autenticada y el scheduler. */
+export async function runAccountDeletion(
+  uid,
+  email = null,
+  {
+    nowMillis = Date.now(),
+    recursiveDelete = (ref) => db.recursiveDelete(ref),
+    deleteAuthUser = deleteAuthUserIdempotently,
+  } = {},
+) {
+  const state = await lockAccountDeletion(uid, email, { nowMillis });
+  if (state.pending) return { ...state.summary, status: "PENDING" };
+  if (state.completed) return state.summary;
+  const { leaseToken, summary } = state;
+  email = state.email;
+  try {
+    if (!state.authOnly) {
+      await cleanAccountData(uid, email, state, recursiveDelete);
+    }
+    await deleteAuthUser(uid);
+    await finishAccountDeletion(uid, email, leaseToken, summary);
+    return summary;
+  } catch (failure) {
+    await deferAccountDeletion(uid, leaseToken, nowMillis).catch(() => {});
+    throw failure;
+  }
+}
 
-  const { soleOwnedRefs, retiredBusinessIds, survivingMembers } =
-    await lockAccountDeletion(uid, email);
+async function cleanAccountData(uid, email, state, recursiveDelete) {
+  const { soleOwnedRefs, retiredBusinessIds, survivingMembers, summary, leaseToken } = state;
   const deletedBusinessPaths = new Set(soleOwnedRefs.map((ref) => ref.path));
 
   // El tombstone ya impide que el UID cree referencias nuevas. Primero se retiran árboles propios:
@@ -348,7 +468,7 @@ export const deleteMyAccount = onCall(ACCOUNT_DELETION_CALLABLE_OPTIONS, async (
   // pertenecen a un negocio que se debe borrar completo.
   await purgeOwnedBusinessDocuments(soleOwnedRefs);
   for (const businessRef of soleOwnedRefs) {
-    await db.recursiveDelete(businessRef);
+    await recursiveDelete(businessRef);
   }
   // Cierra la ventana de un upload que ya estaba reservado y terminó su `file.save` durante
   // el recursiveDelete. El trigger con retry:true sigue siendo la defensa durable si el save
@@ -392,30 +512,144 @@ export const deleteMyAccount = onCall(ACCOUNT_DELETION_CALLABLE_OPTIONS, async (
   }
   // El tombstone ya bloquea cualquier alta/baja concurrente. Cerrar contador y estado de limpieza
   // en el mismo batch evita dejar una cuota huérfana si el proceso cae antes de borrar Auth.
-  const completion = db.batch();
-  completion.delete(membershipQuotaCounterRef(uid));
-  completion.set(accountDeletionTombstoneRef(uid), {
-    schemaVersion: 1,
-    blocksMutations: true,
-    cleanupComplete: true,
-    // Se conservan hasta que el scheduler confirme otra purga pasada la ventana máxima de
-    // file.save tardío. Borrar estos IDs aquí dejaría un objeto sin control-plane recuperable.
-    storageCleanupBusinessIds: soleOwnedRefs.map((ref) => ref.id),
-    retiredBusinessIds,
-    storageCleanupPending: soleOwnedRefs.length > 0,
-    storageCleanupEligibleAt: Timestamp.fromMillis(
-      Date.now() + STORAGE_LATE_WRITE_GRACE_MILLIS,
-    ),
+  await db.runTransaction(async (completion) => {
+    const job = await completion.get(accountDeletionJobRef(uid));
+    if (!job.exists || job.data()?.leaseToken !== leaseToken) {
+      throw new HttpsError("aborted", "ACCOUNT_DELETION_RETRY");
+    }
+    completion.delete(membershipQuotaCounterRef(uid));
+    completion.set(accountDeletionTombstoneRef(uid), {
+      schemaVersion: 1,
+      blocksMutations: true,
+      cleanupComplete: true,
+      deletionSummary: summary,
+      // Se conservan hasta que el scheduler confirme otra purga pasada la ventana máxima de
+      // file.save tardío. Borrar estos IDs aquí dejaría un objeto sin control-plane recuperable.
+      storageCleanupBusinessIds: soleOwnedRefs.map((ref) => ref.id),
+      retiredBusinessIds,
+      storageCleanupPending: soleOwnedRefs.length > 0,
+      storageCleanupEligibleAt: Timestamp.fromMillis(
+        Date.now() + STORAGE_LATE_WRITE_GRACE_MILLIS,
+      ),
+    });
+    completion.update(accountDeletionJobRef(uid), { phase: "AUTH", leaseToken });
   });
-  await completion.commit();
-  await deleteAuthUserIdempotently(uid);
-  // El lock del email solo serializa el barrido. Se retira después de limpiar datos y Auth:
-  // una transacción inviteMember que lo hubiera leído entra en conflicto y solo puede
-  // reintentarse como una invitación nueva posterior a la eliminación.
-  await deleteEmailLockBestEffort(email);
+}
 
-  return {
-    businessesDeleted: soleOwnedRefs.map((ref) => ref.id),
-    membershipsRemoved: survivingMembers.length,
-  };
-});
+async function finishAccountDeletion(uid, email, leaseToken, summary) {
+  const jobRef = accountDeletionJobRef(uid);
+  const lockRef = email === null ? null : accountDeletionEmailLockRef(email);
+  await db.runTransaction(async (tx) => {
+    const [job, lock] = await tx.getAll(jobRef, ...(lockRef === null ? [] : [lockRef]));
+    if (!job.exists) return;
+    if (job.data()?.leaseToken !== leaseToken || job.data()?.phase !== "AUTH") {
+      throw new HttpsError("aborted", "ACCOUNT_DELETION_RETRY");
+    }
+    // El job y la PII temporal desaparecen junto a la marca terminal. Nunca borrar un lock
+    // posterior perteneciente a otra solicitud que reutilizó ese email.
+    if (lock?.data()?.deletionJobId === jobRef.id) tx.delete(lockRef);
+    tx.set(accountDeletionTombstoneRef(uid), {
+      authDeleted: true,
+      deletionSummary: summary,
+    }, { merge: true });
+    tx.delete(jobRef);
+  });
+}
+
+async function deferAccountDeletion(uid, leaseToken, nowMillis) {
+  const ref = accountDeletionJobRef(uid);
+  await db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists || snapshot.data()?.leaseToken !== leaseToken) return;
+    tx.update(ref, {
+      nextAttemptAt: Timestamp.fromMillis(nowMillis + DELETION_RETRY_MILLIS),
+    });
+  });
+}
+
+export async function deleteMyAccountHandler(
+  request,
+  { runDeletion = runAccountDeletion } = {},
+) {
+  requireExpectedUid(request);
+  const data = requireAccountDeletionPayload(request.data);
+  const auth = requireRecentAuth(request);
+  const email = auth.token.email_verified === true && typeof auth.token.email === "string"
+    ? normalizeEmail(auth.token.email) : null;
+  const supportsPending = data.responseVersion === 2;
+  try {
+    const result = await runDeletion(auth.uid, email);
+    // Clientes publicados antes de v2 ignoran campos desconocidos. Para ellos un éxito debe
+    // seguir significando borrado completo; jamás presentarles un PENDING como éxito legacy.
+    if (result.status === "PENDING" && !supportsPending) {
+      throw new HttpsError("aborted", "ACCOUNT_DELETION_PENDING");
+    }
+    return result;
+  } catch (failure) {
+    // Solo un job confirmado en Firestore significa que la solicitud fue aceptada. Un error
+    // anterior al commit sigue siendo rechazo/fallo; jamás se inventa una confirmación.
+    if (supportsPending) {
+      const job = await accountDeletionJobRef(auth.uid).get();
+      if (job.exists && validDeletionJob(job.data(), job.id)) {
+        return { ...job.data().summary, status: "PENDING" };
+      }
+    }
+    throw failure;
+  }
+}
+
+export const deleteMyAccount = onCall(
+  ACCOUNT_DELETION_CALLABLE_OPTIONS,
+  (request) => deleteMyAccountHandler(request),
+);
+
+/** Borrados aceptados sobreviven a timeout, pérdida del ACK y cierre de la aplicación. */
+export async function resumeAccountDeletionsHandler(
+  _event,
+  { nowMillis = Date.now(), runDeletion = runAccountDeletion } = {},
+) {
+  const candidates = await db.collection("accountDeletionJobs")
+    .where("nextAttemptAt", "<=", Timestamp.fromMillis(nowMillis))
+    .orderBy("nextAttemptAt")
+    .limit(DELETION_RECOVERY_LIMIT)
+    .get();
+  let completed = 0;
+  let deferred = 0;
+  let invalid = 0;
+  const startedAt = Date.now();
+  for (const snapshot of candidates.docs) {
+    if (Date.now() - startedAt > 240_000) break;
+    const job = snapshot.data();
+    let valid = false;
+    try { valid = validDeletionJob(job, snapshot.id); } catch (_) { /* fail closed */ }
+    if (!valid) {
+      await snapshot.ref.update({
+        nextAttemptAt: FieldValue.delete(),
+        phase: "INVALID",
+      });
+      invalid += 1;
+      continue;
+    }
+    try {
+      const result = await runDeletion(job.uid, job.email, { nowMillis });
+      if (result.status === "PENDING") deferred += 1;
+      else completed += 1;
+    } catch (_) {
+      // También difiere un fallo de revalidación previo a adquirir un lease nuevo, para que
+      // un tenant inconsistente no ocupe siempre las primeras veinte plazas.
+      await deferAccountDeletion(job.uid, job.leaseToken, nowMillis).catch(() => {});
+      deferred += 1;
+    }
+  }
+  return { completed, deferred, invalid };
+}
+
+export const resumeAccountDeletions = onSchedule({
+  region: ACCOUNT_DELETION_CALLABLE_OPTIONS.region,
+  schedule: "every 5 minutes",
+  maxInstances: 1,
+  concurrency: 1,
+  timeoutSeconds: 300,
+  memory: "512MiB",
+  retryCount: 3,
+}, resumeAccountDeletionsHandler);

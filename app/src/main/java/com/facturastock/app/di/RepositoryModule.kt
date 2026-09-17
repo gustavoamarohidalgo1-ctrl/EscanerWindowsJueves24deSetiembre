@@ -7,6 +7,10 @@ import com.facturastock.app.data.files.LocalImageQualityAnalyzer
 import com.facturastock.app.data.files.LocalInvoiceImagePreprocessor
 import com.facturastock.app.data.files.LocalRetainedImageStore
 import com.facturastock.app.data.files.LocalRetentionFileSweep
+import com.facturastock.app.data.export.AndroidReportPdfWriter
+import com.facturastock.app.data.repository.RoomReportPdfRepository
+import com.facturastock.app.domain.repository.ReportPdfRepository
+import com.facturastock.app.domain.repository.ReportPdfWriter
 import com.facturastock.app.data.export.ContentResolverUserDataExportWriter
 import com.facturastock.app.data.privacy.WorkManagerPrivacyMaintenanceScheduler
 import com.facturastock.app.data.demo.LocalDemoInvoiceSource
@@ -35,6 +39,7 @@ import com.facturastock.app.data.repository.RoomRecentDraftReadRepository
 import com.facturastock.app.data.repository.RoomPurchasePostingRepository
 import com.facturastock.app.data.repository.RoomPurchaseVoidRepository
 import com.facturastock.app.data.repository.RoomSaleRepository
+import com.facturastock.app.data.repository.RoomSaleVoidRepository
 import com.facturastock.app.data.repository.RoomRemoteSyncCacheRepository
 import com.facturastock.app.data.repository.RoomRemoteCatalogApplicationRepository
 import com.facturastock.app.data.repository.RoomSharedInventoryApplicationRepository
@@ -42,6 +47,11 @@ import com.facturastock.app.data.repository.RoomAuditTrailRepository
 import com.facturastock.app.data.repository.RoomProductRepository
 import com.facturastock.app.data.repository.RoomProductProfitRepository
 import com.facturastock.app.data.repository.RoomProductInventoryRepository
+import com.facturastock.app.data.repository.RoomInvoiceMatchingCommitRepository
+import com.facturastock.app.domain.repository.InvoiceMatchingCommitRepository
+import com.facturastock.app.data.repository.RoomProductRegistrationRepository
+import com.facturastock.app.data.repository.RoomProductEditingRepository
+import com.facturastock.app.domain.repository.ProductEditingRepository
 import com.facturastock.app.data.repository.RoomSupplierProductAliasRepository
 import com.facturastock.app.data.repository.RoomSupplierRepository
 import com.facturastock.app.data.repository.RoomSyncReconciliationRepository
@@ -80,10 +90,12 @@ import com.facturastock.app.domain.repository.RecentDraftReadRepository
 import com.facturastock.app.domain.repository.PurchasePostingRepository
 import com.facturastock.app.domain.repository.PurchaseVoidRepository
 import com.facturastock.app.domain.repository.SaleRepository
+import com.facturastock.app.domain.repository.SaleVoidRepository
 import com.facturastock.app.domain.repository.AuditTrailRepository
 import com.facturastock.app.domain.repository.ProductRepository
 import com.facturastock.app.domain.repository.ProductProfitRepository
 import com.facturastock.app.domain.repository.ProductInventoryRepository
+import com.facturastock.app.domain.repository.ProductRegistrationRepository
 import com.facturastock.app.domain.repository.RetainedImageStore
 import com.facturastock.app.domain.repository.RemoteSyncCacheRepository
 import com.facturastock.app.domain.repository.RemoteCatalogApplicationRepository
@@ -230,6 +242,10 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
+    abstract fun bindSaleVoidRepository(implementation: RoomSaleVoidRepository): SaleVoidRepository
+
+    @Binds
+    @Singleton
     abstract fun bindDebtRepository(implementation: RoomDebtRepository): DebtRepository
 
     @Binds
@@ -285,6 +301,24 @@ abstract class RepositoryModule {
     abstract fun bindProductInventoryRepository(
         implementation: RoomProductInventoryRepository,
     ): ProductInventoryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindInvoiceMatchingCommitRepository(
+        implementation: RoomInvoiceMatchingCommitRepository,
+    ): InvoiceMatchingCommitRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindProductRegistrationRepository(
+        implementation: RoomProductRegistrationRepository,
+    ): ProductRegistrationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindProductEditingRepository(
+        implementation: RoomProductEditingRepository,
+    ): ProductEditingRepository
 
     @Binds
     @Singleton
@@ -375,6 +409,14 @@ abstract class RepositoryModule {
     abstract fun bindRetentionFileSweep(
         implementation: LocalRetentionFileSweep,
     ): RetentionFileSweep
+
+    @Binds
+    @Singleton
+    abstract fun bindReportPdfRepository(implementation: RoomReportPdfRepository): ReportPdfRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReportPdfWriter(implementation: AndroidReportPdfWriter): ReportPdfWriter
 
     @Binds
     @Singleton

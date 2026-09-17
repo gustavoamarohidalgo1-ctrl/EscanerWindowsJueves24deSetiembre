@@ -297,6 +297,64 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  firebase-spark-emulator:
+    name: Firebase Spark direct-write rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install locked emulator dependencies
+        working-directory: functions
+        run: npm ci
+      - name: Test Spark Auth and Firestore rules
+        id: spark_tests
+        working-directory: functions
+        run: >-
+          npx firebase emulators:exec
+          --config ../firebase.spark.json
+          --project demo-facturastock-spark
+          --only auth,firestore
+          "FACTURASTOCK_SPARK_RULES_TEST=1 node --test --test-concurrency=1 --test-reporter=junit test/sparkSecurityRules.test.mjs > firebase-junit.xml"
+
+      - name: Create closed Spark evidence
+        if: always()
+        env:
+          SPARK_TESTS_OUTCOME: ${{ steps.spark_tests.outcome }}
+        run: |
+          mkdir -p ci-summaries/firebase-spark
+          printf 'gate,status\nfirebase_spark_emulator,%s\n' "$SPARK_TESTS_OUTCOME" \
+            > ci-summaries/firebase-spark/gates.csv
+          ruby scripts/summarize-junit.rb \
+            ci-summaries/firebase-spark/junit.csv \
+            functions/firebase-junit.xml
+
+      - name: Sanitize Spark evidence
+        id: stage_spark
+        if: always()
+        run: >-
+          ruby scripts/prepare-ci-artifacts.rb
+          ci-artifacts/firebase-spark
+          ci-summaries/firebase-spark
+      - name: Upload sanitized Spark evidence
+        if: ${{ always() && steps.stage_spark.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: firebase-spark-emulator-${{ github.run_attempt }}
+          path: ci-artifacts/firebase-spark/
+          retention-days: 14
+          if-no-files-found: error
+
   room-migrations:
     name: Room migration and persistence instrumentation
     runs-on: ubuntu-latest
@@ -696,6 +754,7 @@ jobs:
       - quality
       - security
       - firebase-emulator
+      - firebase-spark-emulator
       - room-migrations
       - android-ui-e2e
       - android-firebase-e2e
@@ -780,6 +839,7 @@ jobs:
       - quality
       - security
       - firebase-emulator
+      - firebase-spark-emulator
       - room-migrations
       - android-ui-e2e
       - android-firebase-e2e

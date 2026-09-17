@@ -54,6 +54,7 @@ import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.core.time.AppClock
 import com.facturastock.app.data.demo.DemoInvoiceImageGenerator
 import com.facturastock.app.data.demo.DemoInvoiceFixture
+import com.facturastock.app.data.files.LocalDraftImageImporter
 import com.facturastock.app.data.files.LocalInvoiceImagePreprocessor
 import com.facturastock.app.data.ocr.MlKitInvoiceTextRecognizer
 import com.facturastock.app.domain.config.AppConfiguration
@@ -588,7 +589,8 @@ private suspend fun runSyntheticPipeline(context: Context): String {
             bitmap.recycle()
         }
     }
-    val relativePath = "benchmark/demo-invoice.jpg"
+    // Usa el mismo namespace privado de los originales; el preprocesador rechaza otras rutas.
+    val relativePath = "${LocalDraftImageImporter.IMAGE_DIRECTORY}/${BENCHMARK_DRAFT_ID.value}/demo-invoice.jpg"
     val imageFile = File(filesDir, relativePath)
     measured(TRACE_BITMAP_WRITE) {
         check(imageFile.parentFile?.mkdirs() == true || imageFile.parentFile?.isDirectory == true)

@@ -661,8 +661,9 @@ La conversión de unidades, el tratamiento explícito de descuento e impuesto, l
 costo neto/bruto y la fórmula de promedio ponderado sin doble redondeo se documentan en
 [`docs/INVENTORY_COSTING.md`](docs/INVENTORY_COSTING.md).
 
-Ventas mantiene un carrito Room local: **Tipo de venta** permite elegir **Contado** o **A crédito**;
-**Buscar** consulta solo por nombre y muestra coincidencias similares, mientras el código queda
+Ventas mantiene un carrito Room local: primero se elige **Contado** o **A crédito**; una segunda
+pantalla ofrece **Escáner físico** o **Venta manual**. La venta manual muestra los productos
+disponibles para agregarlos tocándolos y permite filtrar por nombre, mientras el código queda
 reservado a **Escáner físico** y al lector USB/Bluetooth tipo
 teclado y exige una asociación explícita cuando es nuevo. El precio de venta se solicita al
 crear/vincular el producto recibido, queda en el catálogo y se propone en el carrito sin derivarlo

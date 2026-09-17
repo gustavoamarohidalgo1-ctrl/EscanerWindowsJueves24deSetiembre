@@ -165,11 +165,12 @@ class RoomSharedInventoryApplicationRepository @Inject constructor(
         }
         val balancesByRemoteKey = balances.associateBy(ResolvedBalance::remoteKey)
         val existingGraph = database.saleDao().findWithLines(sale.saleId.value)
-        val alreadyPosted = existingGraph?.sale?.status == SaleStatus.POSTED.name
-        if (!alreadyPosted) {
-            balances.forEach {
-                applyAuthoritativeBalance(localBusinessId = localBusinessId, resolved = it)
-            }
+        // El ACK puede haber publicado la venta antes de que el cursor alcance este evento.
+        // Un evento anterior de la misma página puede haber reemplazado su saldo: siempre
+        // aplicar la instantánea en orden del feed. materializeSale verifica por separado el
+        // grafo ya publicado sin duplicar venta, movimientos ni auditoría.
+        balances.forEach {
+            applyAuthoritativeBalance(localBusinessId = localBusinessId, resolved = it)
         }
         val materialized = materializeSale(
             localBusinessId = localBusinessId,
@@ -445,6 +446,7 @@ class RoomSharedInventoryApplicationRepository @Inject constructor(
         ) {
             throw InventoryApplicationConflict()
         }
+        database.saleDao().deletePendingCheckout(document.saleId.value)
         return 1
     }
 

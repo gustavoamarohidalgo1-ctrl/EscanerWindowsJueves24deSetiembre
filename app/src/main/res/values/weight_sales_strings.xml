@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="weight_sale_help">Ingresa cuánto quiere comprar el cliente o la cantidad en kilos.</string>
+    <string name="weight_sale_by_amount">Por importe</string>
+    <string name="weight_sale_by_quantity">Por kilos</string>
+    <string name="weight_sale_amount_label">Importe (%1$s)</string>
+    <string name="weight_sale_quantity_label">Cantidad (kg)</string>
+    <string name="weight_sale_price_per_kg">Precio por kg: %1$s</string>
+    <string name="weight_sale_stock">Disponible: %1$s kg · %2$s</string>
+    <string name="weight_sale_total">Importe: %1$s</string>
+    <string name="weight_sale_calculated_quantity">Cantidad: %1$s kg</string>
+    <string name="weight_sale_pending_value">—</string>
+    <string name="weight_sale_add">Agregar a la venta</string>
+    <string name="weight_sale_save">Guardar importe</string>
+    <string name="weight_sale_edit">Editar importe</string>
+    <string name="weight_sale_cart_summary">%1$s kg · %2$s por kg</string>
+    <string name="weight_sale_invalid_amount">Ingresa un importe válido mayor que cero.</string>
+    <string name="weight_sale_invalid_quantity">Ingresa una cantidad válida mayor que cero que produzca un importe cobrable.</string>
+    <string name="weight_sale_exceeds_stock">La cantidad supera los kilos disponibles. Reduce el importe o la cantidad.</string>
+    <string name="weight_sale_missing_price">El producto necesita un precio por kilo mayor que cero. Actualízalo en Inventario.</string>
+    <string name="weight_sale_product_changed">El producto o su precio cambió. Revisa el importe y los kilos antes de confirmar de nuevo.</string>
+    <string name="weight_sale_product_unavailable">Este producto ya no está disponible para vender por kilos. Revisa su stock en Inventario.</string>
+    <string name="weight_sale_stale_cart">La venta cambió. Cierra esta ventana y vuelve a editar el importe.</string>
+    <string name="weight_sale_save_failed">No se pudo guardar el importe. Inténtalo de nuevo.</string>
+</resources>

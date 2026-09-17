@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pago_directo_saldo_completo">Cobrar saldo completo: %1$s</string>
+    <string name="pago_directo_registrar_abono">Registrar abono</string>
+    <string name="pago_directo_error_actualizado">El saldo cambió o la deuda ya fue pagada. Revisa el saldo actual antes de volver a tocar Registrar pago.</string>
+    <string name="pago_directo_error_guardar">No se pudo verificar el pago. Revisa el saldo y vuelve a tocar Registrar pago para comprobar o completar el mismo cobro.</string>
+</resources>

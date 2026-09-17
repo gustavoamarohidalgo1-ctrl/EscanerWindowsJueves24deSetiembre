@@ -4,24 +4,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.facturastock.app.domain.model.CurrencyCode
@@ -57,38 +58,46 @@ class InventoryScreensTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun listShowsSearchInventorySummaryAndAlertsAndDispatchesActions() {
+    fun listShowsRegistrationInventorySummaryAndAlertsWithoutHiddenControls() {
         val item = inventoryItem()
         val openedProducts = mutableListOf<ProductId>()
         var diagnosticRuns = 0
-        var lastQuery = ""
+        var registrations = 0
+        var manualRegistrations = 0
+        var specialRegistrations = 0
 
         composeRule.setContent {
-            var query by remember { mutableStateOf("") }
             FacturaStockTheme {
                 InventoryListScreen(
                     items = listOf(item),
-                    query = query,
+                    query = "",
                     diagnosticReport = null,
                     isLoading = false,
                     isDiagnosing = false,
                     diagnosticFailed = false,
-                    onQueryChange = {
-                        query = it
-                        lastQuery = it
-                    },
+                    onQueryChange = {},
+                    onRegisterProducts = { registrations++ },
+                    onRegisterManual = { manualRegistrations++ },
+                    onRegisterSpecialProduct = { specialRegistrations++ },
                     onProductClick = openedProducts::add,
                     onRunDiagnostic = { diagnosticRuns++ },
                 )
             }
         }
 
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH)
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_PRODUCTS)
             .assertIsDisplayed()
-            .performTextInput("café")
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH)
-            .assertTextContains("café", substring = true)
-        composeRule.runOnIdle { assertEquals("café", lastQuery) }
+            .performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertIsDisplayed()
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_MANUAL)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_SPECIAL_PRODUCT)
+            .performScrollTo().assertIsDisplayed().performClick()
+        listOf("Existencias", "Ganancias", "Escáner físico").forEach { label ->
+            composeRule.onNodeWithText(label).assertDoesNotExist()
+        }
 
         composeRule.onNodeWithTag(InventoryTestTags.RUN_DIAGNOSTIC)
             .performScrollTo()
@@ -122,15 +131,301 @@ class InventoryScreensTest {
             .assertIsDisplayed()
 
         composeRule.runOnIdle {
+            assertEquals(1, specialRegistrations)
             assertEquals(listOf(item.productId), openedProducts)
             assertEquals(1, diagnosticRuns)
+            assertEquals(1, registrations)
+            assertEquals(1, manualRegistrations)
         }
+    }
+
+    @Test
+    fun productNameSearchIsVisibleAndReportsTypingFocusAndClear() {
+        val queries = mutableListOf<String>()
+        val focusChanges = mutableListOf<Boolean>()
+        lateinit var focusManager: FocusManager
+        composeRule.setContent {
+            var query by remember { mutableStateOf("") }
+            focusManager = LocalFocusManager.current
+            FacturaStockTheme {
+                InventoryListScreen(
+                    items = listOf(inventoryItem()),
+                    query = query,
+                    diagnosticReport = null,
+                    isLoading = false,
+                    isDiagnosing = false,
+                    diagnosticFailed = false,
+                    onQueryChange = {
+                        query = it
+                        queries += it
+                    },
+                    onSearchFocusChange = focusChanges::add,
+                    onProductClick = {},
+                    onRunDiagnostic = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH)
+            .assertIsDisplayed()
+            .performTextReplacement("az")
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertTextContains("az")
+        composeRule.runOnIdle {
+            assertEquals(listOf("az"), queries)
+            assertEquals(true, focusChanges.last())
+        }
+
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH_CLEAR)
+            .assertIsDisplayed()
+            .performClick()
+        composeRule.runOnIdle {
+            assertEquals(listOf("az", ""), queries)
+            focusManager.clearFocus(force = true)
+        }
+        composeRule.runOnIdle {
+            assertEquals(false, focusChanges.last())
+        }
+    }
+
+    @Test
+    fun removingFocusedProductSearchReleasesItsFocusRegistration() {
+        val focusChanges = mutableListOf<Boolean>()
+        var showInventory by mutableStateOf(true)
+        composeRule.setContent {
+            FacturaStockTheme {
+                if (showInventory) {
+                    InventoryListScreen(
+                        items = listOf(inventoryItem()),
+                        query = "",
+                        diagnosticReport = null,
+                        isLoading = false,
+                        isDiagnosing = false,
+                        diagnosticFailed = false,
+                        onQueryChange = {},
+                        onSearchFocusChange = focusChanges::add,
+                        onProductClick = {},
+                        onRunDiagnostic = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).performClick()
+        composeRule.runOnIdle {
+            assertEquals(true, focusChanges.last())
+            showInventory = false
+        }
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertDoesNotExist()
+        composeRule.runOnIdle {
+            assertEquals(false, focusChanges.last())
+        }
+    }
+
+    @Test
+    fun depletedProductStaysVisibleAndEditableInListAndDetailWithoutArchiveControls() {
+        val original = inventoryItem()
+        val product = original.copy(
+            alerts = emptySet(),
+            positions = original.positions.map { it.copy(quantityOnHand = BigDecimal.ZERO, alerts = emptySet()) },
+        )
+        var showDetail by mutableStateOf(false)
+        var actionsEnabled by mutableStateOf(true)
+        val edits = mutableListOf<ProductId>()
+        val deletions = mutableListOf<ProductId>()
+        composeRule.setContent {
+            FacturaStockTheme {
+                if (showDetail) {
+                    InventoryProductDetailScreen(
+                        detail = InventoryProductDetail(product, emptyList()),
+                        onOpenPurchase = {},
+                        onBack = {},
+                        onEditProduct = edits::add,
+                        onDeleteProduct = deletions::add,
+                        productActionsEnabled = actionsEnabled,
+                    )
+                } else {
+                    InventoryListScreen(
+                        items = listOf(product),
+                        query = "",
+                        diagnosticReport = null,
+                        isLoading = false,
+                        isDiagnosing = false,
+                        diagnosticFailed = false,
+                        onQueryChange = {},
+                        onProductClick = { showDetail = true },
+                        onRunDiagnostic = {},
+                        onEditProduct = edits::add,
+                        onDeleteProduct = deletions::add,
+                        productActionsEnabled = actionsEnabled,
+                    )
+                }
+            }
+        }
+        listOf("Activos", "Archivados", "Restaurar").forEach { label ->
+            composeRule.onNodeWithText(label).assertDoesNotExist()
+        }
+        composeRule.onNodeWithText("1 producto").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN)
+            .performScrollToNode(hasText("Existencia total: 0 und"))
+        composeRule.onNodeWithText("Existencia total: 0 und").assertIsDisplayed()
+        composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN)
+            .performScrollToNode(hasTestTag(InventoryTestTags.editProduct(product.productId)))
+        composeRule.onNodeWithTag(InventoryTestTags.editProduct(product.productId)).assertIsEnabled().performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.deleteProduct(product.productId)).assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(listOf(product.productId), edits)
+            assertTrue(!showDetail)
+            actionsEnabled = false
+        }
+        composeRule.onNodeWithTag(InventoryTestTags.editProduct(product.productId)).assertIsNotEnabled()
+        composeRule.onNodeWithTag(InventoryTestTags.deleteProduct(product.productId)).assertIsNotEnabled()
+        composeRule.runOnIdle { actionsEnabled = true }
+        composeRule.onNodeWithTag(InventoryTestTags.product(product.productId)).performScrollTo().performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.DETAIL_LIST)
+            .performScrollToNode(hasTestTag(InventoryTestTags.editProduct(product.productId)))
+        composeRule.onNodeWithTag(InventoryTestTags.editProduct(product.productId)).assertIsEnabled().performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.deleteProduct(product.productId)).assertIsEnabled().performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.DETAIL_LIST)
+            .performScrollToNode(hasText("Existencia total: 0 und"))
+        composeRule.onNodeWithText("Existencia total: 0 und").assertIsDisplayed()
+        listOf("Activos", "Archivados", "Restaurar").forEach { label ->
+            composeRule.onNodeWithText(label).assertDoesNotExist()
+        }
+        composeRule.runOnIdle {
+            assertEquals(listOf(product.productId, product.productId), edits)
+            assertEquals(listOf(product.productId, product.productId), deletions)
+        }
+    }
+
+    @Test
+    fun deletionRequiresOneConfirmationAndFailuresOnlyOfferClose() {
+        val product = inventoryItem()
+        var pending by mutableStateOf(
+            InventoryContract.PendingProductDeletion(product.productId, product.businessId, product.productName),
+        )
+        var busy by mutableStateOf(true)
+        var failure by mutableStateOf<InventoryContract.ProductActionFailure?>(null)
+        var confirmations = 0
+        var dismissals = 0
+        composeRule.setContent {
+            FacturaStockTheme {
+                InventoryProductDeletionDialog(
+                    pending = pending,
+                    isBusy = busy,
+                    failure = failure,
+                    onConfirm = { confirmations++ },
+                    onDismiss = { dismissals++ },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Eliminar").assertIsNotEnabled()
+        composeRule.onNodeWithText("Cancelar").assertIsNotEnabled()
+        composeRule.runOnIdle { busy = false }
+        composeRule.onNodeWithText("Eliminar").assertIsNotEnabled()
+        composeRule.onNodeWithText("Cancelar").assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(0, confirmations)
+            assertEquals(1, dismissals)
+            pending = pending.copy(expectedVersion = 1L)
+        }
+        composeRule.onNodeWithText("Eliminar").assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(1, confirmations)
+            busy = true
+        }
+        composeRule.onNodeWithText("Eliminar").assertIsNotEnabled()
+        composeRule.onNodeWithText("Cancelar").assertIsNotEnabled()
+        composeRule.runOnIdle {
+            busy = false
+            pending = pending.copy(expectedVersion = null)
+            failure = InventoryContract.ProductActionFailure.LOAD_FAILED
+        }
+        composeRule.onNodeWithText("Intentar de nuevo").assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(2, confirmations)
+            failure = InventoryContract.ProductActionFailure.SAVE_FAILED
+        }
+        composeRule.onNodeWithText("Intentar de nuevo").assertIsEnabled().performClick()
+        val blockedFailures = listOf(
+            InventoryContract.ProductActionFailure.HAS_HISTORY,
+            InventoryContract.ProductActionFailure.HAS_STOCK,
+            InventoryContract.ProductActionFailure.SHARED_BUSINESS,
+            InventoryContract.ProductActionFailure.STALE_PRODUCT,
+            InventoryContract.ProductActionFailure.BUSINESS_CHANGED,
+            InventoryContract.ProductActionFailure.PRODUCT_UNAVAILABLE,
+        )
+        blockedFailures.forEach { blocked ->
+            composeRule.runOnIdle { failure = blocked }
+            composeRule.onNodeWithTag(InventoryTestTags.PRODUCT_ACTION_ERROR).assertIsDisplayed()
+            composeRule.onNodeWithText("Eliminar").assertDoesNotExist()
+            composeRule.onNodeWithText("Intentar de nuevo").assertDoesNotExist()
+            composeRule.onNodeWithText("Cancelar").assertDoesNotExist()
+            composeRule.onNodeWithText("Cerrar").assertIsEnabled().performClick()
+        }
+        composeRule.runOnIdle {
+            assertEquals(3, confirmations)
+            assertEquals(1 + blockedFailures.size, dismissals)
+        }
+    }
+
+    @Test
+    fun deletionExplainsPreservationWithoutArchiveOrRestoreChoices() {
+        val product = inventoryItem()
+        var busy by mutableStateOf(false)
+        var confirmations = 0
+        var dismissals = 0
+        composeRule.setContent {
+            FacturaStockTheme {
+                InventoryProductDeletionDialog(
+                    pending = InventoryContract.PendingProductDeletion(
+                        product.productId, product.businessId, product.productName, 7L,
+                    ),
+                    isBusy = busy,
+                    failure = null,
+                    onConfirm = { confirmations++ },
+                    onDismiss = { dismissals++ },
+                )
+            }
+        }
+        composeRule.onNodeWithText("Sus existencias e historial de ventas y deudas se conservarán.", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Quitar del catálogo").assertDoesNotExist()
+        composeRule.onNodeWithText("Restaurar producto").assertDoesNotExist()
+        composeRule.onNodeWithText("Cancelar").assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(0, confirmations)
+            assertEquals(1, dismissals)
+        }
+        composeRule.onNodeWithText("Eliminar").assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(1, confirmations)
+            busy = true
+        }
+        composeRule.onNodeWithText("Eliminar").assertIsNotEnabled()
+        composeRule.onNodeWithText("Cancelar").assertIsNotEnabled()
+    }
+
+    @Test
+    fun removedProductDetailKeepsStockReadableWithoutEditDeleteOrRestoreActions() {
+        val product = inventoryItem().copy(alerts = setOf(InventoryDataAlert.ARCHIVED_PRODUCT))
+        composeRule.setContent {
+            FacturaStockTheme {
+                InventoryProductDetailScreen(
+                    detail = InventoryProductDetail(product, emptyList()),
+                    onOpenPurchase = {},
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag(InventoryTestTags.editProduct(product.productId)).assertDoesNotExist()
+        composeRule.onNodeWithTag(InventoryTestTags.deleteProduct(product.productId)).assertDoesNotExist()
+        composeRule.onNodeWithText("Restaurar producto").assertDoesNotExist()
+        composeRule.onNodeWithText("Ver retirados").assertDoesNotExist()
+        composeRule.onNodeWithText("Existencia total: 8 und").performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun normalInventoryHidesDiagnosticAndZeroCountButFailureKeepsRetryAccessible() {
         var diagnosticFailed by mutableStateOf(false)
-        var section by mutableStateOf(InventoryContract.ListSection.STOCK)
         var diagnosticRuns = 0
 
         composeRule.setContent {
@@ -145,8 +440,6 @@ class InventoryScreensTest {
                     onQueryChange = {},
                     onProductClick = {},
                     onRunDiagnostic = { diagnosticRuns++ },
-                    section = section,
-                    onSectionChange = { section = it },
                 )
             }
         }
@@ -154,7 +447,7 @@ class InventoryScreensTest {
         composeRule.onNodeWithTag(InventoryTestTags.DIAGNOSTIC).assertDoesNotExist()
         composeRule.onNodeWithTag(InventoryTestTags.RUN_DIAGNOSTIC).assertDoesNotExist()
         composeRule.onNodeWithText("Inventario").assertDoesNotExist()
-        composeRule.onNodeWithText("0 productos con existencias").assertDoesNotExist()
+        composeRule.onNodeWithText("0 productos").assertDoesNotExist()
         composeRule.onNodeWithText("Inventario por preparar")
             .performScrollTo()
             .assertIsDisplayed()
@@ -167,55 +460,26 @@ class InventoryScreensTest {
             .assertIsDisplayed()
             .performClick()
         composeRule.runOnIdle { assertEquals(1, diagnosticRuns) }
-
-        composeRule.onNodeWithTag(InventoryTestTags.SECTION_PROFIT).performClick()
-        composeRule.onNodeWithText("0 productos en ganancias").assertDoesNotExist()
-        composeRule.onAllNodesWithText("Ganancias").assertCountEquals(1)
-        composeRule.onNodeWithText("Sin productos para mostrar")
-            .performScrollTo()
-            .assertIsDisplayed()
     }
 
     @Test
-    fun scannerModeShowsAccessibleLiveStatusAndEveryRecoverableResult() {
-        var inputMode by mutableStateOf(InventoryContract.InputMode.SEARCH)
-        var scannerActive by mutableStateOf(true)
-        var lookupRunning by mutableStateOf(false)
-        var scannerFailure by mutableStateOf<InventoryContract.ScannerFailure?>(null)
+    fun registrationScreenShowsAccessibleLiveStatusAndRecoverableResults() {
+        var state by mutableStateOf(
+            InventoryContract.State(isRegisteringProducts = true, scannerActive = true),
+        )
+        var returnedToInventory = false
 
         composeRule.setContent {
             FacturaStockTheme {
-                InventoryListScreen(
-                    items = listOf(inventoryItem()),
-                    query = "",
-                    diagnosticReport = null,
-                    isLoading = false,
-                    isDiagnosing = false,
-                    diagnosticFailed = false,
-                    onQueryChange = {},
-                    onProductClick = {},
-                    onRunDiagnostic = {},
-                    inputMode = inputMode,
-                    scannerActive = scannerActive,
-                    isBarcodeLookupRunning = lookupRunning,
-                    scannerFailure = scannerFailure,
-                    onInputModeChange = { inputMode = it },
+                InventoryRegistrationScreen(
+                    state = state,
+                    onBack = { returnedToInventory = true },
                 )
             }
         }
 
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH_MODE)
-            .assertIsDisplayed()
-            .assertIsSelected()
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertIsDisplayed()
-        composeRule.onNodeWithTag(InventoryTestTags.SCANNER_STATUS).assertDoesNotExist()
-
-        composeRule.onNodeWithTag(InventoryTestTags.SCANNER_MODE)
-            .assertIsDisplayed()
-            .performClick()
-            .assertIsSelected()
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertDoesNotExist()
-        composeRule.onNodeWithTag(InventoryTestTags.SCANNER_STATUS)
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTRATION_STATUS)
+            .performScrollTo()
             .assertIsDisplayed()
             .assert(
                 SemanticsMatcher.expectValue(
@@ -223,54 +487,46 @@ class InventoryScreensTest {
                     LiveRegionMode.Polite,
                 ),
             )
-        composeRule.onNodeWithText(
-            "Lector listo. Escanea el código del producto y presiona Enter.",
-        ).assertIsDisplayed()
+        composeRule.onNodeWithText("Esperando lectura del escáner").assertIsDisplayed()
 
-        composeRule.runOnIdle { lookupRunning = true }
+        composeRule.runOnIdle { state = state.copy(isBarcodeLookupRunning = true) }
         composeRule.onNodeWithText("Buscando el producto…").assertIsDisplayed()
 
         composeRule.runOnIdle {
-            lookupRunning = false
-            scannerFailure = InventoryContract.ScannerFailure.INVALID_BARCODE
+            state = state.copy(
+                isBarcodeLookupRunning = false,
+                scannerFailure = InventoryContract.ScannerFailure.INVALID_BARCODE,
+            )
         }
         composeRule.onNodeWithText(
             "El código debe tener entre 1 y 128 caracteres ASCII visibles.",
         ).assertIsDisplayed()
 
         composeRule.runOnIdle {
-            scannerFailure = InventoryContract.ScannerFailure.BARCODE_NOT_FOUND
-        }
-        composeRule.onNodeWithText(
-            "El código no está asociado a ningún producto de este negocio.",
-        ).assertIsDisplayed()
-
-        composeRule.runOnIdle {
-            scannerFailure = InventoryContract.ScannerFailure.NO_ACTIVE_BUSINESS
+            state = state.copy(scannerFailure = InventoryContract.ScannerFailure.NO_ACTIVE_BUSINESS)
         }
         composeRule.onNodeWithText(
             "Configura un negocio antes de buscar productos.",
         ).assertIsDisplayed()
 
         composeRule.runOnIdle {
-            scannerFailure = InventoryContract.ScannerFailure.LOOKUP_FAILED
+            state = state.copy(scannerFailure = InventoryContract.ScannerFailure.LOOKUP_FAILED)
         }
         composeRule.onNodeWithText(
             "No se pudo buscar el producto. Vuelve a escanear el código.",
         ).assertIsDisplayed()
 
         composeRule.runOnIdle {
-            scannerFailure = null
-            scannerActive = false
+            state = state.copy(scannerFailure = null, scannerActive = false)
         }
         composeRule.onNodeWithText(
             "Escáner en pausa. Conecta o activa un lector USB o Bluetooth tipo teclado.",
         ).assertIsDisplayed()
 
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH_MODE).performClick()
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH_MODE).assertIsSelected()
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertIsDisplayed()
-        composeRule.onNodeWithTag(InventoryTestTags.SCANNER_STATUS).assertDoesNotExist()
+        composeRule.onNodeWithText("Volver al inventario")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle { assertTrue(returnedToInventory) }
     }
 
     @Test
@@ -356,9 +612,6 @@ class InventoryScreensTest {
         var savedPrice = false
 
         composeRule.setContent {
-            var section by remember {
-                mutableStateOf(InventoryContract.ListSection.STOCK)
-            }
             var editor by remember {
                 mutableStateOf<InventoryContract.SalePriceEditor?>(null)
             }
@@ -373,9 +626,8 @@ class InventoryScreensTest {
                     onQueryChange = {},
                     onProductClick = {},
                     onRunDiagnostic = {},
-                    section = section,
+                    section = InventoryContract.ListSection.ESTIMATED_PROFIT,
                     profits = listOf(available, missing),
-                    onSectionChange = { section = it },
                     onEditSalePrice = { productId ->
                         val profit = listOf(available, missing).single { it.productId == productId }
                         editor = InventoryContract.SalePriceEditor(
@@ -396,10 +648,6 @@ class InventoryScreensTest {
             }
         }
 
-        composeRule.onNodeWithTag(InventoryTestTags.SECTION_PROFIT)
-            .assertIsDisplayed()
-            .performClick()
-        composeRule.onAllNodesWithText("Ganancias").assertCountEquals(1)
         composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN).performScrollToNode(
             hasTestTag(InventoryTestTags.profit(available.productId)),
         )

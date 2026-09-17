@@ -3,6 +3,7 @@ package com.facturastock.app.data.local
 import android.content.Context
 import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.facturastock.app.core.coroutines.DefaultDispatcherProvider
@@ -82,6 +83,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executor
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -93,6 +96,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -107,12 +111,23 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PurchasePostingDaoTest {
     private lateinit var database: FacturaStockDatabase
+    private val readQueries = CopyOnWriteArrayList<String>()
 
     @Before
     fun setUp() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         database = Room.inMemoryDatabaseBuilder(context, FacturaStockDatabase::class.java)
             .addCallback(postingPersistenceCallback)
+            .setQueryCallback(
+                object : RoomDatabase.QueryCallback {
+                    override fun onQuery(sqlQuery: String, bindArgs: List<Any?>) {
+                        if (sqlQuery.startsWith("SELECT * FROM prepared_purchases")) {
+                            readQueries += sqlQuery
+                        }
+                    }
+                },
+                Executor { it.run() },
+            )
             .build()
 
         seedCatalog(
@@ -834,8 +849,11 @@ class PurchasePostingDaoTest {
         val postedObserved = CompletableDeferred<List<com.facturastock.app.domain.model.InventoryReadItem>>()
         val observation = launch {
             inventory.observeInventory(businessId).collect { items ->
-                if (items.isEmpty()) initialObserved.complete(Unit)
-                else postedObserved.complete(items)
+                if (items.all { it.positions.isEmpty() }) {
+                    initialObserved.complete(Unit)
+                } else {
+                    postedObserved.complete(items)
+                }
             }
         }
         withTimeout(5_000) { initialObserved.await() }
@@ -1255,6 +1273,68 @@ class PurchasePostingDaoTest {
         collector.cancelAndJoin()
         emissions.close()
         Unit
+    }
+
+    @Test
+    fun unchangedPurchaseHeaderKeepsDetailReadersAliveAndStillEmitsAuditAndSyncChanges() = runBlocking {
+        val batch = postingBatch()
+        database.purchasePostingDao().postAtomically(batch)
+        readQueries.clear()
+        val businessId = requireNotNull(BusinessId.parse(BUSINESS_ID))
+        val purchaseId = requireNotNull(PurchaseId.parse(batch.purchase.purchaseId))
+        val emissions = Channel<com.facturastock.app.domain.model.PurchaseReadDetail?>(Channel.UNLIMITED)
+        val collector = launch {
+            purchaseReadRepository().observePurchase(businessId, purchaseId).collect(emissions::send)
+        }
+        try {
+            val initial = requireNotNull(withTimeout(5_000) { emissions.receive() })
+            assertEquals(PurchaseSyncState.PENDING_SYNC, initial.summary.syncState)
+            val initialPreparedReads = readQueries.size
+            assertEquals(1, initialPreparedReads)
+
+            val foreignSupplier = requireNotNull(database.supplierDao().findById(OTHER_SUPPLIER_ID))
+            assertEquals(1, database.supplierDao().update(
+                supplierId = foreignSupplier.supplierId,
+                legalName = "Proveedor ajeno actualizado",
+                ruc = foreignSupplier.ruc,
+                tradeName = foreignSupplier.tradeName,
+                status = foreignSupplier.status,
+                expectedVersion = foreignSupplier.version,
+                updatedAt = foreignSupplier.updatedAt + 1L,
+            ))
+            // Observación negativa acotada: la misma compra no se vuelve a publicar por un proveedor ajeno.
+            assertNull(withTimeoutOrNull(500) { emissions.receive() })
+            assertEquals(initialPreparedReads, readQueries.size)
+
+            database.auditEventDao().insert(batch.auditEvents.single().copy(
+                auditEventId = uuid(9_900),
+                // Una compra ya POSTED admite auditoria de sync, no otra publicacion.
+                eventType = AuditEventType.SYNC_CONFLICT_RESOLVED.name,
+                entityType = "purchase",
+                occurredAt = POSTED_AT + 1L,
+            ))
+            val auditChanged = requireNotNull(withTimeout(5_000) { emissions.receive() })
+            assertEquals(2, auditChanged.auditEvents.size)
+            assertTrue(auditChanged.auditEvents.any { it.eventType == AuditEventType.SYNC_CONFLICT_RESOLVED })
+            assertEquals(initial.summary, auditChanged.summary)
+            assertEquals(initialPreparedReads, readQueries.size)
+
+            assertEquals(1, database.outboxOperationDao().claim(
+                operationId = batch.outboxOperations.single().operationId,
+                pendingStatus = OutboxOperationStatus.PENDING.name,
+                claimedStatus = OutboxOperationStatus.PROCESSING.name,
+                claimedAt = POSTED_AT + 2L,
+                claimToken = uuid(9_901),
+                claimLeaseUntil = POSTED_AT + 1_000L,
+            ))
+            val syncChanged = requireNotNull(withTimeout(5_000) { emissions.receive() })
+            assertEquals(PurchaseSyncState.SYNCING, syncChanged.summary.syncState)
+            assertEquals(2, syncChanged.auditEvents.size)
+            assertEquals(initial.lines, syncChanged.lines)
+        } finally {
+            collector.cancelAndJoin()
+            emissions.close()
+        }
     }
 
     @Test

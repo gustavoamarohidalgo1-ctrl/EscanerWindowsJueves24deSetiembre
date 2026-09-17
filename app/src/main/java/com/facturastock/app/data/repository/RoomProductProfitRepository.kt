@@ -32,6 +32,8 @@ class RoomProductProfitRepository @Inject constructor(
 ) : ProductProfitRepository {
     override fun observeForBusiness(businessId: BusinessId): Flow<List<ProductProfit>> =
         productDao.observeProfitRows(businessId.value)
+            // Evita repetir conversiones decimales y calculos por filas exactamente iguales.
+            .distinctUntilChanged()
             .map { rows -> productProfitsFromRows(businessId, rows) }
             // Room puede invalidar las tablas por cambios de otro negocio. Evita publicar de
             // nuevo una proyeccion identica y recomponer toda la lista de rentabilidad.

@@ -128,9 +128,19 @@ fun AccountScreen(
 
                         AccountContract.Feedback.ACCOUNT_DELETED ->
                             R.string.account_deleted_feedback
+
+                        AccountContract.Feedback.ACCOUNT_DELETION_PENDING ->
+                            R.string.account_deletion_pending_feedback
+
+                        AccountContract.Feedback.ACCOUNT_DELETION_UNCONFIRMED ->
+                            R.string.account_deletion_unconfirmed_feedback
                     },
                 ),
-                tone = StatusTone.SUCCESS,
+                tone = when (feedback) {
+                    AccountContract.Feedback.ACCOUNT_DELETION_PENDING -> StatusTone.INFO
+                    AccountContract.Feedback.ACCOUNT_DELETION_UNCONFIRMED -> StatusTone.WARNING
+                    else -> StatusTone.SUCCESS
+                },
                 iconRes = R.drawable.ic_check_circle,
                 announcementMode = LiveRegionMode.Polite,
             )
@@ -441,6 +451,7 @@ private fun AccountDeletionSection(
     state: AccountContract.State,
     onAction: (AccountContract.Action) -> Unit,
 ) {
+    if (!state.accountDeletionAvailable) return
     SectionHeader(titleRes = R.string.account_delete_section)
     Text(
         text = stringResource(R.string.account_delete_summary),

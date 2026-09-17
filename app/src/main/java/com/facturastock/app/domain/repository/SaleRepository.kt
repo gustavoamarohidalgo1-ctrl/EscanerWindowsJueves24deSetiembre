@@ -77,6 +77,8 @@ sealed interface CreateSaleCartResult {
 }
 
 sealed interface SaleCartMutationResult {
+    /** El servidor puede haber confirmado: reintentar el checkout antes de editar el carrito. */
+    data object CheckoutPending : SaleCartMutationResult
     data class Saved(val cart: SaleCart) : SaleCartMutationResult
     data object NoActiveBusiness : SaleCartMutationResult
     data object NotFound : SaleCartMutationResult

@@ -114,6 +114,17 @@ firebase_emulator_job = firebase_emulator_job.split(/^  room-migrations:\s*$/, 2
 assert(firebase_emulator_job.include?("--test-concurrency=1"),
        "las suites que comparten Emulator Suite deben ejecutarse en serie")
 
+spark_emulator_job = workflow.split(/^  firebase-spark-emulator:\s*$/, 2)[1]
+assert(spark_emulator_job, "falta el gate separado de reglas Spark")
+spark_emulator_job = spark_emulator_job.split(/^  room-migrations:\s*$/, 2).first
+assert(spark_emulator_job.include?("--config ../firebase.spark.json") &&
+       spark_emulator_job.include?("--project demo-facturastock-spark") &&
+       spark_emulator_job.include?("FACTURASTOCK_SPARK_RULES_TEST=1") &&
+       spark_emulator_job.include?("test/sparkSecurityRules.test.mjs"),
+       "el gate Spark debe activar su suite y cargar sus propias reglas")
+assert(workflow.scan("- firebase-spark-emulator").length == 2,
+       "empaquetado y firma deben depender explícitamente del gate Spark")
+
 prepare_source = project_file("scripts/prepare-release-signing.sh")
 assert(prepare_source.include?("    FACTURASTOCK_FIREBASE_STORAGE_BUCKET\n"),
        "prepare-release-signing no exige el bucket")
@@ -168,6 +179,31 @@ assert(gradle_properties.include?("android.r8.optimizedResourceShrinking=true"),
        "release no habilita el shrinker integrado de recursos de AGP 8.13")
 version_catalog = project_file("gradle/libs.versions.toml")
 app_build = project_file("app/build.gradle.kts")
+spark_boundaries = app_build[/^val verifyCloudSparkBoundaries by tasks\.registering \{.*?^\}/m]
+spark_configuration = app_build[/^val verifyCloudSparkConfiguration by tasks\.registering \{.*?^\}/m]
+offline_boundaries = app_build[/^verifyOfflineFirstBoundaries\.configure \{.*?^\}/m]
+spark_prebuild = app_build[
+  /^tasks\.matching \{ task -> task\.name == "preCloudSparkBuild" \}\.configureEach \{.*?^\}/m
+]
+assert(spark_boundaries && spark_configuration && offline_boundaries && spark_prebuild,
+       "faltan gates separados para seguridad Spark, configuración Spark y build offline")
+%w[firebaseProjectId firebaseApplicationId firebaseApiKey].each do |configuration_value|
+  assert(!spark_boundaries.include?(configuration_value),
+         "el gate de código Spark exige credenciales y bloquea builds locales")
+  assert(spark_configuration.include?("check(#{configuration_value}.isNotBlank())") &&
+         spark_configuration.include?(".matches(#{configuration_value})"),
+         "la configuración Spark no valida presencia y sintaxis de #{configuration_value}")
+end
+%w[.useEmulator( FirebaseFunctions.getInstance FirebaseStorage.getInstance 10.0.2.2 localhost demo-facturastock].each do |fragment|
+  assert(spark_boundaries.include?(%Q("#{fragment}")),
+         "el gate de código Spark perdió la conexión prohibida #{fragment}")
+end
+assert(offline_boundaries.include?("verifyCloudAppCheckBoundaries, verifyCloudSparkBoundaries") &&
+       !offline_boundaries.include?("verifyCloudSparkConfiguration"),
+       "offline debe conservar controles de seguridad sin exigir la configuración Spark")
+assert(spark_prebuild.include?("dependsOn(verifyCloudSparkConfiguration)") &&
+       spark_configuration.include?("dependsOn(verifyCloudSparkBoundaries)"),
+       "preCloudSparkBuild debe validar configuración y conexiones antes de empaquetar")
 startup_profile = project_file("app/src/main/baselineProfiles/startup-prof.txt")
 startup_rules = startup_profile.lines.map(&:strip).reject { |line| line.empty? || line.start_with?("#") }
 profile_generator = project_file(
@@ -223,27 +259,57 @@ assert(profile_generator.include?("filterPredicate = applicationProfileRule::mat
        !profile_generator.include?("deferredMaintenanceOwnerPrefixes"),
        "el generador oculta contaminación mediante una blacklist de reglas")
 assert(profile_generator.include?("StartupJourney.prepare(resetPersistentState = true)"),
-       "el generador no limpia/prepara Home fuera de la captura")
+       "el generador no limpia/prepara Vender fuera de la captura")
 assert(startup_journey.include?("pm clear $TARGET_PACKAGE") &&
        startup_journey.include?("--ez $SUPPRESS_DEFERRED_STARTUP_EXTRA true"),
-       "la preparación no aísla estado durable y trabajo post-Home")
+       "la preparación no aísla estado durable y trabajo posterior al primer contenido")
+onboarding_screen = project_file("app/src/main/java/com/facturastock/app/feature/onboarding/OnboardingRoute.kt")
+onboarding_tags = project_file("app/src/main/java/com/facturastock/app/feature/onboarding/OnboardingTestTags.kt")
+onboarding_state = project_file("app/src/main/java/com/facturastock/app/feature/onboarding/OnboardingContract.kt")
+journey_tag_values = startup_journey.scan(/private const val ([A-Z_]+_TAG) = "(onboarding_[^"]+)"/).to_h
+onboarding_tag_names = onboarding_tags.scan(/const val ([A-Z_]+) = "([^"]+)"/).to_h.invert
+startup_journey.scan(/enterText\(device,\s*([A-Z_]+),/).flatten.each do |input_tag|
+  ui_tag = onboarding_tag_names[journey_tag_values[input_tag]]
+  assert(ui_tag && onboarding_screen.include?(".testTag(OnboardingTestTags.#{ui_tag})"),
+         "el harness intenta rellenar un campo de onboarding que ya no existe: #{input_tag}")
+end
+assert(startup_journey.include?("enterText(device, BUSINESS_NAME_TAG, BENCHMARK_BUSINESS_NAME)") &&
+       startup_journey.include?("Until.findObject(By.res(SUBMIT_TAG).enabled(true))") &&
+       startup_journey.include?("submit.click()"),
+       "la preparación debe completar y enviar el onboarding mediante sus controles reales")
+assert(onboarding_state.include?("val warehouseName: String = DEFAULT_WAREHOUSE_NAME") &&
+       onboarding_state.match?(/const val DEFAULT_WAREHOUSE_NAME = "[^\"]+"/),
+       "el onboarding compacto necesita conservar un almacén predeterminado válido")
 assert(main_activity.include?("allowsDeferredStartupHarnessSuppression(BuildConfig.BUILD_TYPE)") &&
        startup_application.include?("buildType == \"benchmark\" || buildType == \"profile\"") &&
        startup_application.include?("!BuildConfig.RUN_DEFERRED_STARTUP"),
        "la supresión del harness puede alcanzar builds distribuibles")
-assert(profile_generator.include?("StartupJourney.waitForHomeReady"),
-       "el generador termina antes de que Home publique contenido operativo")
-assert(macrobenchmark.include?("StartupJourney.waitForHomeReady(device)"),
-       "coldStartup no valida que Home esté realmente listo")
+assert(profile_generator.include?("StartupJourney.waitForSalesReady"),
+       "el generador termina antes de que Vender publique contenido operativo")
+assert(macrobenchmark.include?("StartupJourney.waitForSalesReady(device)"),
+       "coldStartup no valida que Vender esté realmente listo")
 assert(benchmark_activity.include?("onCardPresentationsReady = { cardPresentationsReady = true }"),
        "el fixture de lista no publica cuándo terminó de precalcular sus 100 tarjetas")
 assert(macrobenchmark.include?("By.res(TAG_LIST_PRESENTATIONS_READY)"),
        "el benchmark de lista empieza antes de que estén listas sus presentaciones")
-assert(startup_journey.include?("private const val HOME_READY_TAG = \"home_scan_cta\""),
-       "el recorrido de arranque perdió su marcador de contenido Home")
-assert(startup_journey.include?("Until.hasObject(By.res(HOME_READY_TAG))"),
-       "el recorrido no espera el resource-id Compose que publica Home")
-assert(!startup_journey.include?("By.res(TARGET_PACKAGE, HOME_READY_TAG)"),
+sales_tags = project_file("app/src/main/java/com/facturastock/app/feature/sales/SalesTestTags.kt")
+sales_screen = project_file("app/src/main/java/com/facturastock/app/feature/sales/SalesScreen.kt")
+app_navigation = project_file("app/src/main/java/com/facturastock/app/navigation/FacturaStockApp.kt")
+assert(app_navigation.include?("startDestination = AppRoutes.SALES"),
+       "el benchmark de arranque espera Vender, pero cambió el destino después de onboarding")
+assert(startup_journey.include?("private const val SALES_READY_TAG = \"sales_entry_kind_screen\"") &&
+       sales_tags.include?("const val ENTRY_KIND_SCREEN = \"sales_entry_kind_screen\"") &&
+       sales_screen.include?(".testTag(SalesTestTags.ENTRY_KIND_SCREEN)"),
+       "el recorrido debe esperar el selector real de ventas, no sólo su contenedor")
+assert(startup_journey.include?("Until.hasObject(By.res(SALES_READY_TAG))"),
+       "el recorrido no espera el resource-id Compose que publica Vender")
+assert(startup_journey.include?("private const val SALES_CASH_ENTRY_TAG = \"sales_cash_entry\"") &&
+       sales_tags.include?("const val CASH_ENTRY = \"sales_cash_entry\"") &&
+       sales_screen.include?(".testTag(SalesTestTags.CASH_ENTRY)") &&
+       startup_journey.include?("Until.findObject(By.res(SALES_CASH_ENTRY_TAG).enabled(true).clickable(true))"),
+       "el recorrido termina antes de que la selección de venta al contado sea interactiva")
+assert(!startup_journey.include?("By.res(TARGET_PACKAGE, SALES_READY_TAG)") &&
+       !startup_journey.include?("By.res(TARGET_PACKAGE, SALES_CASH_ENTRY_TAG)"),
        "Compose publica el testTag sin namespace; el selector calificado nunca coincide")
 assert(startup_journey.include?("fun prepare("),
        "falta preparar el onboarding antes de capturar perfiles o métricas")
@@ -277,7 +343,7 @@ assert(app_build.include?("val variantMangledProfileMethod") &&
        "los perfiles fuente aceptan métodos internal no portables entre variantes")
 assert(app_build.include?("buildConfigField(\"boolean\", \"RUN_DEFERRED_STARTUP\", \"true\")") &&
        app_build.include?("buildConfigField(\"boolean\", \"RUN_DEFERRED_STARTUP\", \"false\")"),
-       "profile no aísla el mantenimiento posterior a Home de la captura Startup")
+       "profile no aísla el mantenimiento posterior a Vender de la captura Startup")
 %w[
   :app:assembleLocalProfile
   :app:assembleCloudProfile
@@ -324,10 +390,10 @@ assert(app_build.include?("Toda regla Startup debe estar contenida también en e
 profile_candidates_script = File.read(PROFILE_CANDIDATES)
 profile_capture_script = File.read(PROFILE_CAPTURE)
 assert(app_build.include?("El Baseline Profile perdió CUJ manuales de normalización") &&
-       app_build.include?("El Startup Profile termina antes del Home listo") &&
-       app_build.include?("startupRuleOwner(rule) == requiredHomeOwner") &&
+       app_build.include?("El Startup Profile termina antes de Vender listo") &&
+       app_build.include?("startupRuleOwner(rule) == requiredSalesOwner") &&
        profile_candidates_script.include?("profile_owner(rule) == owner"),
-       "los gates no preservan CUJ manuales o evidencia de Home operativo")
+       "los gates no preservan CUJ manuales o evidencia de Vender operativo")
 assert(profile_candidates_script.include?("PROFILE_RUNS_ROOT") &&
        profile_candidates_script.include?("run-manifest.txt") &&
        profile_candidates_script.include?("junit_sha256"),
@@ -336,8 +402,27 @@ assert(profile_capture_script.include?(":benchmark:connectedLocalProfileAndroidT
        profile_capture_script.include?("File.rename(temporary_run_dir, final_run_dir)") &&
        profile_capture_script.include?("expected_results"),
        "el wrapper no vincula JUnit 2/2 con un snapshot atómico")
+assert(profile_capture_script.include?('ENV.fetch("ANDROID_SERIAL", "")') &&
+       profile_capture_script.include?('Open3.capture3(adb, "-s", target_serial, "get-state")') &&
+       profile_capture_script.include?('"shell", "getprop", "ro.kernel.qemu"') &&
+       profile_capture_script.include?('system({ "ANDROID_SERIAL" => target_serial }, *gradle_command'),
+       "la captura no exige y verifica un único emulador explícito antes de borrar datos")
+Dir.mktmpdir("facturastock-profile-target-") do |temporary_dir|
+  [nil, "", "physical-device", "emulator-5556,emulator-5554"].each do |invalid_serial|
+    _stdout, stderr, status = Open3.capture3(
+      { "ANDROID_SERIAL" => invalid_serial, "ADB" => File.join(temporary_dir, "missing-adb") },
+      RbConfig.ruby,
+      PROFILE_CAPTURE,
+      "contract-target-rejection-#{Process.pid}",
+      chdir: ROOT,
+    )
+    assert(!status.success? && stderr.include?("set ANDROID_SERIAL to one explicit disposable emulator"),
+           "la captura aceptó un dispositivo ambiguo o físico antes de invocar adb/Gradle")
+  end
+end
 assert(app_build.include?("compilerOptions.moduleName.set(\"facturastock_app\")") &&
-       app_build.include?("^compile(?:Local|Cloud)(?:Debug|Release|Benchmark|Profile)Kotlin$"),
+       (app_build.include?("^compile(?:Local|Cloud)(?:Debug|Release|Benchmark|Profile)Kotlin$") ||
+        app_build.include?("^compile(?:Local|Cloud)(?:Debug|Spark|Release|Benchmark|Profile)Kotlin$")),
        "las tareas Kotlin de app no fijan un moduleName portable entre variantes")
 
 Dir.mktmpdir("facturastock-profile-candidate-") do |temporary_dir|
@@ -355,10 +440,9 @@ Dir.mktmpdir("facturastock-profile-candidate-") do |temporary_dir|
   startup_method =
     "SPLcom/facturastock/app/MainActivity;->onCreate(Landroid/os/Bundle;)V"
   startup_class = "Lcom/facturastock/app/MainActivity;"
-  home_rules = [
-    "Lcom/facturastock/app/feature/home/HomeRouteKt;",
-    "Lcom/facturastock/app/feature/home/HomeScreenKt;",
-    "Lcom/facturastock/app/feature/home/HomeDashboardContentKt;",
+  sales_rules = [
+    "Lcom/facturastock/app/feature/sales/SalesRouteKt;",
+    "Lcom/facturastock/app/feature/sales/SalesScreenKt;",
   ]
   manual_cuj_rules = [
     "HPLcom/facturastock/app/domain/normalization/**->**(**)**",
@@ -367,7 +451,7 @@ Dir.mktmpdir("facturastock-profile-candidate-") do |temporary_dir|
     "HPLcom/facturastock/app/feature/linereview/InvoiceLineReviewContract**->**(**)**",
     "HPLcom/facturastock/app/ui/format/FormattersKt**->**(**)**",
   ]
-  generated_startup_rules = [startup_class, startup_method, *home_rules]
+  generated_startup_rules = [startup_class, startup_method, *sales_rules]
   File.write(generated_startup, generated_startup_rules.join("\n") + "\n")
   File.write(generated_baseline, "#{startup_method}\n")
   junit_xml = <<~XML
@@ -419,7 +503,31 @@ Dir.mktmpdir("facturastock-profile-candidate-") do |temporary_dir|
 
   File.write(
     generated_startup,
-    (home_rules + [startup_class, "SPLcom/facturastock/app/MainActivity;->a(Laa/b;)V"]).join("\n") + "\n",
+    [
+      startup_class,
+      startup_method,
+      "Lcom/facturastock/app/feature/home/HomeRouteKt;",
+      "Lcom/facturastock/app/feature/home/HomeScreenKt;",
+      "Lcom/facturastock/app/feature/home/HomeDashboardContentKt;",
+    ].join("\n") + "\n",
+  )
+  write_run_manifest.call
+  _stdout, stderr, status = Open3.capture3(
+    RbConfig.ruby,
+    PROFILE_CANDIDATES,
+    generated_startup,
+    generated_baseline,
+    maintained_startup,
+    maintained_baseline,
+    candidate_dir,
+    chdir: ROOT,
+  )
+  assert(!status.success? && stderr.include?("startup did not reach ready Sales owners"),
+         "el materializador aceptó una captura Home obsoleta para el arranque en Vender")
+
+  File.write(
+    generated_startup,
+    (sales_rules + [startup_class, "SPLcom/facturastock/app/MainActivity;->a(Laa/b;)V"]).join("\n") + "\n",
   )
   write_run_manifest.call
   _stdout, stderr, status = Open3.capture3(

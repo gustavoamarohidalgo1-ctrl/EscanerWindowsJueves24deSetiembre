@@ -1,0 +1,6 @@
+<resources>
+    <string name="catalog_polish_sale_price_error">Usa un importe mayor que 0 y de hasta %1$s %2$s, o deja el campo vacío. Decimales permitidos: %3$d.</string>
+    <string name="catalog_polish_purchase_price_required">Ingresa el precio de compra por unidad; 0 es válido.</string>
+    <string name="catalog_polish_stale">Este registro cambió mientras lo editabas. Cancela y vuelve a abrirlo para revisar los datos actuales.</string>
+    <string name="catalog_polish_average_cost_unavailable">Costo promedio %1$s: no disponible</string>
+</resources>

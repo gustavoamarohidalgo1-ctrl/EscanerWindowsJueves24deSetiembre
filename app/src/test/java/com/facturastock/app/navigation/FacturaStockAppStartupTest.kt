@@ -13,7 +13,7 @@ class FacturaStockAppStartupTest {
     }
 
     @Test
-    fun `onboarding no abre DraftFlow y Home si lo habilita`() {
+    fun `onboarding no abre DraftFlow y el negocio configurado si lo habilita`() {
         assertFalse(shouldCreateDraftFlowViewModel(GateState.Incomplete, true))
         assertTrue(shouldCreateDraftFlowViewModel(GateState.Complete, true))
     }
@@ -31,9 +31,10 @@ class FacturaStockAppStartupTest {
     }
 
     @Test
-    fun `Home espera contenido y onboarding usa su primer frame`() {
+    fun `el alias antiguo espera la redireccion y ventas usa su primer frame`() {
         assertFalse(shouldSignalDeferredStartupFromDestination(null))
         assertFalse(shouldSignalDeferredStartupFromDestination(AppRoutes.HOME))
+        assertTrue(shouldSignalDeferredStartupFromDestination(AppRoutes.SALES))
         assertTrue(shouldSignalDeferredStartupFromDestination(AppRoutes.ONBOARDING))
         assertTrue(shouldSignalDeferredStartupFromDestination(AppRoutes.PURCHASES))
     }

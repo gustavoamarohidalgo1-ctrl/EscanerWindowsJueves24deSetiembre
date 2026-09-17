@@ -147,6 +147,36 @@
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "uid",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "email",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "summary",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "leaseToken",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "phase",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "accountDeletionJobs",
+      "fieldPath": "schemaVersion",
+      "indexes": []
     }
   ]
 }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="inventory_product_edit">Editar</string>
+    <string name="inventory_product_delete">Eliminar</string>
+    <string name="inventory_product_delete_title">Eliminar producto</string>
+    <string name="inventory_product_delete_message">¿Eliminar «%1$s» del inventario? Sus existencias e historial de ventas y deudas se conservarán.</string>
+    <string name="inventory_product_delete_confirm">Eliminar</string>
+    <string name="inventory_product_delete_close">Cerrar</string>
+    <string name="inventory_product_delete_checking">Revisando si se puede eliminar…</string>
+    <string name="inventory_product_delete_saving">Eliminando producto…</string>
+    <string name="inventory_product_delete_retry">No se pudo completar la comprobación o eliminación. Reintenta para verificar el estado actual del producto.</string>
+    <string name="inventory_product_delete_has_history">No se puede eliminar: este producto tiene ventas, compras, movimientos u otras referencias. El producto y su historial se conservan.</string>
+    <string name="inventory_product_delete_has_stock">No se puede eliminar: este producto todavía tiene existencias. El producto y sus datos se conservan.</string>
+    <string name="inventory_product_delete_shared">No se pudo eliminar desde este inventario compartido. El producto y sus datos se conservan.</string>
+    <string name="inventory_product_delete_stale">El producto cambió desde la revisión. Cierra este aviso y vuelve a seleccionar Eliminar para revisar su estado actual.</string>
+    <string name="inventory_product_load_failed">No se pudo verificar el producto. Cierra este aviso y vuelve a seleccionar Editar.</string>
+    <string name="inventory_product_save_failed">No se pudo confirmar el cambio. Reintenta para comprobar el producto y guardar con la misma versión revisada.</string>
+    <string name="inventory_product_business_changed">El negocio activo cambió. Cierra este aviso y selecciona el producto desde el inventario del negocio actual.</string>
+    <string name="inventory_product_unavailable">Este producto ya no está disponible en el negocio seleccionado. Cierra este aviso y vuelve a revisar el inventario.</string>
+    <string name="inventory_product_stale">El producto cambió desde la revisión. Cierra este aviso y vuelve a seleccionar Editar para revisar sus datos actuales.</string>
+    <string name="inventory_product_dismiss_error">Cerrar aviso</string>
+    <plurals name="inventory_product_count">
+        <item quantity="one">%1$d producto</item>
+        <item quantity="other">%1$d productos</item>
+    </plurals>
+</resources>

@@ -19,6 +19,7 @@ import com.facturastock.app.domain.repository.AccountRepository
 import com.facturastock.app.domain.repository.BusinessMembershipRepository
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -50,20 +51,25 @@ class SparkBusinessMembershipRepository @Inject constructor(
     override suspend fun listMyMemberships(
         expectedUid: String,
     ): DomainResult<List<CloudMembership>> = guarding(expectedUid) { firestore, session ->
-        val membershipDocuments = firestore
-            .collection(USERS)
-            .document(expectedUid)
+        val memberships = mutableListOf<CloudMembership>()
+        val query = firestore.collection(USERS).document(expectedUid)
             .collection(MEMBERSHIPS)
             .orderBy(DISPLAY_NAME)
-            .limit(MAX_BUSINESSES_PER_ACCOUNT)
-            .get(Source.SERVER)
-            .await()
-            .documents
-        val memberships = membershipDocuments.map { document ->
-            val indexed = decodeMembershipIndex(document, session.uid)
-            // Cruce explícito: un índice propio nunca basta para seleccionar otro tenant.
-            getOwnedBusiness(firestore, session, indexed.businessId, indexed.businessDisplayName)
-        }
+            .orderBy(FieldPath.documentId())
+            .limit(MEMBERSHIP_PAGE_SIZE)
+        var cursor: DocumentSnapshot? = null
+        do {
+            // Nombre e ID son inmutables en Spark. El desempate explícito conserva negocios
+            // con el mismo nombre y startAfter evita truncar la cuenta después de cien altas.
+            val page = (cursor?.let { query.startAfter(it) } ?: query).get(Source.SERVER).await()
+            page.documents.forEach { document ->
+                val indexed = decodeMembershipIndex(document, session.uid)
+                memberships += getOwnedBusiness(
+                    firestore, session, indexed.businessId, indexed.businessDisplayName,
+                )
+            }
+            cursor = page.documents.lastOrNull()
+        } while (page.size().toLong() == MEMBERSHIP_PAGE_SIZE)
         DomainResult.Success(memberships)
     }
 
@@ -384,7 +390,7 @@ class SparkBusinessMembershipRepository @Inject constructor(
         const val ADDED_VIA = "addedVia"
         const val SPARK_DIRECT = "spark_direct"
         const val MAX_DISPLAY_NAME_LENGTH = 120
-        const val MAX_BUSINESSES_PER_ACCOUNT = 100L
+        const val MEMBERSHIP_PAGE_SIZE = 100L
         val BUSINESS_KEYS = setOf(
             SCHEMA_VERSION, BUSINESS_ID, DISPLAY_NAME, OWNER_UID, CREATED_BY, CREATED_AT,
         )

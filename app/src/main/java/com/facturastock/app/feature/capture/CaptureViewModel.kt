@@ -227,6 +227,7 @@ class CaptureViewModel @Inject constructor(
                     rotationDegrees = rotationDegrees,
                     replaceImageId = current.replaceImageId,
                     preferredImageId = pendingImageId,
+                    replaceSoleInvoiceScan = current.replaceSoleInvoiceScan,
                 )
             },
             onSuccess = { image ->
@@ -353,6 +354,8 @@ private fun captureInitialState(savedStateHandle: SavedStateHandle): CaptureCont
     return CaptureContract.State(
         draftId = draftId,
         replaceImageId = replaceImageId,
+        replaceSoleInvoiceScan = savedStateHandle.get<String>(RouteArgumentKeys.SCAN_RETAKE)
+            ?.toBooleanStrictOrNull() == true,
         flashMode = flashMode,
         cameraPermissionDenied = savedStateHandle.get<Boolean>("capture.cameraPermissionDenied")
             ?: false,

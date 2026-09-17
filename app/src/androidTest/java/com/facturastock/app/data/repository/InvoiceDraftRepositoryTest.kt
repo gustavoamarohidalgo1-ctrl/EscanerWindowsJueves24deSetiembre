@@ -395,6 +395,95 @@ class InvoiceDraftRepositoryTest {
     }
 
     @Test
+    fun soleInvoiceScanRetakeAtomicallyReplacesReviewedPhotoAndInvalidatesAllDerivedState() =
+        runBlocking {
+            seedBusiness()
+            val fixture = seedStaleImageDerivedState(
+                draftSeed = 60,
+                imageSeeds = listOf(601),
+            )
+            val rawDraft = requireNotNull(database.invoiceDraftDao().findById(fixture.draftId.value))
+            database.invoiceDraftDao().update(
+                rawDraft.copy(
+                    status = DraftStatus.NEEDS_REVIEW.name,
+                    activeOcrRunId = null,
+                ),
+            )
+            val replacementId = imageId(602)
+            val replacedPath = requireNotNull(drafts.findImage(fixture.imageIds.single())).filePath
+
+            val publication = drafts.publishCapturedPage(
+                page = captured(
+                    image(replacementId, fixture.draftId, pageIndex = 0, shaSeed = "f"),
+                ),
+                intent = CapturedPageIntent.ReplaceSoleInvoiceScan,
+            )
+
+            assertEquals(replacedPath, publication.replacedFilePath)
+            assertNull(drafts.findImage(fixture.imageIds.single()))
+            assertEquals(replacementId, drafts.observeImages(fixture.draftId).awaitMatching {
+                it.size == 1 && it.single().imageId == replacementId
+            }.single().imageId)
+            assertImageDerivedStateReset(
+                label = "sole scan retake",
+                fixture = fixture,
+                expectedStatus = DraftStatus.CAPTURED,
+                expectedImageCount = 1,
+            )
+            assertEquals(
+                publication,
+                drafts.findPublishedCapturedPage(
+                    imageId = replacementId,
+                    draftId = fixture.draftId,
+                    businessId = businessId(1),
+                    intent = CapturedPageIntent.ReplaceSoleInvoiceScan,
+                ),
+            )
+        }
+
+    @Test
+    fun soleInvoiceScanRetakeRejectsMultipageReviewAndRollsBackWithoutDeletingEvidence() =
+        runBlocking {
+            seedBusiness()
+            val fixture = seedStaleImageDerivedState(
+                draftSeed = 61,
+                imageSeeds = listOf(611, 612),
+            )
+            val rawDraft = requireNotNull(database.invoiceDraftDao().findById(fixture.draftId.value))
+            database.invoiceDraftDao().update(
+                rawDraft.copy(
+                    status = DraftStatus.NEEDS_REVIEW.name,
+                    activeOcrRunId = null,
+                ),
+            )
+            val replacementId = imageId(613)
+
+            val failure = assertThrows(StorageException::class.java) {
+                runBlocking {
+                    drafts.publishCapturedPage(
+                        page = captured(
+                            image(replacementId, fixture.draftId, pageIndex = 0, shaSeed = "f"),
+                        ),
+                        intent = CapturedPageIntent.ReplaceSoleInvoiceScan,
+                    )
+                }
+            }
+
+            assertTrue(failure.error is StorageError.ConstraintConflict)
+            assertEquals(DraftStatus.NEEDS_REVIEW, drafts.findDraft(fixture.draftId)?.status)
+            assertEquals(
+                fixture.imageIds,
+                drafts.observeImages(fixture.draftId).awaitMatching { it.size == 2 }
+                    .map { it.imageId },
+            )
+            assertNull(drafts.findImage(replacementId))
+            assertNull(database.capturedPagePublicationDao().findByImageId(replacementId.value))
+            assertTrue(database.invoiceOcrSnapshotDao().findHeader(fixture.draftId.value) != null)
+            assertTrue(database.parsedInvoiceDao().findByDraftId(fixture.draftId.value) != null)
+            assertTrue(database.invoiceLineDao().countForDraft(fixture.draftId.value) > 0)
+        }
+
+    @Test
     fun publishCapturedPageRollsBackReplacementAndPreparationWhenFinalTouchFails() = runBlocking {
         seedBusiness()
         drafts.createDraft(draft(draftId(1)))

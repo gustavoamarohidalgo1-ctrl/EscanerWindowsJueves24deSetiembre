@@ -205,6 +205,26 @@ class RoomInvoiceDraftRepository @Inject constructor(
                             current.firstOrNull { it.imageId == intent.targetImageId.value }
                                 ?: throw StorageException(StorageError.Unavailable)
                         }
+                        CapturedPageIntent.ReplaceSoleInvoiceScan -> {
+                            current.singleOrNull()
+                                ?: publicationConflict(
+                                    "El reintento del escaneo exige exactamente una página",
+                                )
+                        }
+                    }
+                    if (intent == CapturedPageIntent.ReplaceSoleInvoiceScan) {
+                        val claimed = invoiceDraftDao.claimSoleInvoiceScanRetake(
+                            draftId = page.draftId.value,
+                            capturedStatus = DraftStatus.CAPTURED.name,
+                            errorStatus = DraftStatus.ERROR.name,
+                            ocrReadyStatus = DraftStatus.OCR_READY.name,
+                            reviewStatus = DraftStatus.NEEDS_REVIEW.name,
+                        )
+                        if (claimed != 1) {
+                            publicationConflict(
+                                "El borrador dejó de admitir el reintento del escaneo",
+                            )
+                        }
                     }
                     val targetPageIndex = replaced?.pageIndex ?: current.size
                     val stamped = InvoiceImage(
@@ -230,6 +250,7 @@ class RoomInvoiceDraftRepository @Inject constructor(
                     capturedPagePublicationDao.insert(
                         page.toPublicationEntity(
                             intent = intent,
+                            replaceTargetImageId = replaced?.imageId,
                             replacedFilePath = replaced?.filePath,
                             publishedPageIndex = targetPageIndex,
                             publishedAt = now.toEpochMilli(),
@@ -602,6 +623,7 @@ class RoomInvoiceDraftRepository @Inject constructor(
 
 private fun CapturedPageWrite.toPublicationEntity(
     intent: CapturedPageIntent,
+    replaceTargetImageId: String?,
     replacedFilePath: String?,
     publishedPageIndex: Int,
     publishedAt: Long,
@@ -612,8 +634,11 @@ private fun CapturedPageWrite.toPublicationEntity(
     intentKind = when (intent) {
         CapturedPageIntent.Append -> CapturedPagePublicationEntity.APPEND
         is CapturedPageIntent.Replace -> CapturedPagePublicationEntity.REPLACE
+        CapturedPageIntent.ReplaceSoleInvoiceScan ->
+            CapturedPagePublicationEntity.REPLACE_SOLE_INVOICE_SCAN
     },
-    replaceTargetImageId = (intent as? CapturedPageIntent.Replace)?.targetImageId?.value,
+    // Para el reintento de página única el objetivo se decide dentro de la transacción.
+    replaceTargetImageId = replaceTargetImageId,
     replacedFilePath = replacedFilePath,
     filePath = filePath,
     sha256 = sha256,
@@ -654,6 +679,9 @@ private fun CapturedPagePublicationEntity.matches(
             is CapturedPageIntent.Replace ->
                 intentKind == CapturedPagePublicationEntity.REPLACE &&
                     replaceTargetImageId == intent.targetImageId.value
+            CapturedPageIntent.ReplaceSoleInvoiceScan ->
+                intentKind == CapturedPagePublicationEntity.REPLACE_SOLE_INVOICE_SCAN &&
+                    replaceTargetImageId != null
         }
 
 private fun checkPublishedIdentity(image: InvoiceImage, page: CapturedPageWrite) {

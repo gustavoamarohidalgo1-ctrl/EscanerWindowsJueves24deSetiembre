@@ -11,6 +11,9 @@ private val DEBT_TRIGGER_NAMES = listOf(
     "debt_payments_block_update",
     "debt_payments_block_delete",
     "debt_payments_validate_graph_insert",
+    "debts_block_voided_sale_insert",
+    "debts_block_voided_sale_update",
+    "debt_payments_block_voided_sale_insert",
 )
 
 /** SQL de defensa para la cuenta materializada y el libro append-only de pagos. */
@@ -31,6 +34,26 @@ internal fun installDebtPersistenceInvariants(db: SupportSQLiteDatabase) {
 
 private fun installDebtPersistenceInvariantsInTransaction(db: SupportSQLiteDatabase) {
     DEBT_TRIGGER_NAMES.forEach { db.execSQL("DROP TRIGGER IF EXISTS `$it`") }
+    // Una anulación conserva la deuda y sus pagos como historia. Su recibo extingue el
+    // saldo exigible y cierra también escrituras directas o callbacks de pago rezagados.
+    if (db.debtTableHasColumn("sale_voids", "saleId")) {
+        val voidedDebt = "EXISTS (SELECT 1 FROM `sale_voids` v WHERE " +
+            "v.`saleId` = NEW.`saleId` AND v.`businessId` = NEW.`businessId`)"
+        listOf("INSERT", "UPDATE").forEach { operation ->
+            db.execSQL(
+                "CREATE TRIGGER `debts_block_voided_sale_${operation.lowercase()}` " +
+                    "BEFORE $operation ON `debts` WHEN $voidedDebt BEGIN " +
+                    "SELECT RAISE(ABORT, 'voided sale debt is closed'); END",
+            )
+        }
+        db.execSQL(
+            "CREATE TRIGGER `debt_payments_block_voided_sale_insert` BEFORE INSERT ON " +
+                "`debt_payments` WHEN EXISTS (SELECT 1 FROM `debts` d JOIN `sale_voids` v " +
+                "ON v.`saleId` = d.`saleId` AND v.`businessId` = d.`businessId` " +
+                "WHERE d.`debtId` = NEW.`debtId`) BEGIN " +
+                "SELECT RAISE(ABORT, 'voided sale cannot receive payments'); END",
+        )
+    }
     val validName =
         "typeof(NEW.`debtorName`) = 'text' AND length(NEW.`debtorName`) BETWEEN 2 AND 120 AND " +
             "NEW.`debtorName` = trim(NEW.`debtorName`) AND " +

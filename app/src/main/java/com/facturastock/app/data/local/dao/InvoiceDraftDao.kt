@@ -100,6 +100,25 @@ interface InvoiceDraftDao {
         updatedAt: Long,
     ): Int
 
+    /**
+     * CAS interno del reemplazo de foto del escaneo rápido. Solo abre los estados explícitos
+     * que pueden resultar de OCR/importación; el llamador ya comprobó que existe una sola página.
+     * Se ejecuta dentro de la misma transacción que invalida derivados y publica el reemplazo.
+     */
+    @Query(
+        "UPDATE invoice_drafts SET status = :capturedStatus " +
+            "WHERE draftId = :draftId AND confirmedPurchaseId IS NULL " +
+            "AND activeOcrRunId IS NULL AND status IN (" +
+            ":capturedStatus, :errorStatus, :ocrReadyStatus, :reviewStatus)",
+    )
+    suspend fun claimSoleInvoiceScanRetake(
+        draftId: String,
+        capturedStatus: String,
+        errorStatus: String,
+        ocrReadyStatus: String,
+        reviewStatus: String,
+    ): Int
+
     /** Avanza el timestamp global sin hacerlo retroceder frente a otra parte del agregado. */
     @Query(
         "UPDATE invoice_drafts SET updatedAt = MAX(updatedAt, :updatedAt) " +

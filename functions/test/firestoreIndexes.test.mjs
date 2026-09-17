@@ -122,3 +122,14 @@ test("limpieza Storage de cuentas exige el índice compuesto exacto", async () =
     { fieldPath: "storageCleanupEligibleAt", order: "ASCENDING" },
   ]);
 });
+
+
+test("la identidad temporal de trabajos de borrado no se indexa ni vence antes de completarse", async () => {
+  const configuration = JSON.parse(await readFile(INDEX_CONFIGURATION, "utf8"));
+  for (const fieldPath of ["uid", "email", "summary", "leaseToken"]) {
+    const policy = configuration.fieldOverrides.find((override) =>
+      override.collectionGroup === "accountDeletionJobs" && override.fieldPath === fieldPath);
+    assert.deepEqual(policy?.indexes, [], fieldPath);
+    assert.equal(policy?.ttl, undefined, fieldPath);
+  }
+});

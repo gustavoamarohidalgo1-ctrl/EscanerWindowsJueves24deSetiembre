@@ -194,6 +194,7 @@ private fun installPostingPersistenceInvariantsInTransaction(db: SupportSQLiteDa
     val hasSales =
         db.tableHasColumn("sales", "saleId") &&
             db.tableHasColumn("stock_movements", "saleId")
+    val hasSaleVoids = hasSales && db.tableHasColumn("sale_voids", "saleId")
     val saleProductDeleteGuard = if (hasSales) {
         "EXISTS (SELECT 1 FROM `sale_lines` sl WHERE " +
             "sl.`productId` = OLD.`productId`) OR "
@@ -219,6 +220,7 @@ private fun installPostingPersistenceInvariantsInTransaction(db: SupportSQLiteDa
     } else {
         ""
     }
+    val saleVoidedAuditGraph = if (hasSaleVoids) saleVoidAuditOriginSql() else ""
     val documentIdentitySlotMatch = if (hasDocumentIdentitySlot) {
         " AND `documentIdentitySlot` = NEW.`documentIdentitySlot`"
     } else {
@@ -523,7 +525,8 @@ private fun installPostingPersistenceInvariantsInTransaction(db: SupportSQLiteDa
             "ON l.`locationId` = NEW.`locationId` WHERE " +
             "p.`productId` = NEW.`productId` AND p.`businessId` = NEW.`businessId` AND " +
             "l.`businessId` = NEW.`businessId`) AND (" +
-            adjustmentOrigin + " OR " + purchaseOrigin + saleOrigin + ")) " +
+            adjustmentOrigin + " OR " + purchaseOrigin + saleOrigin +
+            (if (hasSaleVoids) saleVoidMovementOriginSql() else "") + ")) " +
             "BEGIN SELECT RAISE(ABORT, 'invalid stock movement graph'); END",
     )
     db.execSQL(
@@ -549,7 +552,7 @@ private fun installPostingPersistenceInvariantsInTransaction(db: SupportSQLiteDa
     db.execSQL(
             "CREATE TRIGGER IF NOT EXISTS `audit_events_validate_graph_insert` " +
             "BEFORE INSERT ON `audit_events` WHEN NOT (" +
-            salePostedAuditGraph +
+            salePostedAuditGraph + saleVoidedAuditGraph +
             "(NEW.`purchaseId` IS NULL AND NEW.`eventType` = 'STOCK_ADJUSTED') OR " +
             "(NEW.`purchaseId` IS NULL AND NEW.`eventType` = 'SYNC_RECONCILED' AND " +
             "NEW.`entityType` = 'business' AND NEW.`entityId` = NEW.`businessId`) OR " +
@@ -1014,14 +1017,41 @@ internal val postingPersistenceCallback: RoomDatabase.Callback =
         override fun onCreate(db: SupportSQLiteDatabase) {
             installPostingPersistenceInvariants(db)
             installSalesPersistenceInvariants(db)
+            installSaleVoidPersistenceInvariants(db)
             installDebtPersistenceInvariants(db)
             installCloudBusinessBindingInvariants(db)
+            installCheckoutPersistenceInvariants(db)
         }
 
         override fun onOpen(db: SupportSQLiteDatabase) {
+            enforceWriteDurability(db)
             installPostingPersistenceInvariants(db)
             installSalesPersistenceInvariants(db)
+            installSaleVoidPersistenceInvariants(db)
             installDebtPersistenceInvariants(db)
             installCloudBusinessBindingInvariants(db)
+            installCheckoutPersistenceInvariants(db)
         }
     }
+
+/**
+ * Durabilidad de escritura: WAL en Android arranca con `synchronous=NORMAL`, que resiste el
+ * cierre de la app pero puede revertir la transacción más reciente ante un apagado abrupto o
+ * pérdida de energía. `FULL` fuerza el fsync del WAL en cada commit. Se aplica en onOpen, que
+ * corre sobre cada conexión que abre el open helper —incluida la que escribe— sin depender de
+ * un PRAGMA aplicado a una sola conexión del pool.
+ */
+internal fun enforceWriteDurability(db: SupportSQLiteDatabase) {
+    // rawQuery es perezoso: el PRAGMA solo se ejecuta al avanzar el cursor. La asignación puede
+    // volver con o sin filas según el nivel de API, así que se avanza sin exigirlas; la lectura
+    // posterior sí siempre devuelve el valor vigente y confirma que quedó fijado.
+    db.query("PRAGMA synchronous=FULL").use { cursor -> cursor.moveToFirst() }
+    db.query("PRAGMA synchronous").use { cursor ->
+        check(cursor.moveToFirst() && cursor.getInt(0) == SYNCHRONOUS_FULL) {
+            "synchronous=FULL no quedó activo en la conexión"
+        }
+    }
+}
+
+/** Valor de `PRAGMA synchronous` que equivale a FULL en SQLite. */
+private const val SYNCHRONOUS_FULL: Int = 2

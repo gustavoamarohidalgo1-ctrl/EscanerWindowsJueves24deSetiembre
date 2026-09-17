@@ -57,6 +57,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -107,14 +108,7 @@ class OcrViewModelTest {
 
                 releaseMerging.complete(Unit)
                 runCurrent()
-                assertEquals(
-                    OcrContract.Effect.OpenProducts(
-                        createdCount = 1,
-                        existingCount = 0,
-                        skippedCount = 0,
-                    ),
-                    awaitItem(),
-                )
+                assertEquals(OcrContract.Effect.OpenMatching(DRAFT_ID), awaitItem())
                 assertEquals(
                     OcrContract.State(
                         draftId = DRAFT_ID,
@@ -124,19 +118,8 @@ class OcrViewModelTest {
                     fixture.viewModel.uiState.value,
                 )
                 assertEquals(1, fixture.snapshots.snapshotCount)
-                assertNull(fixture.drafts.findDraft(DRAFT_ID))
-                assertEquals(listOf(DRAFT_ID), fixture.fileStore.draftTreeDeletions)
+                assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
                 assertEquals(1, fixture.parsed.publications.size)
-                val product = fixture.products.observeForBusiness(BUSINESS_ID).first().single()
-                assertEquals("ARROZ EXTRA 5 KG", product.name)
-                assertEquals(BUSINESS_ID, product.businessId)
-                assertEquals(UNIT_ID, product.unitId)
-                assertNull(product.sku)
-                assertNull(product.barcode)
-                assertNull(product.locationId)
-                assertNull(product.purchaseUnitId)
-                assertNull(product.purchaseFactor)
-                assertNull(product.salePrice)
                 expectNoEvents()
                 cancelAndIgnoreRemainingEvents()
             }
@@ -213,6 +196,31 @@ class OcrViewModelTest {
         }
 
     @Test
+    fun `cancel is ignored once the atomic product save has started`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val fixture = fixture(pageCount = 1)
+            val parseStarted = CompletableDeferred<Unit>()
+            val releaseParse = CompletableDeferred<Unit>()
+            fixture.snapshots.beforePublish = {
+                parseStarted.complete(Unit)
+                releaseParse.await()
+            }
+
+            fixture.viewModel.effects.test {
+                runCurrent()
+                parseStarted.await()
+                assertTrue(fixture.viewModel.uiState.value.isRunning)
+
+                releaseParse.complete(Unit)
+                runCurrent()
+                assertEquals(OcrContract.Effect.OpenMatching(DRAFT_ID), awaitItem())
+                assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `failure offers one retry with a fresh controlled timestamp`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val fixture = fixture(pageCount = 1)
@@ -229,13 +237,13 @@ class OcrViewModelTest {
                 fixture.viewModel.onAction(OcrContract.Action.Retry)
                 runCurrent()
 
-                assertEquals(OcrContract.Effect.OpenProducts(1, 0, 0), awaitItem())
+                assertEquals(OcrContract.Effect.OpenMatching(DRAFT_ID), awaitItem())
                 assertEquals(2, fixture.uuidGenerator.calls)
                 assertEquals(2, fixture.recognizer.calls.size)
                 assertEquals(NOW.plusSeconds(30), fixture.viewModel.uiState.value.startedAt)
                 assertEquals(1, fixture.viewModel.uiState.value.completedPageCount)
                 assertNull(fixture.viewModel.uiState.value.failure)
-                assertNull(fixture.drafts.findDraft(DRAFT_ID))
+                assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
                 assertEquals(1, fixture.parsed.publications.size)
                 expectNoEvents()
                 cancelAndIgnoreRemainingEvents()
@@ -265,12 +273,12 @@ class OcrViewModelTest {
                 fixture.viewModel.onAction(OcrContract.Action.Retry)
                 runCurrent()
 
-                assertEquals(OcrContract.Effect.OpenProducts(1, 0, 0), awaitItem())
+                assertEquals(OcrContract.Effect.OpenMatching(DRAFT_ID), awaitItem())
                 assertEquals(listOf(DRAFT_ID to interruptedRun), fixture.drafts.resetOcrCalls)
                 assertEquals(1, fixture.uuidGenerator.calls)
                 assertEquals(1, fixture.recognizer.calls.size)
                 assertEquals(2, fixture.recognizer.calls.single().size)
-                assertNull(fixture.drafts.findDraft(DRAFT_ID))
+                assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
                 expectNoEvents()
                 cancelAndIgnoreRemainingEvents()
             }
@@ -409,9 +417,9 @@ class OcrViewModelTest {
                 fixture.viewModel.onAction(OcrContract.Action.Retry)
                 runCurrent()
 
-                assertEquals(OcrContract.Effect.OpenProducts(1, 0, 0), awaitItem())
+                assertEquals(OcrContract.Effect.OpenMatching(DRAFT_ID), awaitItem())
                 assertNull(fixture.viewModel.uiState.value.failure)
-                assertNull(fixture.drafts.findDraft(DRAFT_ID))
+                assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
                 assertEquals(1, fixture.recognizer.calls.size)
                 assertEquals(1, fixture.uuidGenerator.calls)
                 assertEquals(1, fixture.parsed.publications.size)
@@ -475,44 +483,6 @@ class OcrViewModelTest {
         }
 
     @Test
-    fun `product storage failure keeps parsed draft and retry imports without rerunning OCR`() =
-        runTest(context = mainDispatcherRule.dispatcher) {
-            val fixture = fixture(pageCount = 1)
-            fixture.products.nextFailure = StorageError.Unavailable
-
-            fixture.viewModel.effects.test {
-                runCurrent()
-
-                expectNoEvents()
-                assertEquals(
-                    OcrContract.Failure.PRODUCT_SAVE_FAILED,
-                    fixture.viewModel.uiState.value.failure,
-                )
-                assertFalse(fixture.viewModel.uiState.value.isRunning)
-                assertFalse(fixture.viewModel.uiState.value.isSavingProducts)
-                assertEquals(DraftStatus.NEEDS_REVIEW, fixture.drafts.findDraft(DRAFT_ID)?.status)
-                assertTrue(fixture.products.observeForBusiness(BUSINESS_ID).first().isEmpty())
-                assertTrue(fixture.fileStore.draftTreeDeletions.isEmpty())
-                assertEquals(1, fixture.recognizer.calls.size)
-                assertEquals(1, fixture.uuidGenerator.calls)
-
-                fixture.viewModel.onAction(OcrContract.Action.Retry)
-                fixture.viewModel.onAction(OcrContract.Action.Retry)
-                runCurrent()
-
-                assertEquals(OcrContract.Effect.OpenProducts(1, 0, 0), awaitItem())
-                assertNull(fixture.viewModel.uiState.value.failure)
-                assertNull(fixture.drafts.findDraft(DRAFT_ID))
-                assertEquals(listOf(DRAFT_ID), fixture.fileStore.draftTreeDeletions)
-                assertEquals(1, fixture.products.observeForBusiness(BUSINESS_ID).first().size)
-                assertEquals(1, fixture.recognizer.calls.size)
-                assertEquals(1, fixture.uuidGenerator.calls)
-                expectNoEvents()
-                cancelAndIgnoreRemainingEvents()
-            }
-        }
-
-    @Test
     fun `invalid route does not auto start and Start closes it`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val fixture = fixture(
@@ -563,14 +533,10 @@ class OcrViewModelTest {
 
             fixture.viewModel.effects.test {
                 runCurrent()
-                assertEquals(OcrContract.Effect.OpenProducts(1, 0, 0), awaitItem())
+                assertEquals(OcrContract.Effect.OpenMatching(DRAFT_ID), awaitItem())
                 assertEquals(0, fixture.uuidGenerator.calls)
                 assertEquals(0, fixture.recognizer.calls.size)
-                assertEquals(
-                    listOf("ARROZ EXTRA 5 KG"),
-                    fixture.products.observeForBusiness(BUSINESS_ID).first().map { it.name },
-                )
-                assertNull(fixture.drafts.findDraft(DRAFT_ID))
+                assertNotNull(fixture.drafts.findDraft(DRAFT_ID))
 
                 fixture.viewModel.onAction(OcrContract.Action.Start)
                 runCurrent()

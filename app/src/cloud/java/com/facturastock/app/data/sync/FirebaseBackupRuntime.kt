@@ -19,7 +19,7 @@ import javax.inject.Singleton
  * - Debug: el source set `cloudDebug` aporta un proyecto marcador contra el Emulator Suite y
  *   App Check con provider de depuración. Esos valores no existen en los fuentes release.
  * - Release: valores de `local.properties` (no versionado) vía BuildConfig; App Check con
- *   Play Integrity (hoy en monitorización: el backend no exige el token todavía). Si faltan,
+ *   Play Integrity, exigido por los callables desplegados. Si faltan,
  *   la configuración es `null` y el transporte declara no estar disponible — el flujo local
  *   no cambia.
  *

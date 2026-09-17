@@ -1,5 +1,7 @@
 package com.facturastock.app.feature.catalogs
 
+import androidx.activity.compose.BackHandler
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,13 +54,19 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.facturastock.app.R
+import com.facturastock.app.core.input.suppressScannerTrailingKeys
+import com.facturastock.app.domain.model.BarcodeValue
 import com.facturastock.app.domain.model.CatalogStatus
+import com.facturastock.app.domain.model.ExactDecimalPolicy
+import com.facturastock.app.domain.model.Money
+import com.facturastock.app.domain.model.ProductSalePricePolicy
 import com.facturastock.app.domain.model.RucValidator
 import com.facturastock.app.domain.model.id.LocationId
 import com.facturastock.app.domain.model.id.UnitId
@@ -85,11 +93,18 @@ fun CatalogsRoute(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: CatalogsViewModel = hiltViewModel(),
+    onProductSaved: (CatalogsContract.Effect.ProductSaved) -> Unit = { onBack() },
+    isSalesRegistration: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    BackHandler(enabled = isSalesRegistration || state.isSpecialEntryPending ||
+        (state.form as? Form.ProductForm)?.isSpecialRegistration == true) {
+        if (!state.isSaving) viewModel.onAction(Action.CloseForm)
+    }
     CollectUiEffects(viewModel.effects) { effect ->
         when (effect) {
             CatalogsContract.Effect.Back -> onBack()
+            is CatalogsContract.Effect.ProductSaved -> onProductSaved(effect)
         }
     }
     CatalogsScreen(
@@ -139,7 +154,35 @@ fun CatalogsScreen(
     state.form?.let { form ->
         CatalogFormDialog(state = state, form = form, onAction = onAction)
     }
-    state.pendingStatusChange?.let { pending ->
+    if (state.isScannerEntryPending || state.isInventoryEntryPending || state.isSpecialEntryPending) {
+        CatalogModal(
+            title = stringResource(R.string.catalog_products),
+            onDismiss = { onAction(Action.CloseForm) },
+            testTag = CatalogsTestTags.FORM,
+        ) {
+            val failure = when {
+                state.isSpecialEntryPending -> state.specialEntryFailure
+                state.isInventoryEntryPending -> state.inventoryEntryFailure
+                else -> state.scannerEntryFailure
+            }
+            if (failure == null) {
+                LoadingState(message = stringResource(R.string.feature_loading_message))
+            } else {
+                Text(stringResource(failure.messageRes()))
+                FacturaStockPrimaryButton(
+                    text = stringResource(R.string.action_retry),
+                    onClick = { onAction(Action.Retry) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            FacturaStockSecondaryButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = { onAction(Action.CloseForm) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+    state.pendingStatusChange?.takeUnless { it.row is Row.ProductRow }?.let { pending ->
         val archive = pending.target == CatalogStatus.ARCHIVED
         FacturaStockDialog(
             title = stringResource(
@@ -172,11 +215,13 @@ fun CatalogsScreen(
 
 @Composable
 private fun CatalogTabs(selected: Section, onAction: (Action) -> Unit) {
+    val sections = CatalogsContract.visibleSections
+    val selectedIndex = sections.indexOf(selected).coerceAtLeast(0)
     PrimaryScrollableTabRow(
-        selectedTabIndex = Section.entries.indexOf(selected),
+        selectedTabIndex = selectedIndex,
         edgePadding = FacturaStockDesign.spacing.xs,
     ) {
-        Section.entries.forEach { section ->
+        sections.forEach { section ->
             Tab(
                 selected = section == selected,
                 onClick = { onAction(Action.SectionSelected(section)) },
@@ -206,21 +251,23 @@ private fun CatalogSearchAndFilters(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.SEARCH),
         )
-        LazyRow(
-            modifier = Modifier.selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-        ) {
-            items(
-                items = StatusFilter.entries,
-                key = StatusFilter::name,
-                contentType = { "status_filter" },
-            ) { filter ->
-                FilterChip(
-                    selected = state.statusFilter == filter,
-                    onClick = { onAction(Action.StatusFilterSelected(filter)) },
-                    enabled = enabled,
-                    label = { Text(stringResource(filter.labelRes())) },
-                )
+        if (state.section != Section.PRODUCTS) {
+            LazyRow(
+                modifier = Modifier.selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                items(
+                    items = StatusFilter.entries,
+                    key = StatusFilter::name,
+                    contentType = { "status_filter" },
+                ) { filter ->
+                    FilterChip(
+                        selected = state.statusFilter == filter,
+                        onClick = { onAction(Action.StatusFilterSelected(filter)) },
+                        enabled = enabled,
+                        label = { Text(stringResource(filter.labelRes())) },
+                    )
+                }
             }
         }
         Text(
@@ -402,15 +449,17 @@ private fun CatalogRowCard(row: Row, onClick: () -> Unit) {
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    Text(
-                        text = stringResource(row.status.labelRes()),
-                        color = if (row.status == CatalogStatus.ACTIVE) {
-                            FacturaStockDesign.semanticColors.success
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                    if (row !is Row.ProductRow) {
+                        Text(
+                            text = stringResource(row.status.labelRes()),
+                            color = if (row.status == CatalogStatus.ACTIVE) {
+                                FacturaStockDesign.semanticColors.success
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
                 row.subtitle()?.let { (res, value) ->
                     Spacer(Modifier.height(spacing.xxs))
@@ -439,16 +488,18 @@ private fun CatalogDetailDialog(detail: Detail, onAction: (Action) -> Unit) {
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(text = detail.row.title, style = MaterialTheme.typography.titleLarge)
-        StatusCard(
-            statusLabel = stringResource(R.string.catalog_detail),
-            title = stringResource(detail.row.status.labelRes()),
-            message = stringResource(
-                if (detail.row.status == CatalogStatus.ACTIVE) R.string.catalog_filter_active
-                else R.string.catalog_filter_archived,
-            ),
-            tone = if (detail.row.status == CatalogStatus.ACTIVE) StatusTone.SUCCESS else StatusTone.NEUTRAL,
-            iconRes = if (detail.row.status == CatalogStatus.ACTIVE) R.drawable.ic_check_circle else R.drawable.ic_info,
-        )
+        if (detail !is Detail.ProductDetail) {
+            StatusCard(
+                statusLabel = stringResource(R.string.catalog_detail),
+                title = stringResource(detail.row.status.labelRes()),
+                message = stringResource(
+                    if (detail.row.status == CatalogStatus.ACTIVE) R.string.catalog_filter_active
+                    else R.string.catalog_filter_archived,
+                ),
+                tone = if (detail.row.status == CatalogStatus.ACTIVE) StatusTone.SUCCESS else StatusTone.NEUTRAL,
+                iconRes = if (detail.row.status == CatalogStatus.ACTIVE) R.drawable.ic_check_circle else R.drawable.ic_info,
+            )
+        }
         when (detail) {
             is Detail.ProductDetail -> ProductDetailContent(detail)
             is Detail.SupplierDetail -> SupplierDetailContent(detail)
@@ -460,14 +511,16 @@ private fun CatalogDetailDialog(detail: Detail, onAction: (Action) -> Unit) {
             onClick = { onAction(Action.EditSelected) },
             modifier = Modifier.fillMaxWidth(),
         )
-        FacturaStockSecondaryButton(
-            text = stringResource(
-                if (detail.row.status == CatalogStatus.ACTIVE) R.string.catalog_action_archive
-                else R.string.catalog_action_restore,
-            ),
-            onClick = { onAction(Action.RequestStatusChange) },
-            modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.STATUS),
-        )
+        if (detail !is Detail.ProductDetail) {
+            FacturaStockSecondaryButton(
+                text = stringResource(
+                    if (detail.row.status == CatalogStatus.ACTIVE) R.string.catalog_action_archive
+                    else R.string.catalog_action_restore,
+                ),
+                onClick = { onAction(Action.RequestStatusChange) },
+                modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.STATUS),
+            )
+        }
         FacturaStockSecondaryButton(
             text = stringResource(R.string.action_back),
             onClick = { onAction(Action.CloseDetail) },
@@ -506,11 +559,15 @@ private fun ProductDetailContent(detail: Detail.ProductDetail) {
                 Text(stringResource(R.string.catalog_product_average_cost, cost.toCatalogCostText()))
             } ?: loaded.inventory.averageUnitCostsByCurrency.forEach { (currency, cost) ->
                 Text(
-                    stringResource(
-                        R.string.catalog_product_average_cost_currency,
-                        currency.value,
-                        cost.amount.toCatalogAmountText(),
-                    ),
+                    if (cost == null) {
+                        stringResource(R.string.catalog_polish_average_cost_unavailable, currency.value)
+                    } else {
+                        stringResource(
+                            R.string.catalog_product_average_cost_currency,
+                            currency.value,
+                            cost.amount.toCatalogAmountText(),
+                        )
+                    },
                 )
             }
             if (loaded.inventory.averageUnitCostsByCurrency.isEmpty()) {
@@ -521,12 +578,20 @@ private fun ProductDetailContent(detail: Detail.ProductDetail) {
             } else {
                 detail.positions.forEach { position ->
                     Text(
-                        stringResource(
-                            R.string.catalog_product_position,
-                            position.locationName,
-                            position.quantity,
-                            position.averageCost,
-                        ),
+                        if (detail.positions.size > 1) {
+                            stringResource(
+                                R.string.catalog_product_position,
+                                position.locationName,
+                                position.quantity,
+                                position.averageCost,
+                            )
+                        } else {
+                            stringResource(
+                                R.string.catalog_product_position_single,
+                                position.quantity,
+                                position.averageCost,
+                            )
+                        },
                     )
                 }
             }
@@ -564,9 +629,13 @@ private fun UnitDetailContent(detail: Detail.UnitDetail) {
 
 @Composable
 private fun CatalogFormDialog(state: State, form: Form, onAction: (Action) -> Unit) {
+    if (form is Form.ProductForm && form.isInventoryOrigin) {
+        InventoryProductEditorDialog(state, form, onAction)
+        return
+    }
     CatalogModal(
         title = stringResource(form.titleRes()),
-        onDismiss = { onAction(Action.CloseForm) },
+        onDismiss = { if (!state.isSaving) onAction(Action.CloseForm) },
         testTag = CatalogsTestTags.FORM,
     ) {
         Text(
@@ -576,9 +645,9 @@ private fun CatalogFormDialog(state: State, form: Form, onAction: (Action) -> Un
         )
         when (form) {
             is Form.ProductForm -> ProductFormFields(state, form, onAction)
-            is Form.SupplierForm -> SupplierFormFields(form, state.failure, onAction)
-            is Form.UnitForm -> UnitFormFields(form, state.failure, onAction)
-            is Form.LocationForm -> LocationFormFields(form, state.failure, onAction)
+            is Form.SupplierForm -> SupplierFormFields(form, state.failure, onAction, enabled = !state.isSaving)
+            is Form.UnitForm -> UnitFormFields(form, state.failure, onAction, enabled = !state.isSaving)
+            is Form.LocationForm -> LocationFormFields(form, state.failure, onAction, enabled = !state.isSaving)
         }
         state.failure?.messageRes()?.let { messageRes ->
             StatusCard(
@@ -594,8 +663,8 @@ private fun CatalogFormDialog(state: State, form: Form, onAction: (Action) -> Un
                 if (state.isSaving) R.string.action_saving else R.string.action_save,
             ),
             onClick = { onAction(Action.SaveForm) },
-            enabled = !state.isSaving && form.hasRequiredFields(),
-            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.isSaving && form.hasRequiredFields(state),
+            modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.SAVE_FORM),
         )
         FacturaStockSecondaryButton(
             text = stringResource(R.string.action_cancel),
@@ -607,100 +676,436 @@ private fun CatalogFormDialog(state: State, form: Form, onAction: (Action) -> Un
 }
 
 @Composable
+private fun InventoryProductEditorDialog(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
+    val spacing = FacturaStockDesign.spacing
+    val title = stringResource(R.string.catalog_edit_product)
+    Dialog(
+        onDismissRequest = { if (!state.isSaving) onAction(Action.CloseForm) },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .suppressScannerTrailingKeys()
+                .fillMaxSize()
+                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
+                .imePadding()
+                .padding(spacing.md),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 960.dp)
+                    .fillMaxSize()
+                    .semantics {
+                        paneTitle = title
+                        isTraversalGroup = true
+                    }
+                    .testTag(CatalogsTestTags.FORM),
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = spacing.xxs,
+            ) {
+                Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                    Text(
+                        stringResource(R.string.inventory_stock_editor_scroll_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .testTag(InventoryProductStockEditorTags.FIELDS),
+                        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                    ) {
+                        ProductFormFields(state, form, onAction)
+                    }
+                    state.failure?.messageRes()?.let { messageRes ->
+                        Text(
+                            text = stringResource(messageRes),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                        )
+                    }
+                    HorizontalDivider()
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                        FacturaStockSecondaryButton(
+                            text = stringResource(R.string.action_cancel),
+                            onClick = { onAction(Action.CloseForm) },
+                            enabled = !state.isSaving,
+                            modifier = Modifier.weight(1f),
+                        )
+                        FacturaStockPrimaryButton(
+                            text = stringResource(if (state.isSaving) R.string.action_saving else R.string.action_save),
+                            onClick = { onAction(Action.SaveForm) },
+                            enabled = !state.isSaving && !state.isInventoryBalanceLoading &&
+                                state.inventoryBalanceFailure == null && form.hasRequiredFields(state),
+                            modifier = Modifier.weight(1f).testTag(CatalogsTestTags.SAVE_FORM),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
+    if (form.isSpecialRegistration) {
+        SpecialProductFormFields(state, form, onAction)
+        return
+    }
+    if (form.isInventoryOrigin) {
+        InventoryProductFormFields(state, form, onAction)
+        return
+    }
+    FormTextField(
+        value = form.barcode,
+        hasInvalidValue = form.isInventoryOrigin && (form.isBarcodeInputTooLong || !BarcodeValue.isValidOptional(form.barcode)),
+        labelRes = if (form.isScannerOrigin) R.string.catalog_scanned_barcode_label else R.string.catalog_barcode_label,
+        readOnly = form.isScannerOrigin,
+        enabled = !state.isSaving,
+        modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_BARCODE),
+    ) {
+        onAction(Action.ProductBarcodeChanged(it))
+    }
+    if (form.isInventoryOrigin) {
+        FormTextField(
+            value = form.sku,
+            hasInvalidValue = form.isSkuInputTooLong || form.sku.trim().length > 64,
+            labelRes = R.string.catalog_sku_label,
+            enabled = !state.isSaving,
+            modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_SKU),
+        ) {
+            onAction(Action.ProductSkuChanged(it))
+        }
+    }
+    if (form.isScannedRegistration) {
+        Text(
+            text = stringResource(R.string.catalog_scanned_product_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     FormTextField(
         value = form.title,
         labelRes = R.string.catalog_name_label,
         required = true,
         showRequiredError = state.failure == Failure.INVALID_FIELDS,
+        enabled = !state.isSaving,
+        modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_NAME),
     ) {
         onAction(Action.ProductNameChanged(it))
     }
-    FormTextField(form.sku, R.string.catalog_sku_label) { onAction(Action.ProductSkuChanged(it)) }
-    FormTextField(form.barcode, R.string.catalog_barcode_label) {
-        onAction(Action.ProductBarcodeChanged(it))
-    }
-    UnitSelector(
-        labelRes = R.string.catalog_unit_label,
-        selected = form.unitId,
-        options = state.unitOptions.filter { it.status == CatalogStatus.ACTIVE || it.unitId == form.unitId },
-        allowNone = false,
-        onSelected = { it?.let { id -> onAction(Action.ProductUnitSelected(id)) } },
-    )
-    if (form.unitId == null) {
-        Text(
-            text = stringResource(R.string.catalog_unit_required),
-            color = if (state.failure == Failure.INVALID_FIELDS) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+    if (!form.isInventoryOrigin) {
+        ProductDecimalField(
+            value = form.quantity,
+            labelRes = when {
+                form.isScannedRegistration -> R.string.catalog_registration_quantity_label
+                form.isScannerOrigin -> R.string.catalog_product_total_quantity_label
+                else -> R.string.catalog_product_quantity_label
             },
-            style = MaterialTheme.typography.bodySmall,
+            required = form.isScannedRegistration,
+            state = state,
+            testTag = CatalogsTestTags.PRODUCT_QUANTITY,
+            onValueChange = { onAction(Action.ProductQuantityChanged(it)) },
         )
     }
+    if (form.isScannedRegistration) {
+        ProductDecimalField(
+            value = form.purchasePrice,
+            labelRes = R.string.catalog_registration_purchase_price_label,
+            required = true,
+            state = state,
+            testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
+            onValueChange = { onAction(Action.ProductPurchasePriceChanged(it)) },
+        )
+    }
+    ProductDecimalField(
+        value = form.salePrice,
+        labelRes = if (form.isScannedRegistration) R.string.catalog_registration_sale_price_label else R.string.catalog_product_price_label,
+        required = form.isScannedRegistration,
+        state = state,
+        testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
+        onValueChange = { onAction(Action.ProductPriceChanged(it)) },
+    )
+}
+
+@Composable
+private fun SpecialProductFormFields(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
+    Text(stringResource(R.string.catalog_special_product_help), style = MaterialTheme.typography.bodySmall)
+    FormTextField(
+        value = form.title, labelRes = R.string.catalog_name_label,
+        required = true, showRequiredError = state.failure == Failure.INVALID_FIELDS,
+        enabled = !state.isSaving, modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_NAME),
+    ) { onAction(Action.ProductNameChanged(it)) }
+    ProductDecimalField(
+        value = form.quantity, labelRes = R.string.catalog_special_product_quantity,
+        required = true, state = state, testTag = CatalogsTestTags.PRODUCT_QUANTITY,
+        onValueChange = { onAction(Action.ProductQuantityChanged(it)) },
+    )
+    ProductDecimalField(
+        value = form.purchasePrice, labelRes = R.string.catalog_special_product_cost_label,
+        required = true, state = state, currency = "${state.currency.value}/kg",
+        testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
+        onValueChange = { onAction(Action.ProductPurchasePriceChanged(it)) },
+    )
+    ProductDecimalField(
+        value = form.salePrice, labelRes = R.string.catalog_special_product_price_label,
+        required = true, state = state, currency = "${state.currency.value}/kg",
+        testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
+        onValueChange = { onAction(Action.ProductPriceChanged(it)) },
+    )
+    Text(stringResource(R.string.catalog_special_product_unit), style = MaterialTheme.typography.bodyMedium)
     LocationSelector(
         selected = form.locationId,
-        options = state.locationOptions.filter {
-            it.status == CatalogStatus.ACTIVE || it.locationId == form.locationId
-        },
+        options = state.locationOptions.filter { it.status == com.facturastock.app.domain.model.CatalogStatus.ACTIVE },
+        enabled = !state.isSaving, allowNone = false,
+        labelRes = R.string.catalog_special_product_location_label,
         onSelected = { onAction(Action.ProductLocationSelected(it)) },
     )
-    UnitSelector(
-        labelRes = R.string.catalog_purchase_unit_label,
-        selected = form.purchaseUnitId,
-        options = state.unitOptions.filter {
-            it.status == CatalogStatus.ACTIVE || it.unitId == form.purchaseUnitId
-        },
-        allowNone = true,
-        onSelected = { onAction(Action.ProductPurchaseUnitSelected(it)) },
-    )
-    if (form.purchaseUnitId != null) {
-        val validPurchaseFactor = form.purchaseFactor.toBigDecimalOrNull()?.signum() == 1
-        OutlinedTextField(
-            value = form.purchaseFactor,
-            onValueChange = { value ->
-                onAction(
-                    Action.ProductPurchaseFactorChanged(
-                        value.filter { it.isDigit() || it == '.' },
-                    ),
-                )
-            },
-            label = { Text(stringResource(R.string.catalog_purchase_factor_label)) },
-            supportingText = {
-                Text(
-                    stringResource(
-                        when {
-                            form.purchaseFactor.isBlank() ->
-                                R.string.catalog_purchase_factor_required
-                            !validPurchaseFactor -> R.string.catalog_purchase_factor_error
-                            else -> R.string.catalog_purchase_factor_help
-                        },
-                    ),
-                )
-            },
-            isError = !validPurchaseFactor,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    if (state.locationOptions.none { it.locationId == form.locationId && it.status == com.facturastock.app.domain.model.CatalogStatus.ACTIVE }) {
+        Text(stringResource(R.string.catalog_special_product_location_required), color = MaterialTheme.colorScheme.error)
     }
 }
 
 @Composable
-private fun SupplierFormFields(form: Form.SupplierForm, failure: Failure?, onAction: (Action) -> Unit) {
+private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
+    FormTextField(
+        value = form.title,
+        labelRes = R.string.catalog_name_label,
+        required = true,
+        showRequiredError = state.failure == Failure.INVALID_FIELDS,
+        enabled = !state.isSaving,
+        modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_NAME),
+    ) { onAction(Action.ProductNameChanged(it)) }
+
+    InventoryBalanceSelector(state, form, onAction)
+    val canEditBalance = state.isInventoryStockEditable && !state.isInventoryBalanceLoading &&
+        state.inventoryBalanceFailure == null && form.locationId != null
+    val originalPosition = form.inventorySnapshot?.positions?.firstOrNull { it.locationId == form.locationId }
+    ProductDecimalField(
+        value = form.quantity,
+        labelRes = R.string.inventory_stock_editor_quantity,
+        required = false,
+        state = state,
+        enabled = canEditBalance,
+        parseDecimal = String::inventoryDecimalOrNull,
+        testTag = CatalogsTestTags.PRODUCT_QUANTITY,
+        unchangedValue = form.quantity.replace(',', '.').toBigDecimalOrNull()?.let {
+            originalPosition?.quantityOnHand?.compareTo(it) == 0
+        } == true,
+        onValueChange = { onAction(Action.ProductQuantityChanged(it)) },
+    )
+    ProductDecimalField(
+        value = form.purchasePrice,
+        labelRes = R.string.inventory_stock_editor_purchase_price,
+        required = false,
+        state = state,
+        enabled = canEditBalance,
+        parseDecimal = { it.inventoryDecimalOrNull()?.takeIf(ExactDecimalPolicy::supportsValue) },
+        currency = form.inventoryCurrency?.value,
+        testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
+        errorMessage = if (canEditBalance && originalPosition?.averageUnitCost != null && form.purchasePrice.isBlank()) {
+            stringResource(R.string.catalog_polish_purchase_price_required)
+        } else null,
+        unchangedValue = form.purchasePrice.replace(',', '.').toBigDecimalOrNull()?.let {
+            originalPosition?.averageUnitCost?.compareTo(it) == 0
+        } == true,
+        onValueChange = { onAction(Action.ProductPurchasePriceChanged(it)) },
+    )
+    if (canEditBalance && originalPosition?.averageUnitCost == null && form.purchasePrice.isBlank()) {
+        Text(
+            text = stringResource(R.string.inventory_stock_editor_missing_cost_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val saleCurrency = form.saleCurrency ?: state.currency
+    val salePrice = form.salePrice.productDecimalOrNull()?.let {
+        runCatching { Money.fromMajor(it, saleCurrency) }.getOrNull()
+    }
+    val invalidSalePrice = form.salePrice.isNotBlank() && salePrice?.let(ProductSalePricePolicy::supports) != true
+    ProductDecimalField(
+        value = form.salePrice,
+        labelRes = R.string.inventory_stock_editor_sale_price,
+        required = false,
+        state = state,
+        currency = saleCurrency.value,
+        testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
+        errorMessage = if (invalidSalePrice) {
+            stringResource(
+                R.string.catalog_polish_sale_price_error,
+                Money.ofMinor(ProductSalePricePolicy.MAX_MINOR_UNITS, saleCurrency).toMajor().toPlainString(),
+                saleCurrency.value,
+                saleCurrency.defaultFractionDigits,
+            )
+        } else null,
+        onValueChange = { onAction(Action.ProductPriceChanged(it)) },
+    )
+    val unit = state.unitOptions.firstOrNull { it.unitId == form.unitId }
+    Text(
+        text = stringResource(
+            R.string.inventory_stock_editor_unit,
+            unit?.code ?: stringResource(R.string.inventory_stock_editor_unknown_unit),
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        text = stringResource(
+            if (state.isInventoryStockEditable) R.string.inventory_stock_editor_adjustment_help
+            else R.string.inventory_stock_editor_shared_help,
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    HorizontalDivider()
+    FormTextField(
+        value = form.sku,
+        hasInvalidValue = form.isSkuInputTooLong || form.sku.trim().length > 64,
+        labelRes = R.string.catalog_sku_label,
+        enabled = !state.isSaving,
+        modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_SKU),
+    ) { onAction(Action.ProductSkuChanged(it)) }
+    FormTextField(
+        value = form.barcode,
+        hasInvalidValue = form.isBarcodeInputTooLong ||
+            (form.barcode != form.original?.barcode.orEmpty() && !BarcodeValue.isValidOptional(form.barcode)),
+        labelRes = R.string.catalog_barcode_label,
+        enabled = !state.isSaving,
+        modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_BARCODE),
+    ) { onAction(Action.ProductBarcodeChanged(it)) }
+}
+
+@Composable
+private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
+    if (state.isInventoryBalanceLoading) {
+        LoadingState(message = stringResource(R.string.inventory_stock_editor_loading))
+    }
+    state.inventoryBalanceFailure?.let {
+        RecoverableError(
+            title = stringResource(R.string.inventory_stock_editor_load_failed_title),
+            message = stringResource(R.string.inventory_stock_editor_load_failed),
+            actionLabel = stringResource(R.string.action_retry),
+            onAction = { onAction(Action.Retry) },
+        )
+    }
+    val selected = state.inventoryBalances.firstOrNull { it.locationId == form.locationId }
+    if (state.inventoryBalances.size > 1) {
+        val quantities = state.inventoryBalances.map { it.quantity.replace(',', '.').toBigDecimalOrNull() }
+        if (quantities.all { it != null }) {
+            val total = quantities.fold(java.math.BigDecimal.ZERO) { sum, quantity -> sum + requireNotNull(quantity) }
+            Text(
+                text = stringResource(R.string.inventory_stock_editor_all_locations_total, total.stripTrailingZeros().toPlainString()),
+                modifier = Modifier.testTag(InventoryProductStockEditorTags.TOTAL),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.inventory_stock_editor_total_unknown),
+                modifier = Modifier.testTag(InventoryProductStockEditorTags.TOTAL),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        var expanded by remember { mutableStateOf(false) }
+        Box {
+            FacturaStockSecondaryButton(
+                text = selected?.locationName ?: stringResource(R.string.inventory_stock_editor_choose_location),
+                onClick = { expanded = true },
+                enabled = !state.isSaving && !state.isInventoryBalanceLoading && state.inventoryBalanceFailure == null,
+                modifier = Modifier.fillMaxWidth().testTag(InventoryProductStockEditorTags.LOCATION),
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                state.inventoryBalances.forEach { balance ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(balance.locationName)
+                                Text(
+                                    stringResource(
+                                        R.string.inventory_stock_editor_location_balance,
+                                        balance.quantity.ifBlank { stringResource(R.string.inventory_stock_editor_unknown_quantity) },
+                                        balance.currency?.value.orEmpty(),
+                                        balance.unitCost.ifBlank { stringResource(R.string.inventory_stock_editor_unknown_cost) },
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onAction(Action.ProductLocationSelected(balance.locationId))
+                        },
+                    )
+                }
+            }
+        }
+        Text(
+            stringResource(R.string.inventory_stock_editor_location_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        val locationName = selected?.locationName
+            ?: state.locationOptions.firstOrNull { it.locationId == form.locationId }?.label
+        locationName?.let {
+            Text(stringResource(R.string.inventory_stock_editor_location, it), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun ProductDecimalField(
+    value: String,
+    @StringRes labelRes: Int,
+    required: Boolean,
+    state: State,
+    testTag: String,
+    onValueChange: (String) -> Unit,
+    enabled: Boolean = true,
+    currency: String? = null,
+    unchangedValue: Boolean = false,
+    parseDecimal: (String) -> java.math.BigDecimal? = String::productDecimalOrNull,
+    errorMessage: String? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(stringResource(labelRes)) },
+        enabled = !state.isSaving && enabled,
+        suffix = currency?.let { code -> { Text(code) } },
+        isError = errorMessage != null || (!unchangedValue && value.isNotBlank() && parseDecimal(value) == null) ||
+            (required && value.isBlank() && state.failure == Failure.INVALID_FIELDS),
+        supportingText = if (errorMessage != null) {
+            { Text(errorMessage) }
+        } else if (required) {
+            { Text(stringResource(R.string.catalog_field_required)) }
+        } else null,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().testTag(testTag),
+    )
+}
+
+@Composable
+private fun SupplierFormFields(form: Form.SupplierForm, failure: Failure?, onAction: (Action) -> Unit, enabled: Boolean) {
     FormTextField(
         value = form.title,
         labelRes = R.string.catalog_legal_name_label,
+        enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
     ) {
         onAction(Action.SupplierLegalNameChanged(it))
     }
-    FormTextField(form.tradeName, R.string.catalog_trade_name_label) {
+    FormTextField(form.tradeName, R.string.catalog_trade_name_label, enabled = enabled) {
         onAction(Action.SupplierTradeNameChanged(it))
     }
     OutlinedTextField(
         value = form.ruc,
+        enabled = enabled,
         onValueChange = { onAction(Action.SupplierRucChanged(it)) },
         label = { Text(stringResource(R.string.catalog_ruc_label)) },
         supportingText = {
@@ -720,10 +1125,11 @@ private fun SupplierFormFields(form: Form.SupplierForm, failure: Failure?, onAct
 }
 
 @Composable
-private fun UnitFormFields(form: Form.UnitForm, failure: Failure?, onAction: (Action) -> Unit) {
+private fun UnitFormFields(form: Form.UnitForm, failure: Failure?, onAction: (Action) -> Unit, enabled: Boolean) {
     FormTextField(
         value = form.title,
         labelRes = R.string.catalog_name_label,
+        enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
     ) {
@@ -732,21 +1138,23 @@ private fun UnitFormFields(form: Form.UnitForm, failure: Failure?, onAction: (Ac
     FormTextField(
         value = form.code,
         labelRes = R.string.catalog_unit_code_label,
+        enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
     ) {
         onAction(Action.UnitCodeChanged(it))
     }
-    FormTextField(form.symbol, R.string.catalog_unit_symbol_label) {
+    FormTextField(form.symbol, R.string.catalog_unit_symbol_label, enabled = enabled) {
         onAction(Action.UnitSymbolChanged(it))
     }
 }
 
 @Composable
-private fun LocationFormFields(form: Form.LocationForm, failure: Failure?, onAction: (Action) -> Unit) {
+private fun LocationFormFields(form: Form.LocationForm, failure: Failure?, onAction: (Action) -> Unit, enabled: Boolean) {
     FormTextField(
         value = form.title,
         labelRes = R.string.catalog_name_label,
+        enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
     ) {
@@ -760,32 +1168,43 @@ private fun FormTextField(
     @StringRes labelRes: Int,
     required: Boolean = false,
     showRequiredError: Boolean = false,
+    hasInvalidValue: Boolean = false,
+    readOnly: Boolean = false,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     onValueChange: (String) -> Unit,
 ) {
     val missingRequiredValue = required && value.isBlank()
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        readOnly = readOnly,
+        enabled = enabled,
         label = { Text(stringResource(labelRes)) },
-        isError = missingRequiredValue && showRequiredError,
-        supportingText = if (required) {
+        isError = hasInvalidValue || (missingRequiredValue && showRequiredError),
+        supportingText = if (hasInvalidValue) {
+            { Text(stringResource(R.string.catalog_error_invalid)) }
+        } else if (required) {
             { Text(stringResource(R.string.catalog_field_required)) }
         } else {
             null
         },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 
-private fun Form.hasRequiredFields(): Boolean = when (this) {
-    is Form.ProductForm -> title.isNotBlank() && unitId != null &&
-        (purchaseUnitId == null || purchaseFactor.toBigDecimalOrNull()?.signum() == 1)
+private fun Form.hasRequiredFields(state: State): Boolean = when (this) {
+    is Form.ProductForm -> hasValidProductFields(saleCurrency ?: state.currency) &&
+        (!isSpecialRegistration || state.locationOptions.any {
+            it.locationId == locationId && it.status == com.facturastock.app.domain.model.CatalogStatus.ACTIVE
+        })
     is Form.SupplierForm -> title.isNotBlank()
     is Form.UnitForm -> title.isNotBlank() && code.isNotBlank()
     is Form.LocationForm -> title.isNotBlank()
 }
 
+@Suppress("UnusedPrivateMember", "unused")
 @Composable
 private fun UnitSelector(
     @StringRes labelRes: Int,
@@ -819,21 +1238,25 @@ private fun UnitSelector(
     }
 }
 
+@Suppress("UnusedPrivateMember", "unused")
 @Composable
 private fun LocationSelector(
     selected: LocationId?,
     options: List<CatalogsContract.LocationOption>,
     onSelected: (LocationId?) -> Unit,
+    enabled: Boolean = true,
+    allowNone: Boolean = true,
+    @StringRes labelRes: Int = R.string.catalog_location_label,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Selector(
-        label = stringResource(R.string.catalog_location_label),
+        label = stringResource(labelRes),
         value = options.firstOrNull { it.locationId == selected }?.label
             ?: stringResource(R.string.catalog_option_none),
-        onClick = { expanded = true },
+        onClick = { if (enabled) expanded = true },
     ) {
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
+            if (allowNone) DropdownMenuItem(
                 text = { Text(stringResource(R.string.catalog_option_none)) },
                 onClick = { expanded = false; onSelected(null) },
             )
@@ -878,6 +1301,7 @@ private fun CatalogModal(
     ) {
         Box(
             modifier = Modifier
+                .suppressScannerTrailingKeys()
                 .fillMaxSize()
                 .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
                 .imePadding()
@@ -950,7 +1374,11 @@ private fun Row.subtitle(): Pair<Int, String>? = when (this) {
 
 @StringRes
 private fun Form.titleRes(): Int = when (this) {
-    is Form.ProductForm -> if (isEditing) R.string.catalog_edit_product else R.string.catalog_create_product
+    is Form.ProductForm -> when {
+        isSpecialRegistration -> R.string.catalog_special_product_title
+        isEditing -> R.string.catalog_edit_product
+        else -> R.string.catalog_create_product
+    }
     is Form.SupplierForm -> if (isEditing) R.string.catalog_edit_supplier else R.string.catalog_create_supplier
     is Form.UnitForm -> if (isEditing) R.string.catalog_edit_unit else R.string.catalog_create_unit
     is Form.LocationForm -> if (isEditing) R.string.catalog_edit_location else R.string.catalog_create_location
@@ -962,7 +1390,7 @@ private fun Failure.messageRes(): Int = when (this) {
     Failure.LOAD_FAILED -> R.string.feature_load_error_message
     Failure.SAVE_FAILED -> R.string.catalog_error_save
     Failure.NOT_FOUND -> R.string.catalog_error_not_found
-    Failure.STALE -> R.string.catalog_error_stale
+    Failure.STALE -> R.string.catalog_polish_stale
     Failure.INVALID_FIELDS -> R.string.catalog_error_invalid
     Failure.INVALID_RUC -> R.string.catalog_ruc_invalid
     Failure.DUPLICATE_RUC -> R.string.catalog_duplicate_ruc
@@ -970,4 +1398,10 @@ private fun Failure.messageRes(): Int = when (this) {
     Failure.DUPLICATE_BARCODE -> R.string.catalog_duplicate_barcode
     Failure.DUPLICATE_CODE -> R.string.catalog_duplicate_code
     Failure.DUPLICATE_NAME -> R.string.catalog_duplicate_name
+}
+
+object InventoryProductStockEditorTags {
+    const val FIELDS = "inventory_product_editor_fields"
+    const val LOCATION = "inventory_product_editor_location"
+    const val TOTAL = "inventory_product_editor_total"
 }

@@ -33,6 +33,11 @@ object RouteArgumentKeys {
     const val PRODUCT_ID = "productId"
     const val DEBT_ID = "debtId"
     const val REPLACE_ID = "replaceId"
+    const val SCAN_RETAKE = "scanRetake"
+    const val PREFILL_BARCODE = "barcode"
+    const val EDIT_PRODUCT_ID = "editProductId"
+    const val REGISTRATION_REQUEST_ID = "requestId"
+    const val REGISTRATION_BUSINESS_ID = "businessId"
     const val EXPECTED_PREPARED_HASH = "expectedPreparedHash"
 }
 

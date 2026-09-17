@@ -83,6 +83,16 @@ sealed interface CapturedPageIntent {
     data object Append : CapturedPageIntent
 
     data class Replace(val targetImageId: ImageId) : CapturedPageIntent
+
+    /**
+     * Repite la única foto del escaneo rápido después de que OCR ya publicó resultados.
+     *
+     * A diferencia de [Replace], no transporta un índice ni un ID elegido por la UI: el
+     * repositorio exige y resuelve exactamente una página dentro de la misma transacción. Esto
+     * permite volver a fotografiar una factura fallida sin abrir la mutación de borradores OCR a
+     * las rutas multipágina legacy.
+     */
+    data object ReplaceSoleInvoiceScan : CapturedPageIntent
 }
 
 /**
@@ -160,8 +170,11 @@ interface InvoiceDraftRepository {
     /**
      * Publica una página recién capturada como una sola mutación del agregado. Con ID de
      * reemplazo localiza esa fila dentro de la transacción y conserva su posición; sin ID añade
-     * al final calculado dentro del mismo snapshot Room. Invalida todo derivado OCR y vuelve a
-     * [DraftStatus.CAPTURED]. Rechaza estados posteriores a OCR y borradores confirmados.
+     * al final calculado dentro del mismo snapshot Room. [CapturedPageIntent.ReplaceSoleInvoiceScan]
+     * es la única excepción posterior a OCR: exige una sola página y un borrador abierto en
+     * OCR_READY/NEEDS_REVIEW (o en CAPTURED/ERROR), invalida todo derivado y vuelve a
+     * [DraftStatus.CAPTURED]. Las intenciones legacy siguen rechazando estados posteriores a OCR
+     * y todo borrador confirmado.
      */
     suspend fun publishCapturedPage(
         page: CapturedPageWrite,

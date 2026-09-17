@@ -1,8 +1,10 @@
 package com.facturastock.app.navigation
 
+import android.net.Uri
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import com.facturastock.app.R
+import com.facturastock.app.domain.model.id.BusinessId
 
 data class RouteDefinition(
     val pattern: String,
@@ -22,16 +24,30 @@ object AppRoutes {
     const val PRODUCT_ID = "productId"
     const val DEBT_ID = "debtId"
     const val REPLACE_ID = "replaceId"
+    const val SCAN_RETAKE = "scanRetake"
     const val EXPECTED_PREPARED_HASH = "expectedPreparedHash"
+    const val PREFILL_BARCODE = "barcode"
+    const val EDIT_PRODUCT_ID = "editProductId"
+    const val SPECIAL_PRODUCT = "specialProduct"
+    const val REGISTRATION_REQUEST_ID = "requestId"
+    const val REGISTRATION_BUSINESS_ID = "businessId"
 
+    /** Alias de compatibilidad para pilas guardadas antes de retirar Inicio del menú. */
     const val HOME = "home"
     const val SALES = "sales"
+    const val SALES_PRODUCT_REGISTRATION =
+        "sales/register?barcode={$PREFILL_BARCODE}&requestId={$REGISTRATION_REQUEST_ID}&businessId={$REGISTRATION_BUSINESS_ID}"
     const val DEBTORS = "debtors"
+    /** Alias de compatibilidad de la sección Facturas retirada. */
     const val INVOICES = "invoices"
     const val REPORTS = "reports"
     const val PRODUCTS = "products"
+
+    /** Destino real del catálogo: acepta el código precargado para el alta del producto. */
+    const val PRODUCTS_PATTERN = "products?barcode={$PREFILL_BARCODE}&editProductId={$EDIT_PRODUCT_ID}&specialProduct={$SPECIAL_PRODUCT}"
     const val PURCHASES = "purchases"
     const val INVENTORY = "inventory"
+    const val INVENTORY_REGISTER = "inventory/register"
     const val SETTINGS = "settings"
     const val ONBOARDING = "onboarding"
 
@@ -45,12 +61,13 @@ object AppRoutes {
     const val PURCHASE_SOURCE =
         "purchase/draft/{$DRAFT_ID}/source?replace={$REPLACE_ID}"
     const val CAMERA =
-        "purchase/draft/{$DRAFT_ID}/camera?replace={$REPLACE_ID}"
+        "purchase/draft/{$DRAFT_ID}/camera?replace={$REPLACE_ID}&scanRetake={$SCAN_RETAKE}"
     const val IMAGE_PREVIEW =
         "purchase/draft/{$DRAFT_ID}/preview/{$CAPTURE_ID}"
     const val PROCESSING = "purchase/draft/{$DRAFT_ID}/processing"
     const val INVOICE_HEADER = "purchase/draft/{$DRAFT_ID}/header"
     const val INVOICE_LINES = "purchase/draft/{$DRAFT_ID}/lines"
+    const val INVOICE_MATCHING = "purchase/draft/{$DRAFT_ID}/matching"
     const val PRODUCT_LINKING =
         "purchase/draft/{$DRAFT_ID}/linking/{$LINE_ID}"
     const val PURCHASE_SUMMARY = "purchase/draft/{$DRAFT_ID}/summary"
@@ -63,13 +80,23 @@ object AppRoutes {
     const val DEBT_DETAIL = "debtors/{$DEBT_ID}"
 
     val all: List<RouteDefinition> = listOf(
-        RouteDefinition(HOME, titleRes = R.string.app_name, topLevel = true),
+        RouteDefinition(HOME, titleRes = R.string.sales_title),
         RouteDefinition(SALES, titleRes = R.string.sales_title, topLevel = true),
+        RouteDefinition(
+            SALES_PRODUCT_REGISTRATION,
+            argumentNames = setOf(PREFILL_BARCODE, REGISTRATION_REQUEST_ID, REGISTRATION_BUSINESS_ID),
+            titleRes = R.string.inventory_register_products,
+        ),
         RouteDefinition(DEBTORS, titleRes = R.string.debtors_title),
-        RouteDefinition(INVOICES, titleRes = R.string.navigation_invoices, topLevel = true),
+        RouteDefinition(INVOICES, titleRes = R.string.sales_title),
         RouteDefinition(INVENTORY, titleRes = R.string.navigation_inventory, topLevel = true),
+        RouteDefinition(INVENTORY_REGISTER, titleRes = R.string.inventory_register_products),
         RouteDefinition(REPORTS, titleRes = R.string.navigation_reports, topLevel = true),
-        RouteDefinition(PRODUCTS, titleRes = R.string.navigation_products),
+        RouteDefinition(
+            PRODUCTS_PATTERN,
+            argumentNames = setOf(PREFILL_BARCODE, EDIT_PRODUCT_ID, SPECIAL_PRODUCT),
+            titleRes = R.string.navigation_products,
+        ),
         RouteDefinition(PURCHASES, titleRes = R.string.navigation_purchase_history),
         RouteDefinition(SETTINGS, titleRes = R.string.navigation_settings),
         RouteDefinition(ONBOARDING, titleRes = R.string.onboarding_title),
@@ -80,7 +107,7 @@ object AppRoutes {
         RouteDefinition(NEW_PURCHASE, titleRes = R.string.purchase_new_title),
         RouteDefinition(NEW_DEBT, titleRes = R.string.debt_entry_title),
         draftRoute(PURCHASE_SOURCE, R.string.purchase_source_title, REPLACE_ID),
-        draftRoute(CAMERA, R.string.purchase_camera_title, REPLACE_ID),
+        draftRoute(CAMERA, R.string.purchase_camera_title, REPLACE_ID, SCAN_RETAKE),
         draftRoute(
             IMAGE_PREVIEW,
             R.string.purchase_preview_title,
@@ -89,6 +116,7 @@ object AppRoutes {
         draftRoute(PROCESSING, R.string.purchase_processing_title),
         draftRoute(INVOICE_HEADER, R.string.purchase_header_title),
         draftRoute(INVOICE_LINES, R.string.purchase_lines_title),
+        draftRoute(INVOICE_MATCHING, R.string.matching_title),
         draftRoute(
             PRODUCT_LINKING,
             R.string.purchase_linking_title,
@@ -148,8 +176,11 @@ object AppRoutes {
         PROCESSING,
         INVOICE_HEADER,
         INVOICE_LINES,
+        INVOICE_MATCHING,
         PRODUCT_LINKING,
     )
+
+    fun specialProductRegistration(): String = "products?specialProduct=true"
 
     fun definitionFor(pattern: String?): RouteDefinition? =
         if (pattern == null) null else definitionsByPattern[pattern]
@@ -157,8 +188,25 @@ object AppRoutes {
     fun source(draftId: DraftId, replaceId: ImageId? = null): String =
         "purchase/draft/${draftId.value}/source" + replaceQuery(replaceId)
 
-    fun camera(draftId: DraftId, replaceId: ImageId? = null): String =
-        "purchase/draft/${draftId.value}/camera" + replaceQuery(replaceId)
+    fun camera(
+        draftId: DraftId,
+        replaceId: ImageId? = null,
+        replaceSoleInvoiceScan: Boolean = false,
+    ): String {
+        require(replaceId == null || !replaceSoleInvoiceScan) {
+            "El reintento de escaneo no acepta un replaceId multipágina"
+        }
+        val query = when {
+            replaceId != null -> "?replace=${replaceId.value}"
+            replaceSoleInvoiceScan -> "?scanRetake=true"
+            else -> ""
+        }
+        return "purchase/draft/${draftId.value}/camera$query"
+    }
+
+    /** Cámara directa para sustituir la única foto que produjo un OCR fallido. */
+    fun invoiceScanRetakeCamera(draftId: DraftId): String =
+        camera(draftId = draftId, replaceSoleInvoiceScan = true)
 
     /** Sufijo de consulta opcional con el ID de la página a reemplazar ("Repetir"). */
     private fun replaceQuery(replaceId: ImageId?): String =
@@ -178,6 +226,9 @@ object AppRoutes {
 
     fun invoiceLines(draftId: DraftId): String =
         "purchase/draft/${draftId.value}/lines"
+
+    fun invoiceMatching(draftId: DraftId): String =
+        "purchase/draft/${draftId.value}/matching"
 
     fun productLinking(draftId: DraftId, lineId: LineId): String =
         "purchase/draft/${draftId.value}/linking/${lineId.value}"
@@ -207,6 +258,21 @@ object AppRoutes {
     fun debtDetail(debtId: DebtId): String =
         "debtors/${debtId.value}"
 
+    /**
+     * Catálogo con el formulario de producto abierto. Con [barcode] vacío abre el formulario
+     * en blanco (alta manual); con código, precargado desde el lector físico. La ausencia del
+     * parámetro abre la lista de productos sin formulario.
+     */
+    fun productsWithBarcode(barcode: String): String =
+        "products?barcode=" + Uri.encode(barcode)
+
+    fun salesProductRegistration(barcode: String, requestId: String, businessId: BusinessId): String =
+        "sales/register?barcode=${Uri.encode(barcode)}&requestId=${Uri.encode(requestId)}&businessId=${businessId.value}"
+
+    /** Edición por identidad estable, también para productos sin código de barras. */
+    fun editInventoryProduct(productId: ProductId): String =
+        "products?editProductId=${productId.value}"
+
     private fun draftRoute(
         pattern: String,
         @StringRes titleRes: Int,
@@ -226,20 +292,10 @@ enum class TopLevelDestination(
     @param:StringRes val labelRes: Int,
     @param:DrawableRes val iconRes: Int,
 ) {
-    HOME(
-        route = AppRoutes.HOME,
-        labelRes = R.string.navigation_home,
-        iconRes = R.drawable.ic_home,
-    ),
     SALES(
         route = AppRoutes.SALES,
         labelRes = R.string.navigation_sales,
         iconRes = R.drawable.ic_sale,
-    ),
-    INVOICES(
-        route = AppRoutes.INVOICES,
-        labelRes = R.string.navigation_invoices,
-        iconRes = R.drawable.ic_receipt,
     ),
     INVENTORY(
         route = AppRoutes.INVENTORY,

@@ -33,7 +33,7 @@ class FacturaStockMacrobenchmark {
     val benchmarkRule = MacrobenchmarkRule()
 
     @Before
-    fun isolateTargetStateWithoutOpeningHome() {
+    fun isolateTargetStateWithoutLaunchingApp() {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val clearOutput = device.executeShellCommand("pm clear $TARGET_PACKAGE")
         check(clearOutput.contains("Success", ignoreCase = true)) {
@@ -62,7 +62,7 @@ class FacturaStockMacrobenchmark {
             },
         ) {
             startActivityAndWait()
-            StartupJourney.waitForHomeReady(device)
+            StartupJourney.waitForSalesReady(device)
         }
     }
 

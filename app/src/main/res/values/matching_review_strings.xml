@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="matching_ocr_complete">La lectura de la factura terminó. Puedes continuar la revisión o tomar otra foto.</string>
+    <string name="matching_resume_review">Continuar revisión</string>
+    <string name="matching_edit_numbers">Editar cantidad y costo</string>
+    <string name="matching_review_required">Revisar cantidad, costo y unidad</string>
+    <string name="matching_review_linked">Vinculado: %1$s · falta revisar</string>
+    <string name="matching_review_explanation">Confirma cada cantidad y su costo antes de añadir existencias. El costo corresponde a la unidad seleccionada.</string>
+    <string name="matching_review_cost">Costo por unidad (0 si fue gratuito)</string>
+    <string name="matching_review_currency">Moneda del costo (negocio: %1$s)</string>
+    <string name="matching_review_currency_help">No se convierten monedas automáticamente. Si la factura usa otra moneda, convierte el costo y declara la moneda del negocio.</string>
+    <string name="matching_review_unit">Unidad leída: %1$s</string>
+    <string name="matching_review_inventory_unit">Unidad de inventario: %1$s</string>
+    <string name="matching_review_purchase_unit">Unidad de compra: %1$s (equivale a %2$s de inventario)</string>
+    <string name="matching_error_review_required">Revisa todas las cantidades, costos, monedas y unidades. No se guardó ninguna línea.</string>
+    <string name="matching_error_draft_changed">La factura o el catálogo cambió. Vuelve a abrir la revisión antes de guardar.</string>
+    <string name="matching_error_legacy_conflict">Esta factura tiene un ingreso previo que no coincide con la revisión. Revisa sus movimientos antes de volver a ingresarla.</string>
+</resources>

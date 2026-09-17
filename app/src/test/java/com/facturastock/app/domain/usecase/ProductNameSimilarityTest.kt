@@ -3,6 +3,7 @@ package com.facturastock.app.domain.usecase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 /**
  * Contrato del ordenamiento difuso que sostiene «hasta cinco candidatos y por qué coinciden»:
@@ -75,6 +76,20 @@ class ProductNameSimilarityTest {
     }
 
     @Test
+    fun `scorer opt in acepta dos letras sin modificar el minimo predeterminado ni admitir una letra`() {
+        val threshold = ProductMatchingUseCase.MIN_FUZZY_SCORE_PERMILLE
+        val candidate = "Árbol de canela"
+        val defaultScore = ProductNameSimilarity.similarityPermille("ar", candidate)
+        val shortPrefix = requireNotNull(ProductNameSimilarity.scorer("ar", minimumPrefixLength = 2))
+
+        assertTrue(defaultScore < threshold)
+        assertTrue(shortPrefix.similarityPermille(candidate) >= threshold)
+        assertTrue(requireNotNull(ProductNameSimilarity.scorer("a", minimumPrefixLength = 2)).similarityPermille(candidate) < threshold)
+        assertEquals(defaultScore, requireNotNull(ProductNameSimilarity.scorer("ar")).similarityPermille(candidate))
+        assertEquals(defaultScore, ProductNameSimilarity.similarityPermille("ar", candidate))
+    }
+
+    @Test
     fun `una letra sola no cuenta como token informativo`() {
         val score = ProductNameSimilarity.similarityPermille("A B C", "A B D")
 
@@ -127,5 +142,36 @@ class ProductNameSimilarityTest {
 
         assertEquals(expected, candidates.map(scorer::similarityPermille))
         assertEquals(expected, candidates.map(scorer::similarityPermille))
+    }
+
+    @Test
+    fun `cada puntuacion conserva la referencia anterior con unicode limites y prefijos`() {
+        val random = Random(20260912)
+        val words = listOf("arroz", "EXTRA", "leche", "evap", "entera", "café", "azúcar", "a", "500", "g")
+        val texts = listOf(
+            "", " ", "a", "A", "ar", "Arroz extra", "leche ent", "Leche evaporada entera",
+            "har inte", "Harina integral de avena", "Café  Molido", " cafe\tMOLIDO ",
+            "a\nb\r\tc", "\u000B azúcar\u000C rubia ", "x\u00A0y", "\u2003café\u2003",
+            "İSTANBUL", "piña", "\u0301\u0308", "🍚 arroz", "a a a", "a b c", "arroz arroz",
+            "x".repeat(199), "x".repeat(200), "x".repeat(201),
+            "é".repeat(199), "\u0344".repeat(200), "ab ".repeat(66),
+        ) + List(40) {
+            List(random.nextInt(1, 7)) { words[random.nextInt(words.size)] }
+                .joinToString(if (random.nextBoolean()) " " else "  ")
+        }
+
+        for (minimumPrefixLength in listOf(2, 3, 5)) {
+            for (query in texts) {
+                val baseline = ProductNameSimilarityBaseline.scorer(query, minimumPrefixLength)
+                val optimized = ProductNameSimilarity.scorer(query, minimumPrefixLength)
+                for (candidate in texts) {
+                    assertEquals(
+                        "mínimo=$minimumPrefixLength query=«$query» candidate=«$candidate»",
+                        baseline?.similarityPermille(candidate) ?: 0,
+                        optimized?.similarityPermille(candidate) ?: 0,
+                    )
+                }
+            }
+        }
     }
 }

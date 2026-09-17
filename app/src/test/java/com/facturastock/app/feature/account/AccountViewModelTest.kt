@@ -916,6 +916,25 @@ class AccountViewModelTest {
         }
 
     @Test
+    fun `backend sin capacidad de borrado no ofrece ni envia la accion`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            accountRepository = FakeAccountRepository(
+                initialSession = AccountSession.Active(uid = UID, email = EMAIL, link = null),
+                accountDeletionAvailable = false,
+            )
+            val viewModel = createViewModel()
+            runCurrent()
+            viewModel.onAction(AccountContract.Action.DeleteAccountRequested)
+            viewModel.onAction(AccountContract.Action.AccountDeletionPasswordChanged(DELETE_PASSWORD))
+            viewModel.onAction(AccountContract.Action.DeleteAccountConfirmed)
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.accountDeletionAvailable)
+            assertFalse(viewModel.uiState.value.showAccountDeletionDialog)
+            assertEquals(0, accountRepository.accountDeletionCalls)
+        }
+
+    @Test
     fun `eliminacion requiere confirmacion y doble confirmacion solo llama una vez`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             accountRepository.emitSession(
@@ -972,7 +991,32 @@ class AccountViewModelTest {
             assertEquals(AccountSession.SignedOut, viewModel.uiState.value.session)
             assertNull(accountRepository.pendingAccountDeletionUid())
             assertFalse(viewModel.uiState.value.deletionPendingSignOut)
-            assertNull(viewModel.uiState.value.feedback)
+            assertEquals(
+                AccountContract.Feedback.ACCOUNT_DELETION_UNCONFIRMED,
+                viewModel.uiState.value.feedback,
+            )
+        }
+
+    @Test
+    fun `aceptacion pendiente informa el trabajo durable sin afirmar borrado completo`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            accountRepository.emitSession(AccountSession.Active(uid = UID, email = EMAIL, link = null))
+            accountRepository.nextAccountDeletionResult =
+                DomainResult.Success(AccountDeletionSummary(emptyList(), 0, isPending = true))
+            val viewModel = createViewModel()
+            runCurrent()
+
+            viewModel.onAction(AccountContract.Action.DeleteAccountRequested)
+            viewModel.onAction(AccountContract.Action.AccountDeletionPasswordChanged(DELETE_PASSWORD))
+            viewModel.onAction(AccountContract.Action.DeleteAccountConfirmed)
+            runCurrent()
+
+            assertEquals(1, accountRepository.accountDeletionCalls)
+            assertEquals(AccountSession.SignedOut, viewModel.uiState.value.session)
+            assertEquals(
+                AccountContract.Feedback.ACCOUNT_DELETION_PENDING,
+                viewModel.uiState.value.feedback,
+            )
         }
 
     @Test
@@ -1086,7 +1130,10 @@ class AccountViewModelTest {
             assertEquals(1, accountRepository.signOutCalls)
             assertEquals(AccountSession.SignedOut, viewModel.uiState.value.session)
             assertFalse(viewModel.uiState.value.deletionPendingSignOut)
-            assertNull(viewModel.uiState.value.feedback)
+            assertEquals(
+                AccountContract.Feedback.ACCOUNT_DELETION_UNCONFIRMED,
+                viewModel.uiState.value.feedback,
+            )
         }
 
     @Test

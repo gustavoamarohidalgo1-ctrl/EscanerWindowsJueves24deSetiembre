@@ -3,6 +3,7 @@
 
 require "digest"
 require "fileutils"
+require "open3"
 require "rexml/document"
 require "tmpdir"
 require "time"
@@ -52,6 +53,32 @@ run_id = ARGV.shift || "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{Process.pid
 fail_capture("usage: ruby scripts/run-local-profile-capture.rb [RUN_ID]") unless ARGV.empty?
 fail_capture("invalid run id #{run_id.inspect}") unless run_id.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/)
 
+# El recorrido ejecuta pm clear. Nunca delegar la elección del dispositivo a adb/Gradle ni
+# aceptar varios seriales: una captura sólo puede borrar datos en el emulador elegido.
+target_serial = ENV.fetch("ANDROID_SERIAL", "").strip
+unless target_serial.match?(/\Aemulator-[0-9]+\z/)
+  fail_capture("set ANDROID_SERIAL to one explicit disposable emulator (for example emulator-5556); " \
+               "this capture clears com.facturastock.app data on that emulator")
+end
+sdk_root = ENV["ANDROID_HOME"] || ENV["ANDROID_SDK_ROOT"]
+sdk_adb = File.join(sdk_root, "platform-tools", "adb") if sdk_root && !sdk_root.empty?
+adb = ENV["ADB"] || (sdk_adb && File.executable?(sdk_adb) ? sdk_adb : "adb")
+begin
+  state, _stderr, state_status = Open3.capture3(adb, "-s", target_serial, "get-state")
+  unless state_status.success? && state.strip == "device"
+    fail_capture("selected emulator #{target_serial} is not connected and ready")
+  end
+  qemu, _stderr, qemu_status = Open3.capture3(
+    adb, "-s", target_serial, "shell", "getprop", "ro.kernel.qemu",
+  )
+  unless qemu_status.success? && qemu.strip == "1"
+    fail_capture("selected device #{target_serial} is not a verified emulator")
+  end
+rescue Errno::ENOENT
+  fail_capture("adb is unavailable; set ANDROID_HOME, ANDROID_SDK_ROOT or ADB explicitly")
+end
+puts "target_serial=#{target_serial} (capture clears com.facturastock.app data on this emulator)"
+
 FileUtils.mkdir_p(PROFILE_RUNS_ROOT)
 final_run_dir = File.join(PROFILE_RUNS_ROOT, run_id)
 fail_capture("run id already exists: #{final_run_dir}") if File.exist?(final_run_dir)
@@ -74,7 +101,7 @@ gradle_command = [
   ":benchmark:connectedLocalProfileAndroidTest",
   "-Pandroid.testInstrumentationRunnerArguments.class=#{TEST_CLASS}",
 ]
-success = system(*gradle_command, chdir: ROOT)
+success = system({ "ANDROID_SERIAL" => target_serial }, *gradle_command, chdir: ROOT)
 fail_capture("Gradle/JUnit did not complete successfully") unless success
 
 startup_source = single_fresh_file(
@@ -118,6 +145,7 @@ begin
     "format=1",
     "run_id=#{run_id}",
     "variant=localProfile",
+    "device_serial=#{target_serial}",
     "test_class=#{TEST_CLASS}",
     "tests=2",
     "failures=0",

@@ -39,6 +39,22 @@ class OcrScreenTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
+    fun returningFromMatchingShowsCompletedReviewActionsInsteadOfAnIdleSpinner() {
+        var action: OcrContract.Action? = null
+        composeRule.setContent {
+            FacturaStockTheme {
+                OcrScreen(state = OcrContract.State(completedPageCount = 1, isRunning = false),
+                    onAction = { action = it })
+            }
+        }
+        composeRule.onNodeWithTag(OcrTestTags.PROGRESS).assertDoesNotExist()
+        composeRule.onNodeWithTag(OcrTestTags.CANCEL).assertDoesNotExist()
+        composeRule.onNodeWithTag(OcrTestTags.CONTINUE_REVIEW).assertIsDisplayed().performClick()
+        assertEquals(OcrContract.Action.ContinueToMatching, action)
+        composeRule.onNodeWithTag(OcrTestTags.BACK).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun realStagesAreAnnouncedAsIndeterminateProgressWithoutPercentages() {
         var state by mutableStateOf(runningState(InvoiceOcrStage.PREPARING))
         composeRule.setContent {
@@ -152,8 +168,9 @@ class OcrScreenTest {
                 OcrScreen(
                     state = OcrContract.State(
                         draftId = DRAFT_ID,
-                        isRunning = true,
+                        isRunning = false,
                         isSavingProducts = true,
+                        completedPageCount = 1,
                     ),
                     onAction = {},
                 )
@@ -161,11 +178,13 @@ class OcrScreenTest {
         }
 
         val saving = context.getString(R.string.ocr_saving_products)
-        composeRule.onNodeWithText(saving).assertIsDisplayed()
+        composeRule.onNodeWithTag(OcrTestTags.PROGRESS).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(saving)
             .assertIsDisplayed()
             .assert(indeterminateProgress())
         composeRule.onNodeWithTag(OcrTestTags.BACK).assertDoesNotExist()
+        composeRule.onNodeWithTag(OcrTestTags.CANCEL).assertDoesNotExist()
+        composeRule.onNodeWithTag(OcrTestTags.CONTINUE_REVIEW).assertDoesNotExist()
     }
 
     @Test

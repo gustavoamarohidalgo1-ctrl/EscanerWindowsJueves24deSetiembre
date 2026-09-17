@@ -8,8 +8,18 @@ import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.Product
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.ProductId
+import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+
+enum class ProductDeletionResult {
+    DELETED,
+    NOT_FOUND,
+    STALE,
+    HAS_HISTORY,
+    HAS_STOCK,
+    SHARED_BUSINESS,
+}
 
 sealed interface ProductSalePriceMutationResult {
     data class Updated(val product: Product) : ProductSalePriceMutationResult
@@ -23,6 +33,16 @@ sealed interface ProductSalePriceMutationResult {
         val expected: CurrencyCode,
         val actual: CurrencyCode,
     ) : ProductSalePriceMutationResult
+}
+
+data class ProductBatchCreationResult(
+    val created: List<Product>,
+    /** Candidatos omitidos porque el negocio ya tenía el mismo nombre normalizado. */
+    val alreadyExistingCount: Int,
+) {
+    init {
+        require(alreadyExistingCount >= 0)
+    }
 }
 
 /**
@@ -42,6 +62,32 @@ interface ProductRepository {
     suspend fun createBatch(products: List<Product>): List<Product> = products.map { create(it) }
 
     /**
+     * Crea únicamente los nombres todavía ausentes. El adaptador Room sobrescribe esta operación
+     * para hacer la comprobación, las inserciones y su outbox dentro de una sola transacción.
+     * Así dos escaneos simultáneos no duplican un mismo nombre. Los adaptadores simples conservan
+     * una implementación compatible para pruebas.
+     */
+    suspend fun createBatchSkippingExistingNames(
+        businessId: BusinessId,
+        products: List<Product>,
+    ): ProductBatchCreationResult {
+        require(products.all { product -> product.businessId == businessId })
+        val distinctNames = products.map { product ->
+            product.name.trim().lowercase(Locale.ROOT)
+        }
+        require(distinctNames.distinct().size == distinctNames.size) {
+            "Un lote condicionado no puede repetir nombres normalizados"
+        }
+        val pending = products.filterIndexed { index, _ ->
+            findByNormalizedName(businessId, distinctNames[index]).isEmpty()
+        }
+        return ProductBatchCreationResult(
+            created = createBatch(pending),
+            alreadyExistingCount = products.size - pending.size,
+        )
+    }
+
+    /**
      * Actualiza el producto estampando `updatedAt`; devuelve false si no existía o si la
      * `version` del producto ya no es la persistida (concurrencia optimista: otra edición
      * ganó la carrera y nada se escribió).
@@ -57,6 +103,26 @@ interface ProductRepository {
     ): ProductSalePriceMutationResult
 
     suspend fun findById(productId: ProductId): Product?
+
+    /**
+     * Elimina definitivamente sólo un producto local sin referencias ni existencias. La
+     * identidad, versión, saldos y sincronización se comprueban dentro de una transacción;
+     * nunca elimina movimientos, documentos ni referencias para forzar el borrado.
+     */
+    suspend fun deletePermanently(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): ProductDeletionResult
+
+    /**
+     * Lectura acotada por identificadores. El default conserva adaptadores simples; Room
+     * sobrescribe con una consulta `IN` para no hacer N lecturas por alias.
+     */
+    suspend fun findByIds(productIds: Collection<ProductId>): Map<ProductId, Product> {
+        if (productIds.isEmpty()) return emptyMap()
+        return productIds.distinct().mapNotNull { findById(it) }.associateBy { it.productId }
+    }
 
     /** Búsqueda puntual por SKU dentro del negocio. */
     suspend fun findBySku(businessId: BusinessId, sku: String): Product?
@@ -98,7 +164,27 @@ interface ProductRepository {
     /** Emite los productos del negocio ordenados por nombre ante cada cambio. */
     fun observeForBusiness(businessId: BusinessId): Flow<List<Product>>
 
+    /** Archivo lógico sobre la versión vigente; nunca elimina saldos ni historia. */
     suspend fun archive(productId: ProductId): Boolean
 
     suspend fun restore(productId: ProductId): Boolean
+
+    /**
+     * Archivo desde una revisión o diálogo: negocio y versión se comprueban en la misma
+     * transacción que cambia el estado. False significa que la identidad o versión ya no
+     * coincide; no se cambia el producto ni se publica outbox. El estado ya solicitado solo
+     * devuelve true cuando también coincide la versión esperada.
+     */
+    suspend fun archive(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): Boolean
+
+    /** Reactiva la misma identidad y conserva sus existencias e historia mediante el mismo CAS. */
+    suspend fun restore(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): Boolean
 }

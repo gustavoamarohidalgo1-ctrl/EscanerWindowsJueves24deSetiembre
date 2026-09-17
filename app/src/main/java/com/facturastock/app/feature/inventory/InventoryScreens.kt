@@ -2,8 +2,6 @@ package com.facturastock.app.feature.inventory
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,29 +14,40 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import com.facturastock.app.R
 import com.facturastock.app.domain.model.CurrencyCode
@@ -86,22 +95,23 @@ fun InventoryListScreen(
     onProductClick: (ProductId) -> Unit,
     onRunDiagnostic: () -> Unit,
     section: InventoryContract.ListSection = InventoryContract.ListSection.STOCK,
-    inputMode: InventoryContract.InputMode = InventoryContract.InputMode.SEARCH,
-    scannerActive: Boolean = false,
-    isBarcodeLookupRunning: Boolean = false,
-    scannerFailure: InventoryContract.ScannerFailure? = null,
     profits: List<ProductProfit> = emptyList(),
     isProfitLoading: Boolean = false,
     profitFailure: InventoryContract.ProfitFailure? = null,
     salePriceEditor: InventoryContract.SalePriceEditor? = null,
     isSavingSalePrice: Boolean = false,
-    onSectionChange: (InventoryContract.ListSection) -> Unit = {},
-    onInputModeChange: (InventoryContract.InputMode) -> Unit = {},
     onEditSalePrice: (ProductId) -> Unit = {},
     onSalePriceChange: (String) -> Unit = {},
     onSaveSalePrice: () -> Unit = {},
     onDismissSalePrice: () -> Unit = {},
     onRetryProfit: () -> Unit = {},
+    onRegisterManual: () -> Unit = {},
+    onRegisterSpecialProduct: () -> Unit = {},
+    onRegisterProducts: () -> Unit = {},
+    productActionsEnabled: Boolean = true,
+    onEditProduct: (ProductId) -> Unit = {},
+    onDeleteProduct: (ProductId) -> Unit = {},
+    onSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val spacing = FacturaStockDesign.spacing
     LazyColumn(
@@ -111,41 +121,33 @@ fun InventoryListScreen(
         contentPadding = PaddingValues(spacing.lg),
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
-        item(key = "section_selector", contentType = "section_selector") {
-            InventorySectionSelector(
-                selected = section,
-                onSelected = onSectionChange,
+        if (section == InventoryContract.ListSection.STOCK) {
+            item(key = "name_search", contentType = "search") {
+                InventorySearchField(
+                    query = query,
+                    enabled = productActionsEnabled,
+                    onQueryChange = onQueryChange,
+                    onFocusChange = onSearchFocusChange,
+                )
+            }
+        }
+        item(key = "register_products", contentType = "register_products") {
+            FacturaStockPrimaryButton(
+                text = stringResource(R.string.inventory_register_products),
+                onClick = onRegisterProducts,
+                enabled = productActionsEnabled,
+                leadingIconRes = R.drawable.ic_barcode_scanner,
+                modifier = Modifier.fillMaxWidth().testTag(InventoryTestTags.REGISTER_PRODUCTS),
             )
         }
         if (section == InventoryContract.ListSection.STOCK) {
-            item(key = "input_mode_selector", contentType = "input_mode_selector") {
-                InventoryInputModeSelector(
-                    selected = inputMode,
-                    onSelected = onInputModeChange,
+            item(key = "register_product", contentType = "register_product") {
+                InventoryRegisterActions(
+                    onManualClicked = onRegisterManual,
+                    onSpecialClicked = onRegisterSpecialProduct,
+                    enabled = productActionsEnabled,
                 )
             }
-        }
-        if (
-            section == InventoryContract.ListSection.ESTIMATED_PROFIT ||
-            inputMode == InventoryContract.InputMode.SEARCH
-        ) {
-            item(key = "search", contentType = "search") {
-                InventorySearchField(
-                    query = query,
-                    section = section,
-                    onQueryChange = onQueryChange,
-                )
-            }
-        } else {
-            item(key = "scanner", contentType = "scanner") {
-                InventoryScannerStatus(
-                    active = scannerActive,
-                    isLookingUp = isBarcodeLookupRunning,
-                    failure = scannerFailure,
-                )
-            }
-        }
-        if (section == InventoryContract.ListSection.STOCK) {
             if (showDiagnostic) {
                 item(key = "diagnostic", contentType = "diagnostic") {
                     InventoryDiagnosticCard(
@@ -161,7 +163,7 @@ fun InventoryListScreen(
                 item(key = "count", contentType = "count") {
                     Text(
                         text = pluralStringResource(
-                            R.plurals.inventory_result_count,
+                            R.plurals.inventory_product_count,
                             items.size,
                             items.size,
                         ),
@@ -175,15 +177,19 @@ fun InventoryListScreen(
                     LoadingState(message = stringResource(R.string.feature_loading_message))
                 }
                 items.isEmpty() -> item(key = "empty", contentType = "empty") {
-                    val filtered = query.isNotBlank()
+                    val filtered = query.trim().length >= 2
                     EmptyState(
                         title = stringResource(
-                            if (filtered) R.string.inventory_empty_filtered_title
-                            else R.string.inventory_empty_title,
+                            when {
+                                filtered -> R.string.inventory_empty_filtered_title
+                                else -> R.string.inventory_empty_title
+                            },
                         ),
                         message = stringResource(
-                            if (filtered) R.string.inventory_empty_filtered_message
-                            else R.string.inventory_empty_message,
+                            when {
+                                filtered -> R.string.inventory_empty_filtered_message
+                                else -> R.string.inventory_empty_message
+                            },
                         ),
                         iconRes = R.drawable.ic_inventory,
                         actionLabel = if (filtered) {
@@ -207,6 +213,9 @@ fun InventoryListScreen(
                     InventoryProductCard(
                         item = item,
                         onClick = { onProductClick(item.productId) },
+                        actionsEnabled = productActionsEnabled,
+                        onEdit = { onEditProduct(item.productId) },
+                        onDelete = { onDeleteProduct(item.productId) },
                         modifier = Modifier.testTag(InventoryTestTags.product(item.productId)),
                     )
                 }
@@ -293,189 +302,54 @@ fun InventoryListScreen(
 @Composable
 private fun InventorySearchField(
     query: String,
-    section: InventoryContract.ListSection,
+    enabled: Boolean,
     onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    var focused by remember { mutableStateOf(false) }
+    val currentOnFocusChange by rememberUpdatedState(onFocusChange)
+    DisposableEffect(Unit) {
+        onDispose {
+            if (focused) currentOnFocusChange(false)
+        }
+    }
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        label = {
-            Text(
-                stringResource(
-                    if (section == InventoryContract.ListSection.STOCK) {
-                        R.string.inventory_search_label
-                    } else {
-                        R.string.inventory_profit_search_label
-                    },
-                ),
-            )
+        label = { Text(stringResource(R.string.inventory_search_label)) },
+        supportingText = { Text(stringResource(R.string.inventory_search_hint)) },
+        leadingIcon = {
+            Icon(painterResource(R.drawable.ic_search), contentDescription = null)
         },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    enabled = enabled,
+                    modifier = Modifier.testTag(InventoryTestTags.SEARCH_CLEAR),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_close),
+                        contentDescription = stringResource(R.string.action_clear_search),
+                    )
+                }
+            }
+        },
+        enabled = enabled,
         singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged {
+                if (focused != it.isFocused) {
+                    focused = it.isFocused
+                    currentOnFocusChange(focused)
+                }
+            }
             .testTag(InventoryTestTags.SEARCH),
     )
-}
-
-@Composable
-private fun InventoryInputModeSelector(
-    selected: InventoryContract.InputMode,
-    onSelected: (InventoryContract.InputMode) -> Unit,
-) {
-    val spacing = FacturaStockDesign.spacing
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-    ) {
-        InventorySectionChoice(
-            label = stringResource(R.string.inventory_mode_search),
-            selected = selected == InventoryContract.InputMode.SEARCH,
-            testTag = InventoryTestTags.SEARCH_MODE,
-            onClick = { onSelected(InventoryContract.InputMode.SEARCH) },
-            modifier = Modifier.weight(1f),
-        )
-        InventorySectionChoice(
-            label = stringResource(R.string.inventory_mode_scanner),
-            selected = selected == InventoryContract.InputMode.SCANNER,
-            testTag = InventoryTestTags.SCANNER_MODE,
-            onClick = { onSelected(InventoryContract.InputMode.SCANNER) },
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun InventoryScannerStatus(
-    active: Boolean,
-    isLookingUp: Boolean,
-    failure: InventoryContract.ScannerFailure?,
-) {
-    val spacing = FacturaStockDesign.spacing
-    val semanticColors = FacturaStockDesign.semanticColors
-    val message = stringResource(
-        when {
-            isLookingUp -> R.string.inventory_scanner_searching
-            failure == InventoryContract.ScannerFailure.INVALID_BARCODE ->
-                R.string.inventory_scanner_invalid
-            failure == InventoryContract.ScannerFailure.BARCODE_NOT_FOUND ->
-                R.string.inventory_scanner_not_found
-            failure == InventoryContract.ScannerFailure.NO_ACTIVE_BUSINESS ->
-                R.string.inventory_scanner_no_business
-            failure == InventoryContract.ScannerFailure.LOOKUP_FAILED ->
-                R.string.inventory_scanner_lookup_failed
-            active -> R.string.inventory_scanner_ready
-            else -> R.string.inventory_scanner_inactive
-        },
-    )
-    val hasFailure = failure != null
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-            .testTag(InventoryTestTags.SCANNER_STATUS),
-        shape = MaterialTheme.shapes.small,
-        color = if (hasFailure) {
-            semanticColors.warningContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        contentColor = if (hasFailure) {
-            semanticColors.onWarningContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_barcode_scanner),
-                contentDescription = null,
-                modifier = Modifier.size(spacing.iconSmall),
-            )
-            Text(
-                text = message,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-    }
-}
-
-@Composable
-private fun InventorySectionSelector(
-    selected: InventoryContract.ListSection,
-    onSelected: (InventoryContract.ListSection) -> Unit,
-) {
-    val spacing = FacturaStockDesign.spacing
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-    ) {
-        InventorySectionChoice(
-            label = stringResource(R.string.inventory_section_stock),
-            selected = selected == InventoryContract.ListSection.STOCK,
-            testTag = InventoryTestTags.SECTION_STOCK,
-            onClick = { onSelected(InventoryContract.ListSection.STOCK) },
-            modifier = Modifier.weight(1f),
-        )
-        InventorySectionChoice(
-            label = stringResource(R.string.inventory_section_profit),
-            selected = selected == InventoryContract.ListSection.ESTIMATED_PROFIT,
-            testTag = InventoryTestTags.SECTION_PROFIT,
-            onClick = { onSelected(InventoryContract.ListSection.ESTIMATED_PROFIT) },
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun InventorySectionChoice(
-    label: String,
-    selected: Boolean,
-    testTag: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val spacing = FacturaStockDesign.spacing
-    Surface(
-        modifier = modifier
-            .heightIn(min = spacing.minimumTouchTarget)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .testTag(testTag),
-        shape = MaterialTheme.shapes.small,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        contentColor = if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = spacing.minimumTouchTarget)
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
 }
 
 @Composable
@@ -724,19 +598,147 @@ private fun SalePriceDialog(
 }
 
 @Composable
+private fun InventoryProductActions(
+    item: InventoryReadItem,
+    enabled: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (InventoryDataAlert.ARCHIVED_PRODUCT in item.allAlerts) return
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
+        FacturaStockSecondaryButton(
+            text = stringResource(R.string.inventory_product_edit),
+            onClick = onEdit,
+            enabled = enabled && InventoryDataAlert.ARCHIVED_PRODUCT !in item.allAlerts,
+            modifier = Modifier.weight(1f).testTag(InventoryTestTags.editProduct(item.productId)),
+        )
+        FacturaStockSecondaryButton(
+            text = stringResource(R.string.inventory_product_delete),
+            onClick = onDelete,
+            enabled = enabled,
+            modifier = Modifier.weight(1f).testTag(InventoryTestTags.deleteProduct(item.productId)),
+        )
+    }
+}
+
+@Composable
+internal fun InventoryProductDeletionDialog(
+    pending: InventoryContract.PendingProductDeletion,
+    isBusy: Boolean,
+    failure: InventoryContract.ProductActionFailure?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val retryable = failure == InventoryContract.ProductActionFailure.LOAD_FAILED ||
+        failure == InventoryContract.ProductActionFailure.SAVE_FAILED
+    val blocked = failure != null && !retryable
+    if (blocked) {
+        AlertDialog(
+            onDismissRequest = { if (!isBusy) onDismiss() },
+            title = { Text(stringResource(R.string.inventory_product_delete_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
+                    Text(pending.productName)
+                    InventoryProductActionError(requireNotNull(failure), deleting = true)
+                }
+            },
+            confirmButton = {
+                FacturaStockSecondaryButton(
+                    text = stringResource(R.string.inventory_product_delete_close),
+                    onClick = onDismiss,
+                    enabled = !isBusy,
+                )
+            },
+            modifier = Modifier.testTag(InventoryTestTags.PRODUCT_DELETE_DIALOG),
+        )
+        return
+    }
+    FacturaStockDialog(
+        title = stringResource(R.string.inventory_product_delete_title),
+        message = stringResource(R.string.inventory_product_delete_message, pending.productName),
+        confirmLabel = stringResource(if (retryable) R.string.action_retry else R.string.inventory_product_delete_confirm),
+        dismissLabel = stringResource(R.string.action_cancel),
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+        confirmEnabled = !isBusy && (retryable || pending.expectedVersion != null),
+        dismissEnabled = !isBusy,
+        modifier = Modifier.testTag(InventoryTestTags.PRODUCT_DELETE_DIALOG),
+        content = {
+            if (isBusy || (pending.expectedVersion == null && failure == null)) {
+                LoadingState(
+                    message = stringResource(
+                        if (pending.expectedVersion == null) R.string.inventory_product_delete_checking
+                        else R.string.inventory_product_delete_saving,
+                    ),
+                )
+            }
+            failure?.let {
+                Text(
+                    stringResource(R.string.inventory_product_delete_retry),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                )
+            }
+        },
+    )
+}
+
+@Composable
+internal fun InventoryProductActionError(
+    failure: InventoryContract.ProductActionFailure,
+    deleting: Boolean = false,
+) {
+    Text(
+        text = stringResource(
+            if (deleting && failure == InventoryContract.ProductActionFailure.STALE_PRODUCT) R.string.inventory_product_delete_stale
+            else failure.messageRes(),
+        ),
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .testTag(InventoryTestTags.PRODUCT_ACTION_ERROR)
+            .semantics { liveRegion = LiveRegionMode.Assertive },
+    )
+}
+
+@StringRes
+private fun InventoryContract.ProductActionFailure.messageRes(): Int = when (this) {
+    InventoryContract.ProductActionFailure.LOAD_FAILED -> R.string.inventory_product_load_failed
+    InventoryContract.ProductActionFailure.SAVE_FAILED -> R.string.inventory_product_save_failed
+    InventoryContract.ProductActionFailure.BUSINESS_CHANGED -> R.string.inventory_product_business_changed
+    InventoryContract.ProductActionFailure.PRODUCT_UNAVAILABLE -> R.string.inventory_product_unavailable
+    InventoryContract.ProductActionFailure.STALE_PRODUCT -> R.string.inventory_product_stale
+    InventoryContract.ProductActionFailure.HAS_HISTORY -> R.string.inventory_product_delete_has_history
+    InventoryContract.ProductActionFailure.HAS_STOCK -> R.string.inventory_product_delete_has_stock
+    InventoryContract.ProductActionFailure.SHARED_BUSINESS -> R.string.inventory_product_delete_shared
+}
+
+@Composable
 private fun InventoryProductCard(
     item: InventoryReadItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    actionsEnabled: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val spacing = FacturaStockDesign.spacing
     Card(
         onClick = onClick,
+        enabled = actionsEnabled,
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(spacing.borderThin, MaterialTheme.colorScheme.outlineVariant),
     ) {
         InventoryProductContent(item = item, showPositions = false)
+        InventoryProductActions(
+            item = item,
+            enabled = actionsEnabled,
+            onEdit = onEdit,
+            onDelete = onDelete,
+            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+        )
     }
 }
 
@@ -817,7 +819,11 @@ private fun InventoryProductContent(
         if (showPositions) {
             item.positions.forEachIndexed { index, position ->
                 if (index > 0) HorizontalDivider()
-                InventoryPositionContent(position = position, unit = item.displayUnit())
+                InventoryPositionContent(
+                    position = position,
+                    unit = item.displayUnit(),
+                    showLocationName = item.positions.size > 1,
+                )
             }
         }
         if (item.allAlerts.isNotEmpty()) {
@@ -830,15 +836,18 @@ private fun InventoryProductContent(
 private fun InventoryPositionContent(
     position: InventoryReadPosition,
     unit: String,
+    showLocationName: Boolean = false,
 ) {
     val spacing = FacturaStockDesign.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
-        Text(
-            text = position.locationName,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
-            style = MaterialTheme.typography.titleSmall,
-        )
+        if (showLocationName) {
+            Text(
+                text = position.locationName,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.titleSmall,
+            )
+        }
         Text(
             text = stringResource(
                 R.string.inventory_position_quantity,
@@ -1031,6 +1040,9 @@ fun InventoryProductDetailScreen(
     onOpenPurchase: (PurchaseId) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    productActionsEnabled: Boolean = true,
+    onEditProduct: (ProductId) -> Unit = {},
+    onDeleteProduct: (ProductId) -> Unit = {},
 ) {
     val spacing = FacturaStockDesign.spacing
     Column(
@@ -1066,6 +1078,14 @@ fun InventoryProductDetailScreen(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
+            }
+            item(key = "product_actions", contentType = "product_actions") {
+                InventoryProductActions(
+                    item = detail.item,
+                    enabled = productActionsEnabled,
+                    onEdit = { onEditProduct(detail.item.productId) },
+                    onDelete = { onDeleteProduct(detail.item.productId) },
+                )
             }
             item(key = "positions_header", contentType = "section_header") {
                 SectionTitle(stringResource(R.string.inventory_positions_section))
@@ -1105,6 +1125,7 @@ fun InventoryProductDetailScreen(
         FacturaStockPrimaryButton(
             text = stringResource(R.string.action_back),
             onClick = onBack,
+            enabled = productActionsEnabled,
             leadingIconRes = R.drawable.ic_back,
             modifier = Modifier
                 .fillMaxWidth()
@@ -1248,6 +1269,7 @@ private fun InventoryDiagnosticIssue.labelRes(): Int = when (this) {
 private fun StockMovementType.labelRes(): Int = when (this) {
     StockMovementType.PURCHASE -> R.string.inventory_movement_purchase
     StockMovementType.SALE -> R.string.inventory_movement_sale
+    StockMovementType.SALE_VOID -> R.string.inventory_movement_sale_void
     StockMovementType.VOID -> R.string.inventory_movement_void
     StockMovementType.ADJUSTMENT -> R.string.inventory_movement_adjustment
 }
@@ -1298,11 +1320,41 @@ private fun BigDecimal.formatInventoryMoney(currency: CurrencyCode): String =
 
 private const val MAX_DIAGNOSTIC_ROWS = 5
 
+/** Alta manual de productos desde Inventario; el lector físico registra desde su modo propio. */
+@Composable
+private fun InventoryRegisterActions(
+    onManualClicked: () -> Unit,
+    onSpecialClicked: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
+        FacturaStockPrimaryButton(
+            text = stringResource(R.string.inventory_register_manual),
+            onClick = onManualClicked,
+            enabled = enabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(InventoryTestTags.REGISTER_MANUAL),
+        )
+        FacturaStockSecondaryButton(
+            text = stringResource(R.string.inventory_register_special_product),
+            onClick = onSpecialClicked,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().testTag(InventoryTestTags.REGISTER_SPECIAL_PRODUCT),
+        )
+    }
+}
+
 object InventoryTestTags {
     const val LIST_SCREEN = "inventory_screen"
+    const val REGISTER_PRODUCTS = "inventory_register_products"
+    const val REGISTRATION_SCREEN = "inventory_registration_screen"
+    const val REGISTRATION_STATUS = "inventory_registration_status"
     const val DETAIL_SCREEN = "inventory_detail_screen"
     const val DETAIL_LIST = "inventory_detail_list"
     const val SEARCH = "inventory_search"
+    const val SEARCH_CLEAR = "inventory_search_clear"
     const val SEARCH_MODE = "inventory_search_mode"
     const val SCANNER_MODE = "inventory_scanner_mode"
     const val SCANNER_STATUS = "inventory_scanner_status"
@@ -1317,6 +1369,15 @@ object InventoryTestTags {
     const val PRICE_DIALOG = "inventory_profit_price_dialog"
     const val PRICE_FIELD = "inventory_profit_price_field"
     const val PRICE_ERROR = "inventory_profit_price_error"
+    const val REGISTER_ACTIONS = "inventory_register_actions"
+    const val REGISTER_MANUAL = "inventory_register_manual"
+    const val REGISTER_SPECIAL_PRODUCT = "inventory_register_special_product"
+    const val REGISTER_UNMATCHED = "inventory_register_unmatched"
+    const val PRODUCT_ACTION_ERROR = "inventory_product_action_error"
+    const val PRODUCT_DELETE_DIALOG = "inventory_product_delete_dialog"
+
+    fun editProduct(productId: ProductId): String = "inventory_edit_${productId.value}"
+    fun deleteProduct(productId: ProductId): String = "inventory_delete_${productId.value}"
 
     fun product(productId: ProductId): String = "inventory_product_${productId.value}"
     fun profit(productId: ProductId): String = "inventory_profit_${productId.value}"

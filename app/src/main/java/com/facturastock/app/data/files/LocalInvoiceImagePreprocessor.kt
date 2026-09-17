@@ -144,28 +144,38 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
             }
         }
 
-    private suspend fun applyGrayscaleAndContrast(bitmap: Bitmap) {
+    internal suspend fun applyGrayscaleAndContrast(bitmap: Bitmap) {
         val width = bitmap.width
-        val row = IntArray(width)
-        for (y in 0 until bitmap.height) {
+        val height = bitmap.height
+        // Un bloque acotado evita cruzar JNI dos veces por fila sin retener otra página.
+        // A 2048 px de ancho el scratch ocupa como máximo 128 KiB.
+        val pixels = IntArray(width * minOf(PIXEL_BLOCK_ROWS, height))
+        for (top in 0 until height step PIXEL_BLOCK_ROWS) {
             currentCoroutineContext().ensureActive()
-            bitmap.getPixels(row, 0, width, 0, y, width, 1)
-            for (x in row.indices) {
-                val color = row[x]
-                val alpha = color ushr 24 and 0xFF
-                val red = compositeOnWhite(color ushr 16 and 0xFF, alpha)
-                val green = compositeOnWhite(color ushr 8 and 0xFF, alpha)
-                val blue = compositeOnWhite(color and 0xFF, alpha)
-                val gray = (red * 77 + green * 150 + blue * 29) ushr 8
-                val contrasted = (
-                    (gray - CONTRAST_PIVOT) * CONTRAST_PERCENT / 100 + CONTRAST_PIVOT
-                    ).coerceIn(0, 255)
-                row[x] = OPAQUE_ALPHA or
-                    (contrasted shl 16) or
-                    (contrasted shl 8) or
-                    contrasted
+            val rows = minOf(PIXEL_BLOCK_ROWS, height - top)
+            bitmap.getPixels(pixels, 0, width, 0, top, width, rows)
+            for (row in 0 until rows) {
+                currentCoroutineContext().ensureActive()
+                val offset = row * width
+                for (x in 0 until width) {
+                    val index = offset + x
+                    val color = pixels[index]
+                    val alpha = color ushr 24 and 0xFF
+                    val red = compositeOnWhite(color ushr 16 and 0xFF, alpha)
+                    val green = compositeOnWhite(color ushr 8 and 0xFF, alpha)
+                    val blue = compositeOnWhite(color and 0xFF, alpha)
+                    val gray = (red * 77 + green * 150 + blue * 29) ushr 8
+                    val contrasted = (
+                        (gray - CONTRAST_PIVOT) * CONTRAST_PERCENT / 100 + CONTRAST_PIVOT
+                        ).coerceIn(0, 255)
+                    pixels[index] = OPAQUE_ALPHA or
+                        (contrasted shl 16) or
+                        (contrasted shl 8) or
+                        contrasted
+                }
             }
-            bitmap.setPixels(row, 0, width, 0, y, width, 1)
+            currentCoroutineContext().ensureActive()
+            bitmap.setPixels(pixels, 0, width, 0, top, width, rows)
         }
     }
 
@@ -478,6 +488,7 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
         const val RECIPE_VERSION = "v1"
 
         private const val CONTRAST_PIVOT = 128
+        private const val PIXEL_BLOCK_ROWS = 16
         private const val OPAQUE_ALPHA = -0x1000000
         private const val RUNS_DIRECTORY = "runs"
         private const val CURRENT_MANIFEST = "current-v1.manifest"

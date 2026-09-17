@@ -8,6 +8,7 @@ import com.facturastock.app.domain.model.id.SaleId
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
+import java.util.Collections
 
 /** Advertencias derivadas de la proyeccion local; nunca ocultan el valor que las produjo. */
 enum class InventoryDataAlert {
@@ -60,55 +61,65 @@ data class InventoryReadItem(
     val positions: List<InventoryReadPosition>,
     val alerts: Set<InventoryDataAlert> = emptySet(),
 ) {
+    val totalQuantityOnHand: BigDecimal
+    val estimatedValuesByCurrency: Map<CurrencyCode, BigDecimal>
+    val averageUnitCostsByCurrency: Map<CurrencyCode, InventoryCostAmount?>
+    val allAlerts: Set<InventoryDataAlert>
+
     init {
         require(productName.isNotBlank())
         require(unitCode.isNotBlank())
-        require(positions.map(InventoryReadPosition::locationId).distinct().size == positions.size)
-    }
-
-    val totalQuantityOnHand: BigDecimal = positions.fold(BigDecimal.ZERO) { total, position ->
-        total.add(position.quantityOnHand)
-    }
-
-    val estimatedValuesByCurrency: Map<CurrencyCode, BigDecimal> = positions
-        .groupBy { it.averageUnitCost.currency }
-        .mapValues { (_, currencyPositions) ->
-            currencyPositions.fold(BigDecimal.ZERO) { total, position ->
-                total.add(position.estimatedValue)
-            }
+        // Cada emisión de Room puede reconstruir miles de tarjetas. Una pasada conserva el
+        // orden y la escala decimal de los folds anteriores, sin dos groupBy ni listas auxiliares.
+        val locations = HashSet<LocationId>(positions.size)
+        val currencies = linkedMapOf<CurrencyCode, InventoryCurrencyAccumulator>()
+        val combinedAlerts = linkedSetOf<InventoryDataAlert>().apply { addAll(alerts) }
+        var totalQuantity = BigDecimal.ZERO
+        for (position in positions) {
+            require(locations.add(position.locationId))
+            totalQuantity = totalQuantity.add(position.quantityOnHand)
+            currencies.getOrPut(position.averageUnitCost.currency) { InventoryCurrencyAccumulator() }
+                .add(position)
+            combinedAlerts.addAll(position.alerts)
         }
-
-    val averageUnitCostsByCurrency: Map<CurrencyCode, InventoryCostAmount?> = positions
-        .groupBy { it.averageUnitCost.currency }
-        .mapValues { (currency, currencyPositions) ->
-            val quantity = currencyPositions.fold(BigDecimal.ZERO) { total, position ->
-                total.add(position.quantityOnHand)
-            }
-            val value = currencyPositions.fold(BigDecimal.ZERO) { total, position ->
-                total.add(position.estimatedValue)
-            }
+        val values = LinkedHashMap<CurrencyCode, BigDecimal>(currencies.size)
+        val averages = LinkedHashMap<CurrencyCode, InventoryCostAmount?>(currencies.size)
+        var undefinedAverage = false
+        for ((currency, aggregate) in currencies) {
+            values[currency] = aggregate.value
             val average = when {
-                currencyPositions.any { it.quantityOnHand.signum() < 0 } -> null
-                quantity.signum() <= 0 -> null
-                else -> value.divide(quantity, COST_SCALE, RoundingMode.HALF_EVEN)
+                aggregate.hasNegativeQuantity || aggregate.quantity.signum() <= 0 -> null
+                else -> aggregate.value.divide(aggregate.quantity, COST_SCALE, RoundingMode.HALF_EVEN)
                     .takeIf { it.signum() >= 0 }
             }
-            average?.let { InventoryCostAmount(it, currency) }
+            averages[currency] = average?.let { InventoryCostAmount(it, currency) }
+            if (average == null) undefinedAverage = true
         }
-
-    val allAlerts: Set<InventoryDataAlert> = buildSet {
-        addAll(alerts)
-        positions.forEach { addAll(it.alerts) }
-        if (positions.map { it.averageUnitCost.currency }.distinct().size > 1) {
-            add(InventoryDataAlert.MIXED_CURRENCIES)
-        }
-        if (averageUnitCostsByCurrency.values.any { it == null }) {
-            add(InventoryDataAlert.UNDEFINED_AGGREGATE_AVERAGE)
-        }
+        if (currencies.size > 1) combinedAlerts.add(InventoryDataAlert.MIXED_CURRENCIES)
+        if (undefinedAverage) combinedAlerts.add(InventoryDataAlert.UNDEFINED_AGGREGATE_AVERAGE)
+        totalQuantityOnHand = totalQuantity
+        estimatedValuesByCurrency = values
+        averageUnitCostsByCurrency = averages
+        allAlerts = Collections.unmodifiableSet(combinedAlerts)
     }
 
     private companion object {
         const val COST_SCALE = 18
+    }
+}
+
+private class InventoryCurrencyAccumulator {
+    var quantity: BigDecimal = BigDecimal.ZERO
+        private set
+    var value: BigDecimal = BigDecimal.ZERO
+        private set
+    var hasNegativeQuantity: Boolean = false
+        private set
+
+    fun add(position: InventoryReadPosition) {
+        quantity = quantity.add(position.quantityOnHand)
+        value = value.add(position.estimatedValue)
+        hasNegativeQuantity = hasNegativeQuantity || position.quantityOnHand.signum() < 0
     }
 }
 
@@ -136,7 +147,9 @@ data class InventoryReadMovement(
             StockMovementType.PURCHASE,
             StockMovementType.VOID,
             -> require(purchaseId != null && saleId == null)
-            StockMovementType.SALE -> require(purchaseId == null && saleId != null)
+            StockMovementType.SALE,
+            StockMovementType.SALE_VOID,
+            -> require(purchaseId == null && saleId != null)
             StockMovementType.ADJUSTMENT -> require(purchaseId == null && saleId == null)
         }
     }
@@ -149,9 +162,12 @@ data class InventoryProductDetail(
 ) {
     init {
         require(movements.all { it.productId == item.productId })
-        require(
-            movements.zipWithNext().all { (first, second) ->
-                first.occurredAt < second.occurredAt ||
+        val iterator = movements.iterator()
+        if (iterator.hasNext()) {
+            var first = iterator.next()
+            while (iterator.hasNext()) {
+                val second = iterator.next()
+                require(first.occurredAt < second.occurredAt ||
                     (
                         first.occurredAt == second.occurredAt &&
                             (
@@ -160,10 +176,11 @@ data class InventoryProductDetail(
                                         first.createdAt == second.createdAt &&
                                             first.movementId <= second.movementId
                                         )
-                                )
                         )
-            },
-        )
+                    ))
+                first = second
+            }
+        }
     }
 }
 

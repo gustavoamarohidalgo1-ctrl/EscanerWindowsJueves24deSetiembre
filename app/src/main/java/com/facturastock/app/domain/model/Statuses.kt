@@ -31,6 +31,7 @@ enum class SaleStatus {
 enum class StockMovementType {
     PURCHASE,
     SALE,
+    SALE_VOID,
     ADJUSTMENT,
     VOID,
 }
@@ -39,6 +40,7 @@ enum class StockMovementType {
 enum class AuditEventType {
     PURCHASE_POSTED,
     SALE_POSTED,
+    SALE_VOIDED,
     PURCHASE_VOIDED,
     PURCHASE_DUPLICATE_OVERRIDE,
     STOCK_ADJUSTED,

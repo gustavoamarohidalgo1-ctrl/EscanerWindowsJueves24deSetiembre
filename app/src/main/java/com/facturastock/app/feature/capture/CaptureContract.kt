@@ -20,6 +20,8 @@ object CaptureContract {
         val draftId: DraftId? = null,
         /** Página a reemplazar ("Repetir" desde la vista previa); null = añadir página nueva. */
         val replaceImageId: ImageId? = null,
+        /** Reemplaza atómicamente la única foto del escaneo rápido, incluso tras publicar OCR. */
+        val replaceSoleInvoiceScan: Boolean = false,
         /** `true` solo después de que CameraX haya ligado un `ImageCapture` utilizable. */
         val isCameraReady: Boolean = false,
         val isCapturing: Boolean = false,

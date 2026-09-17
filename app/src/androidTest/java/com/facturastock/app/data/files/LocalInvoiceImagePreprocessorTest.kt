@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.CRC32
 import java.util.zip.DeflaterOutputStream
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -32,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -141,6 +144,76 @@ class LocalInvoiceImagePreprocessorTest {
         assertEquals(4, InvoiceBitmapTransforms.sampleSizeFor(8_000, 1_000, 2_048))
         assertEquals(2, InvoiceBitmapTransforms.sampleSizeFor(3_000, 1_500, 2_048))
         assertEquals(1, InvoiceBitmapTransforms.sampleSizeFor(2_048, 2_048, 2_048))
+    }
+
+    @Test
+    fun blockProcessingMatchesPreviousRowsExactlyIncludingAlphaAndPartialBlocks() = runBlocking {
+        for (height in listOf(1, 15, 16, 17, 33)) {
+            val width = if (height == 33) 2_048 else 37
+            val actual = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val alphas = intArrayOf(0, 1, 63, 128, 254, 255)
+            val source = IntArray(width * height) { index ->
+                val alpha = alphas[index % alphas.size]
+                (alpha shl 24) or ((index * 101 and 255) shl 16) or
+                    ((index * 73 and 255) shl 8) or (index * 29 and 255)
+            }
+            actual.setPixels(source, 0, width, 0, 0, width, height)
+            val expected = checkNotNull(actual.copy(Bitmap.Config.ARGB_8888, true))
+            try {
+                applyPreviousRows(expected)
+                preprocessor.applyGrayscaleAndContrast(actual)
+
+                val expectedPixels = IntArray(source.size)
+                val actualPixels = IntArray(source.size)
+                expected.getPixels(expectedPixels, 0, width, 0, 0, width, height)
+                actual.getPixels(actualPixels, 0, width, 0, 0, width, height)
+                assertArrayEquals("height=$height", expectedPixels, actualPixels)
+            } finally {
+                expected.recycle()
+                actual.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun canceledPixelProcessingLeavesTheBitmapUnchanged() = runBlocking {
+        val bitmap = Bitmap.createBitmap(37, 33, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(0x806A4C28.toInt())
+        val previous = checkNotNull(bitmap.copy(Bitmap.Config.ARGB_8888, false))
+        try {
+            val processing = launch(start = CoroutineStart.UNDISPATCHED) {
+                currentCoroutineContext().cancel()
+                preprocessor.applyGrayscaleAndContrast(bitmap)
+                fail("La transformación debe respetar la cancelación")
+            }
+            processing.join()
+            assertTrue(processing.isCancelled)
+            assertTrue(previous.sameAs(bitmap))
+        } finally {
+            previous.recycle()
+            bitmap.recycle()
+        }
+    }
+
+    /** Referencia de la receta anterior: deliberadamente conserva lecturas por fila. */
+    private fun applyPreviousRows(bitmap: Bitmap) {
+        val width = bitmap.width
+        val row = IntArray(width)
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, width, 0, y, width, 1)
+            for (x in row.indices) {
+                val color = row[x]
+                val alpha = color ushr 24 and 255
+                fun composite(channel: Int): Int = (channel * alpha + 255 * (255 - alpha) + 127) / 255
+                val red = composite(color ushr 16 and 255)
+                val green = composite(color ushr 8 and 255)
+                val blue = composite(color and 255)
+                val gray = (red * 77 + green * 150 + blue * 29) ushr 8
+                val contrasted = ((gray - 128) * 112 / 100 + 128).coerceIn(0, 255)
+                row[x] = -0x1000000 or (contrasted shl 16) or (contrasted shl 8) or contrasted
+            }
+            bitmap.setPixels(row, 0, width, 0, y, width, 1)
+        }
     }
 
     @Test

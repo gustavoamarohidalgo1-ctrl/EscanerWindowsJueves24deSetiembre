@@ -134,7 +134,9 @@ private fun restoredOnboardingState(savedStateHandle: SavedStateHandle): Onboard
         ruc = savedStateHandle.get<String>("onboarding.ruc").orEmpty(),
         taxRatePercent = savedStateHandle.get<String>("onboarding.taxRatePercent") ?: "18",
         costPolicy = costPolicy,
-        warehouseName = savedStateHandle.get<String>("onboarding.warehouseName").orEmpty()
-            .take(OnboardingContract.WAREHOUSE_NAME_MAX_LENGTH),
+        warehouseName = savedStateHandle.get<String>("onboarding.warehouseName")
+            ?.take(OnboardingContract.WAREHOUSE_NAME_MAX_LENGTH)
+            ?.ifBlank { OnboardingContract.DEFAULT_WAREHOUSE_NAME }
+            ?: OnboardingContract.DEFAULT_WAREHOUSE_NAME,
     )
 }

@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,8 +46,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.facturastock.app.core.input.KeyboardWedgeRouter
-import com.facturastock.app.core.input.toKeyboardWedgeKeyEventOrNull
+import com.facturastock.app.core.input.toKeyboardWedgeEvents
 import com.facturastock.app.domain.repository.AppConfigurationRepository
+import com.facturastock.app.feature.common.LocalScannerInputPermission
 import com.facturastock.app.feature.root.AppGateViewModel
 import com.facturastock.app.navigation.FacturaStockApp
 import com.facturastock.app.navigation.InternalDeepLinks
@@ -148,13 +150,19 @@ class MainActivity : FragmentActivity() {
                                     },
                                 ),
                         ) {
-                            FacturaStockApp(
-                                // Un intent recibido mientras la sesión está bloqueada queda
-                                // encolado en MainActivity, pero no navega el árbol oculto.
-                                initialInternalDeepLink = exposedDeepLinkRequest?.uri,
-                                initialInternalDeepLinkRequestId =
-                                    exposedDeepLinkRequest?.requestId ?: 0L,
-                            )
+                            CompositionLocalProvider(
+                                LocalScannerInputPermission provides {
+                                    accessState == AppAccessState.UNLOCKED && !showLockRecoveryNotice
+                                },
+                            ) {
+                                FacturaStockApp(
+                                    // Un intent recibido mientras la sesión está bloqueada queda
+                                    // encolado en MainActivity, pero no navega el árbol oculto.
+                                    initialInternalDeepLink = exposedDeepLinkRequest?.uri,
+                                    initialInternalDeepLinkRequestId =
+                                        exposedDeepLinkRequest?.requestId ?: 0L,
+                                )
+                            }
                         }
                     }
                     if (
@@ -232,8 +240,11 @@ class MainActivity : FragmentActivity() {
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (accessState == AppAccessState.UNLOCKED && !showLockRecoveryNotice) {
-            val wedgeEvent = event.toKeyboardWedgeKeyEventOrNull()
-            if (wedgeEvent != null && KeyboardWedgeRouter.route(wedgeEvent)) return true
+            var consumed = false
+            event.toKeyboardWedgeEvents().forEach { wedgeEvent ->
+                if (KeyboardWedgeRouter.route(wedgeEvent)) consumed = true
+            }
+            if (consumed) return true
         }
         return super.dispatchKeyEvent(event)
     }

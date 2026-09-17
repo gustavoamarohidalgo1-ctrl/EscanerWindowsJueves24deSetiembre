@@ -67,6 +67,9 @@ object AuditPayloadPolicy {
         AuditEventType.SALE_POSTED to Rule(
             required = setOf(AuditPayloadKey.VERSION),
         ),
+        AuditEventType.SALE_VOIDED to Rule(
+            required = setOf(AuditPayloadKey.VERSION, AuditPayloadKey.ACTOR_ROLE),
+        ),
         AuditEventType.PURCHASE_VOIDED to Rule(
             required = setOf(
                 AuditPayloadKey.VERSION,
@@ -170,7 +173,9 @@ object AuditPayloadPolicy {
             AuditEventType.PURCHASE_VOIDED,
             AuditEventType.PURCHASE_DUPLICATE_OVERRIDE,
             -> "PURCHASE"
-            AuditEventType.SALE_POSTED -> "SALE"
+            AuditEventType.SALE_POSTED,
+            AuditEventType.SALE_VOIDED,
+            -> "SALE"
             AuditEventType.STOCK_ADJUSTED -> "STOCK_BALANCE"
             AuditEventType.SYNC_CONFLICT_RESOLVED -> "purchase"
             AuditEventType.CATALOG_SYNC_CONFLICT_RESOLVED -> event.entityType.also {
@@ -190,7 +195,9 @@ object AuditPayloadPolicy {
                 "La auditoría de compra debe referir el mismo purchaseId"
             }
             AuditEventType.STOCK_ADJUSTED -> require(event.purchaseId == null)
-            AuditEventType.SALE_POSTED -> require(event.purchaseId == null)
+            AuditEventType.SALE_POSTED,
+            AuditEventType.SALE_VOIDED,
+            -> require(event.purchaseId == null)
             AuditEventType.CATALOG_SYNC_CONFLICT_RESOLVED -> require(event.purchaseId == null)
             AuditEventType.SYNC_RECONCILED -> require(
                 event.purchaseId == null && event.entityId == event.businessId.value,

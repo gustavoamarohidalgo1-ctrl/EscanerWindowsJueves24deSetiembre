@@ -145,6 +145,11 @@ service cloud.firestore {
 
     // Guardas pseudónimas del borrado. Ninguna contiene UID/email en campos ni es accesible al
     // cliente: la de UID permanece; la de email solo serializa invitaciones durante el barrido.
+    // Trabajo temporal de eliminación aceptado: UID/email solo para completar Auth y el
+    // barrido. Nunca accesible al cliente; se elimina al confirmar el cierre.
+    match /accountDeletionJobs/{jobId} {
+      allow read, write: if false;
+    }
     match /accountDeletionTombstones/{tombstoneId} {
       allow read, write: if false;
     }

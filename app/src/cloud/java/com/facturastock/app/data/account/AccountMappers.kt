@@ -102,6 +102,11 @@ object AccountMappers {
         return AccountDeletionSummary(
             businessesDeleted = deleted.map { entry -> businessId(entry).value },
             membershipsRemoved = nonNegativeInt(data[MEMBERSHIPS_REMOVED_KEY]),
+            isPending = when (data["status"]) {
+                null, "COMPLETE" -> false
+                "PENDING" -> true
+                else -> malformed()
+            },
         )
     }
 

@@ -122,12 +122,18 @@ data class StockMovementEntity(
             -> require(hasPurchaseOrigin && !hasSaleOrigin) {
                 "Los movimientos PURCHASE/VOID deben tener solo origen de compra"
             }
-            StockMovementType.SALE -> require(hasSaleOrigin && !hasPurchaseOrigin) {
-                "Los movimientos SALE deben tener solo origen de venta"
+            StockMovementType.SALE,
+            StockMovementType.SALE_VOID,
+            -> require(hasSaleOrigin && !hasPurchaseOrigin) {
+                "Los movimientos SALE/SALE_VOID deben tener solo origen de venta"
             }
             StockMovementType.ADJUSTMENT -> require(!hasPurchaseOrigin && !hasSaleOrigin) {
                 "Los movimientos ADJUSTMENT no admiten origen de compra o venta"
             }
+        }
+        if (type == StockMovementType.SALE_VOID.name) {
+            require(quantityDelta.toBigDecimal().signum() > 0 && unitCost != null)
+            require(idempotencyKey == "sale-void-stock:v1:$saleId:$saleLineId")
         }
     }
 }

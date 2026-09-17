@@ -1,6 +1,14 @@
 package com.facturastock.app.feature.debtors
 
 object DebtorsTestTags {
+    const val PARTIAL_PAYMENT = "debt_detail_partial_payment"
+    const val PAYMENT_FULL_BALANCE = "debt_detail_full_balance"
+    const val PAYMENT_ERROR = "debt_detail_payment_error"
+    const val PAYMENT_PROGRESS = "debt_detail_payment_progress"
+    const val DELETE = "debt_detail_delete"
+    const val DELETE_DIALOG = "debt_delete_dialog"
+    const val DELETE_IMPACT = "debt_delete_impact"
+    const val DELETE_ERROR = "debt_delete_error"
     const val LIST_SCREEN = "debtors_list_screen"
     const val NEW_DEBT = "debtors_new_debt"
     const val SEARCH = "debtors_search"

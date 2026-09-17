@@ -62,11 +62,11 @@ requisito binario adicional.
 El módulo `benchmark` mide un artefacto optimizado y separado de producción con
 `CompilationMode.Partial(baselineProfileMode = BaselineProfileMode.Require)`: si el perfil no está
 disponible, la serie falla. Antes de cada muestra de inicio frío, el harness limpia los datos,
-completa onboarding fuera del bloque medido con el trabajo post-Home suprimido y detiene ese
+completa onboarding fuera del bloque medido con el trabajo diferido suprimido y detiene ese
 proceso. La apertura medida usa un Intent nuevo y conserva el comportamiento real, incluido el
 trabajo diferido; así ninguna muestra hereda jobs de la anterior. Cada recorrido del Baseline/Startup
-Profile esperan después la acción «Registrar factura de compra»: abrir `MainActivity` o mostrar un
-estado de carga ya no basta para considerar Home listo. Como el runner usa `com.android.test`
+Profile esperan después el nodo `sales_screen` de **Vender**, la pantalla inicial. Esta señal
+confirma el primer frame de la pantalla y no la carga completa del catálogo. Como el runner usa `com.android.test`
 self-instrumenting, el campo global
 `context.compilationMode` del JSON describe al paquete de instrumentación, no al target de
 `measureRepeated`; por eso un valor crudo `run-from-apk` no certifica ni refuta el estado dexopt de
@@ -122,19 +122,24 @@ release para medir el artefacto real; `profile` mantiene `isMinifyEnabled=false`
 HRF exportado conserve símbolos fuente estables:
 
 ```bash
-ruby scripts/run-local-profile-capture.rb <run-id>
+ANDROID_SERIAL=emulator-5556 ruby scripts/run-local-profile-capture.rb <run-id>
 ```
+
+Selecciona explícitamente el serial de un emulador dedicado a pruebas (`adb devices`). El wrapper
+rechaza un serial ausente, ambiguo o físico, comprueba ese dispositivo y lo fija para Gradle.
+El harness borra los datos de FacturaStock en el emulador elegido antes de cada captura. La
+condición de arranque exige el selector de ventas visible y el botón Contado habilitado y pulsable.
 
 Antes de materializar una salida se comprueba que todas las reglas pertenezcan a
 `com/facturastock/app`, que no contengan firmas residuales del mapping de R8 y que el diff corresponda
-al recorrido hasta Home listo. No se copia la salida de `localBenchmark`: sus métodos obfuscados son
+al recorrido hasta Vender visible. No se copia la salida de `localBenchmark`: sus métodos obfuscados son
 válidos únicamente para ese APK. Los archivos fuente revisados siguen en
 `app/src/main/baseline-prof.txt` y `app/src/main/baselineProfiles/startup-prof.txt`; R8 los transforma
 al construir cada release optimizada.
 
 La variante `profile` desactiva recuperación, retention/stale cleanup, outbox y schedulers durante
 la captura; además, la apertura auxiliar del harness parte de datos limpios. El resultado refleja
-solo el recorrido crítico hasta Home listo. El merge revisable conserva en Baseline los CUJ
+solo el recorrido crítico hasta Vender visible. El merge revisable conserva en Baseline los CUJ
 manuales de parser y lista, que el recorrido de arranque no puede observar. Se genera siempre fuera
 de `app/src` a partir del par atómico producido por el wrapper:
 

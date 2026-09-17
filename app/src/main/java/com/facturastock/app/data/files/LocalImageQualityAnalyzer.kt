@@ -140,22 +140,28 @@ class LocalImageQualityAnalyzer @Inject constructor(
         )
     }
 
-    private suspend fun readLuminance(bitmap: Bitmap): ByteArray {
+    internal suspend fun readLuminance(bitmap: Bitmap): ByteArray {
         val width = bitmap.width
         val height = bitmap.height
         val gray = ByteArray(width * height)
-        val row = IntArray(width)
-        for (y in 0 until height) {
+        // Como máximo 48 KiB adicionales a la muestra gris de 768 px, sin otra página ARGB.
+        val pixels = IntArray(width * minOf(PIXEL_BLOCK_ROWS, height))
+        for (top in 0 until height step PIXEL_BLOCK_ROWS) {
             currentCoroutineContext().ensureActive()
-            bitmap.getPixels(row, 0, width, 0, y, width, 1)
-            val offset = y * width
-            for (x in 0 until width) {
-                val color = row[x]
-                val alpha = color ushr 24 and 0xFF
-                val red = compositeOnWhite(color ushr 16 and 0xFF, alpha)
-                val green = compositeOnWhite(color ushr 8 and 0xFF, alpha)
-                val blue = compositeOnWhite(color and 0xFF, alpha)
-                gray[offset + x] = ((red * 77 + green * 150 + blue * 29) ushr 8).toByte()
+            val rows = minOf(PIXEL_BLOCK_ROWS, height - top)
+            bitmap.getPixels(pixels, 0, width, 0, top, width, rows)
+            for (row in 0 until rows) {
+                currentCoroutineContext().ensureActive()
+                val blockOffset = row * width
+                val grayOffset = (top + row) * width
+                for (x in 0 until width) {
+                    val color = pixels[blockOffset + x]
+                    val alpha = color ushr 24 and 0xFF
+                    val red = compositeOnWhite(color ushr 16 and 0xFF, alpha)
+                    val green = compositeOnWhite(color ushr 8 and 0xFF, alpha)
+                    val blue = compositeOnWhite(color and 0xFF, alpha)
+                    gray[grayOffset + x] = ((red * 77 + green * 150 + blue * 29) ushr 8).toByte()
+                }
             }
         }
         return gray
@@ -187,7 +193,7 @@ class LocalImageQualityAnalyzer @Inject constructor(
      * informa si mejora de forma mensurable respecto de 0°, de modo que el ruido no invente
      * una inclinación con falsa precisión.
      */
-    private suspend fun estimateSkew(
+    internal suspend fun estimateSkew(
         gray: ByteArray,
         width: Int,
         height: Int,
@@ -199,21 +205,40 @@ class LocalImageQualityAnalyzer @Inject constructor(
         val marginX = width / 20
         val marginY = height / 20
         val centerX = width / 2
+        // Se decide una sola vez qué muestras son tinta. Las coordenadas caben en un Int
+        // porque loadTransformed limita ambos lados a 768 px. El scratch está acotado a
+        // 478864 bytes en esa resolución; no se almacena otro bitmap ni una lista boxed.
+        val sampleColumns = (width - marginX * 2 + SKEW_PIXEL_STEP - 1) / SKEW_PIXEL_STEP
+        val sampleRows = (height - marginY * 2 + SKEW_PIXEL_STEP - 1) / SKEW_PIXEL_STEP
+        val inkPoints = IntArray(sampleColumns * sampleRows)
+        var inkCount = 0
+        for (y in marginY until height - marginY step SKEW_PIXEL_STEP) {
+            currentCoroutineContext().ensureActive()
+            for (x in marginX until width - marginX step SKEW_PIXEL_STEP) {
+                if (grayAt(gray, width, x, y) <= inkThreshold) {
+                    inkPoints[inkCount++] = (y shl COORDINATE_BITS) or x
+                }
+            }
+        }
+        if (inkCount == 0) return SkewEstimate()
+        val histogram = IntArray(height + SKEW_HISTOGRAM_PADDING * 2)
         var bestAngle = 0
         var bestScore = Long.MIN_VALUE
         var zeroScore = 0L
         for (angle in -MAX_SKEW_DEGREES..MAX_SKEW_DEGREES) {
             currentCoroutineContext().ensureActive()
             val tangent = tan(angle * PI / 180.0)
-            val histogram = IntArray(height + SKEW_HISTOGRAM_PADDING * 2)
-            for (y in marginY until height - marginY step SKEW_PIXEL_STEP) {
-                for (x in marginX until width - marginX step SKEW_PIXEL_STEP) {
-                    if (grayAt(gray, width, x, y) <= inkThreshold) {
-                        val projected =
-                            (y - tangent * (x - centerX)).roundToInt() + SKEW_HISTOGRAM_PADDING
-                        if (projected in histogram.indices) histogram[projected]++
-                    }
+            histogram.fill(0)
+            for (index in 0 until inkCount) {
+                if (index % CANCELLATION_PIXEL_INTERVAL == 0) {
+                    currentCoroutineContext().ensureActive()
                 }
+                val point = inkPoints[index]
+                val y = point ushr COORDINATE_BITS
+                val x = point and COORDINATE_MASK
+                val projected =
+                    (y - tangent * (x - centerX)).roundToInt() + SKEW_HISTOGRAM_PADDING
+                if (projected in histogram.indices) histogram[projected]++
             }
             var score = 0L
             histogram.forEach { count -> score += count.toLong() * count }
@@ -264,7 +289,7 @@ class LocalImageQualityAnalyzer @Inject constructor(
     private fun compositeOnWhite(channel: Int, alpha: Int): Int =
         (channel * alpha + 255 * (255 - alpha) + 127) / 255
 
-    private data class SkewEstimate(
+    internal data class SkewEstimate(
         val degreesTenths: Int = 0,
         val confidencePermille: Int = 0,
     )
@@ -287,6 +312,9 @@ class LocalImageQualityAnalyzer @Inject constructor(
         private const val MAX_INK_LUMINANCE = 180
         private const val INK_DISTANCE_FROM_MEAN = 25
         private const val CANCELLATION_PIXEL_INTERVAL = 16_384
+        private const val PIXEL_BLOCK_ROWS = 16
+        private const val COORDINATE_BITS = 16
+        private const val COORDINATE_MASK = 0xFFFF
         private const val LAPLACIAN_STEP = 2
         private const val MIN_SKEW_DIMENSION = 96
         private const val MAX_SKEW_DEGREES = 10

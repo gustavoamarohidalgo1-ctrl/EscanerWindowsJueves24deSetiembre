@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sales_unified_input_label">Buscar producto o escanear</string>
+    <string name="sales_unified_input_hint">Escribe desde 2 letras o escanea</string>
+    <string name="sales_unified_add_code">Agregar por código</string>
+    <string name="sales_unified_search_help">Escribe al menos 2 letras para ver productos.</string>
+    <string name="sales_unified_cart_empty">Escanea un producto o busca por nombre para agregarlo a la venta.</string>
+</resources>

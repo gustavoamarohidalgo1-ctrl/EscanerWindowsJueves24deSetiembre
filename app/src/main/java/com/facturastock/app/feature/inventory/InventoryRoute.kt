@@ -1,7 +1,13 @@
 package com.facturastock.app.feature.inventory
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -11,27 +17,73 @@ import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.domain.model.id.PurchaseId
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.FeatureLoadContent
-import com.facturastock.app.feature.common.PhysicalScannerRegistration
+import com.facturastock.app.feature.common.ScannerCodeInput
+import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.components.RecoverableError
+import com.facturastock.app.ui.theme.FacturaStockDesign
 
 @Composable
 fun InventoryRoute(
     onOpenProduct: (ProductId) -> Unit,
     onOpenPurchase: (PurchaseId) -> Unit,
+    onRegisterProduct: (String?) -> Unit,
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
+    onRegisterProducts: () -> Unit = {},
+    onRegisterSpecialProduct: () -> Unit = {},
+    onEditProduct: (ProductId) -> Unit = {},
     viewModel: InventoryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val diagnosticFailed = state.failure == InventoryContract.Failure.DIAGNOSTIC_FAILED
+    val showDiagnostic = remember(state.allItems, state.diagnosticReport, state.isDiagnosing, diagnosticFailed) {
+        inventoryDiagnosticIsRelevant(
+            items = state.allItems,
+            report = state.diagnosticReport,
+            isRunning = state.isDiagnosing,
+            failed = diagnosticFailed,
+        )
+    }
+
+    val scanner = if (state.productId == null) rememberInventoryScannerInput(state, viewModel) else null
 
     CollectUiEffects(viewModel.effects) { effect ->
         when (effect) {
-            is InventoryContract.Effect.OpenProduct -> onOpenProduct(effect.productId)
-            is InventoryContract.Effect.OpenPurchase -> onOpenPurchase(effect.purchaseId)
-            InventoryContract.Effect.Back -> onBack()
-            InventoryContract.Effect.CloseInvalidRoute -> onCloseInvalidRoute()
+            is InventoryContract.Effect.OpenProduct -> {
+                onOpenProduct(effect.productId)
+            }
+
+            is InventoryContract.Effect.EditProduct -> {
+                onEditProduct(effect.productId)
+            }
+
+            is InventoryContract.Effect.OpenPurchase -> {
+                onOpenPurchase(effect.purchaseId)
+            }
+
+            is InventoryContract.Effect.OpenProductCreation -> {
+                onRegisterProduct(effect.barcode)
+            }
+
+            InventoryContract.Effect.Back -> {
+                onBack()
+            }
+
+            InventoryContract.Effect.CloseInvalidRoute -> {
+                onCloseInvalidRoute()
+            }
         }
+    }
+
+    state.pendingDeletion?.let { pending ->
+        InventoryProductDeletionDialog(
+            pending = pending,
+            isBusy = state.isChangingProduct,
+            failure = state.productActionFailure,
+            onConfirm = { viewModel.onAction(InventoryContract.Action.ConfirmProductDeletion) },
+            onDismiss = { viewModel.onAction(InventoryContract.Action.DismissProductDeletion) },
+        )
     }
 
     if (state.failure == InventoryContract.Failure.PRODUCT_NOT_FOUND && state.detail == null) {
@@ -45,83 +97,92 @@ fun InventoryRoute(
         return
     }
 
-    PhysicalScannerRegistration(
-        enabled = state.canRouteScannerInput,
-        onAvailabilityChanged = { active ->
-            viewModel.onAction(InventoryContract.Action.ScannerAvailabilityChanged(active))
-        },
-        onScan = { value ->
-            viewModel.onAction(InventoryContract.Action.BarcodeScanned(value))
-        },
-    )
-
     val loadFailure = state.failure == InventoryContract.Failure.LOAD_FAILED
-    FeatureLoadContent(
-        isLoading = state.isLoading,
-        hasContent = if (state.productId == null) state.allItems.isNotEmpty() else state.detail != null,
-        hasFailure = loadFailure,
-        onRetry = { viewModel.onAction(InventoryContract.Action.Retry) },
-        modifier = modifier,
-    ) {
-        if (state.productId == null) {
-            InventoryListScreen(
-                items = state.items,
-                query = state.query,
-                diagnosticReport = state.diagnosticReport,
+    Column(modifier.fillMaxSize()) {
+            state.productActionFailure?.takeIf { state.pendingDeletion == null }?.let { failure ->
+                Column(Modifier.padding(FacturaStockDesign.spacing.md)) {
+                    InventoryProductActionError(failure)
+                    FacturaStockSecondaryButton(
+                        text = stringResource(R.string.inventory_product_dismiss_error),
+                        onClick = { viewModel.onAction(InventoryContract.Action.DismissProductActionFailure) },
+                    )
+                }
+            }
+            FeatureLoadContent(
                 isLoading = state.isLoading,
-                isDiagnosing = state.isDiagnosing,
-                diagnosticFailed = state.failure == InventoryContract.Failure.DIAGNOSTIC_FAILED,
-                showDiagnostic = inventoryDiagnosticIsRelevant(
-                    items = state.allItems,
-                    report = state.diagnosticReport,
-                    isRunning = state.isDiagnosing,
-                    failed = state.failure == InventoryContract.Failure.DIAGNOSTIC_FAILED,
-                ),
-                onQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
-                inputMode = state.inputMode,
-                scannerActive = state.scannerActive,
-                isBarcodeLookupRunning = state.isBarcodeLookupRunning,
-                scannerFailure = state.scannerFailure,
-                onInputModeChange = {
-                    viewModel.onAction(InventoryContract.Action.InputModeChanged(it))
-                },
-                onProductClick = {
-                    viewModel.onAction(InventoryContract.Action.ProductSelected(it))
-                },
-                onRunDiagnostic = {
-                    viewModel.onAction(InventoryContract.Action.RunDiagnostic)
-                },
-                section = state.section,
-                profits = state.profits,
-                isProfitLoading = state.isProfitLoading,
-                profitFailure = state.profitFailure,
-                salePriceEditor = state.salePriceEditor,
-                isSavingSalePrice = state.isSavingSalePrice,
-                onSectionChange = {
-                    viewModel.onAction(InventoryContract.Action.SectionChanged(it))
-                },
-                onEditSalePrice = {
-                    viewModel.onAction(InventoryContract.Action.EditSalePrice(it))
-                },
-                onSalePriceChange = {
-                    viewModel.onAction(InventoryContract.Action.SalePriceChanged(it))
-                },
-                onSaveSalePrice = {
-                    viewModel.onAction(InventoryContract.Action.SaveSalePrice)
-                },
-                onDismissSalePrice = {
-                    viewModel.onAction(InventoryContract.Action.DismissSalePrice)
-                },
-                onRetryProfit = { viewModel.onAction(InventoryContract.Action.Retry) },
-            )
-        } else {
-            InventoryProductDetailScreen(
-                detail = requireNotNull(state.detail),
-                onOpenPurchase = {
-                    viewModel.onAction(InventoryContract.Action.OriginPurchaseSelected(it))
-                },
-                onBack = { viewModel.onAction(InventoryContract.Action.BackSelected) },
-            )
-        }
+                hasContent = if (state.productId == null) state.allItems.isNotEmpty() else state.detail != null,
+                hasFailure = loadFailure,
+                onRetry = { viewModel.onAction(InventoryContract.Action.Retry) },
+                modifier = Modifier.weight(1f),
+            ) {
+                if (state.productId == null) {
+                    Column(Modifier.fillMaxSize()) {
+                        if (scanner != null) {
+                            ScannerCodeInput(
+                                enabled = state.isRegisteringProducts && state.canRouteScannerInput,
+                                physicalInput = scanner.physicalInput,
+                                onClearPhysicalInput = scanner.clear,
+                                onCode = scanner.submit,
+                                modifier = Modifier.padding(FacturaStockDesign.spacing.md),
+                            )
+                            Text(
+                                text = stringResource(inventoryScannerMessage(state)),
+                                color =
+                                    if (state.scannerFailure != null) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),
+                            )
+                            if (state.scannerFailure == InventoryContract.ScannerFailure.LOOKUP_FAILED) {
+                                FacturaStockSecondaryButton(
+                                    text = stringResource(R.string.action_retry),
+                                    onClick = { viewModel.onAction(InventoryContract.Action.Retry) },
+                                    enabled = !state.isBarcodeLookupRunning,
+                                    modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),
+                                )
+                            }
+                        }
+                        InventoryListScreen(
+                            items = state.items,
+                            query = state.query,
+                            productActionsEnabled = state.canStartProductAction,
+                            onEditProduct = { viewModel.onAction(InventoryContract.Action.EditProduct(it)) },
+                            onDeleteProduct = { viewModel.onAction(InventoryContract.Action.DeleteProduct(it)) },
+                            diagnosticReport = state.diagnosticReport,
+                            isLoading = state.isLoading,
+                            isDiagnosing = state.isDiagnosing,
+                            diagnosticFailed = diagnosticFailed,
+                            showDiagnostic = showDiagnostic,
+                            onQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
+                            onSearchFocusChange = { viewModel.onAction(InventoryContract.Action.SearchFocusChanged(it)) },
+                            onProductClick = {
+                                viewModel.onAction(InventoryContract.Action.ProductSelected(it))
+                            },
+                            onRunDiagnostic = {
+                                viewModel.onAction(InventoryContract.Action.RunDiagnostic)
+                            },
+                            onRegisterManual = {
+                                viewModel.onAction(InventoryContract.Action.RegisterProductManual)
+                            },
+                            onRegisterProducts = onRegisterProducts,
+                            onRegisterSpecialProduct = onRegisterSpecialProduct,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    InventoryProductDetailScreen(
+                        detail = requireNotNull(state.detail),
+                        onOpenPurchase = {
+                            viewModel.onAction(InventoryContract.Action.OriginPurchaseSelected(it))
+                        },
+                        onBack = { viewModel.onAction(InventoryContract.Action.BackSelected) },
+                        productActionsEnabled = state.canStartProductAction,
+                        onEditProduct = { viewModel.onAction(InventoryContract.Action.EditProduct(it)) },
+                        onDeleteProduct = { viewModel.onAction(InventoryContract.Action.DeleteProduct(it)) },
+                    )
+                }
+            }
     }
 }

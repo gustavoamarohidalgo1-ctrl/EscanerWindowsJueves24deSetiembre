@@ -225,6 +225,27 @@ class AccountMappersTest {
     }
 
     @Test
+    fun `resumen pendiente no afirma que termino el borrado`() {
+        val parsed = AccountMappers.accountDeletionSummary(
+            mapOf(
+                "businessesDeleted" to emptyList<String>(),
+                "membershipsRemoved" to 0L,
+                "status" to "PENDING",
+            ),
+        )
+        assertEquals(AccountDeletionSummary(emptyList(), 0, isPending = true), parsed)
+        assertUnexpected {
+            AccountMappers.accountDeletionSummary(
+                mapOf(
+                    "businessesDeleted" to emptyList<String>(),
+                    "membershipsRemoved" to 0L,
+                    "status" to "NOT_RECEIVED",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `resumen de borrado con forma desviada es inesperado`() {
         val businessId = BusinessId.from(UUID.randomUUID()).value
         // Claves ausentes o con tipo distinto.

@@ -204,8 +204,10 @@ async function clearBusiness(businessId) {
 
 after(async () => {
   for (const businessId of createdBusinesses) await clearBusiness(businessId);
+  const { accountDeletionJobRef } = await import("../accountDeletion.js");
   for (const uid of createdUsers) {
     await adminAuth.deleteUser(uid).catch(() => {});
+    await accountDeletionJobRef(uid).delete();
   }
   await deleteApp(adminApp);
 });
@@ -483,10 +485,14 @@ test("un miembro con tombstone no puede ser promovido durante su eliminación", 
   assert.equal(duringDeletion.body.error?.status, "FAILED_PRECONDITION");
   assert.equal(duringDeletion.body.error?.message, "ACCOUNT_DELETION_IN_PROGRESS");
 
-  // El reintento normal termina el barrido; la promoción rechazada no deja la cuenta atascada
-  // como OWNER de un negocio compartido.
-  const deleted = await callCallable("deleteMyAccount", {}, departing.idToken);
+  // Un reintento durante el lease confirma pendiente; al vencerlo el servidor termina el
+  // mismo barrido sin necesitar que el usuario vuelva a autenticarse.
+  const deleted = await callCallable("deleteMyAccount", { responseVersion: 2 }, departing.idToken);
   assert.equal(deleted.body.error, undefined, JSON.stringify(deleted.body));
+  assert.equal(deleted.body.result.status, "PENDING");
+  const { accountDeletionJobRef, runAccountDeletion } = await import("../accountDeletion.js");
+  await accountDeletionJobRef(departing.localId).update({ nextAttemptAt: Timestamp.fromMillis(0) });
+  await runAccountDeletion(departing.localId, departing.email);
   assert.equal((await departingRef.get()).exists, false);
 
   const reinvite = await callCallable(
@@ -506,7 +512,7 @@ test("un email-lock huérfano tras borrar Auth caduca y se limpia al reinvitar",
   const departing = await verifiedEmailToken();
   const businessId = await createBusinessAs(owner, "Negocio recupera lock temporal");
 
-  const deleted = await callCallable("deleteMyAccount", {}, departing.idToken);
+  const deleted = await callCallable("deleteMyAccount", { responseVersion: 2 }, departing.idToken);
   assert.equal(deleted.body.error, undefined, JSON.stringify(deleted.body));
   assert.equal(await userExists(departing.localId), false);
 

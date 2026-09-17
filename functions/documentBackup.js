@@ -757,7 +757,9 @@ export const reconcileStaleReservedDocuments = onSchedule(
 /**
  * Segunda frontera después de escribir bytes. Account deletion puede fijar el lock y purgar
  * Storage entre la reserva y file.save; por eso la finalización relee todo el control-plane.
- * Cualquier fallo elimina el objeto recién escrito antes de propagarse.
+ * Un fallo del actor o de Firestore no autoriza a borrar bytes compartidos: otro retry puede
+ * haber confirmado el mismo objeto. Solo una purga durable del documento/negocio permite
+ * eliminarlo; las reservas que no terminan quedan a cargo del reconciliador programado.
  */
 export async function finalizeReservedDocumentUpload({
   businessId,
@@ -767,11 +769,11 @@ export async function finalizeReservedDocumentUpload({
   idempotencyKey,
   requestHash,
   file,
-}) {
+}, { database = db } = {}) {
   const paths = refs(businessId, uid, purchaseId, imageId, idempotencyKey);
   let mustPurge;
   try {
-    mustPurge = await db.runTransaction(async (tx) => {
+    mustPurge = await database.runTransaction(async (tx) => {
       const [business, tombstone, member, purchase, operation, backup] = await tx.getAll(
         paths.businessRef,
         paths.tombstoneRef,
@@ -800,7 +802,21 @@ export async function finalizeReservedDocumentUpload({
       return purged;
     });
   } catch (failure) {
-    await deleteObjectIfPresent(file);
+    try {
+      const deletionConfirmed = await database.runTransaction(async (tx) => {
+        const [business, backup] = await tx.getAll(paths.businessRef, paths.backupRef);
+        if (!business.exists || business.data()?.[ACCOUNT_DELETION_LOCK_FIELD] === true) {
+          return true;
+        }
+        const saved = backup.data();
+        return backup.exists && saved.purchaseId === purchaseId && saved.imageId === imageId &&
+          (saved.status === "PURGED" || saved.purgeRequested === true);
+      });
+      if (deletionConfirmed) await deleteObjectIfPresent(file);
+    } catch (_cleanupFailure) {
+      // Sin confirmación no se destruyen bytes. Los tombstones de purga/borrado y las reservas
+      // vencidas tienen recuperación durable; se conserva el error original del callable.
+    }
     throw failure;
   }
   if (mustPurge) await deleteObjectIfPresent(file);

@@ -131,7 +131,6 @@ class ImportScannedInvoiceProductsUseCase(
 
             val unitsByCode = mutableMapOf<String, UnitOfMeasure>()
             val productsToCreate = mutableListOf<Product>()
-            var alreadyExistingCount = 0
             val candidateCreatedAt = appClock.now()
             suspend fun findActiveUnit(code: String): UnitOfMeasure? {
                 unitsByCode[code]?.let { return it }
@@ -142,18 +141,10 @@ class ImportScannedInvoiceProductsUseCase(
                     }
                     ?.also { activeUnit -> unitsByCode[code] = activeUnit }
             }
-            for ((normalizedName, row) in distinctRows) {
+            for ((_, row) in distinctRows) {
                 val unit = row.line.safeUnitCode()?.let { code -> findActiveUnit(code) }
                     ?: findActiveUnit(InvoiceUnitCode.NIU.name)
                     ?: return failure(ScannedInvoiceProductImportError.UNIT_UNAVAILABLE, counts)
-                if (
-                    productRepository.findByNormalizedName(activeBusinessId, normalizedName)
-                        .isNotEmpty()
-                ) {
-                    alreadyExistingCount += 1
-                    counts = counts.copy(alreadyExistingCount = alreadyExistingCount)
-                    continue
-                }
                 productsToCreate += Product(
                     productId = ProductId.from(uuidGenerator.newUuid()),
                     businessId = activeBusinessId,
@@ -163,13 +154,18 @@ class ImportScannedInvoiceProductsUseCase(
                     updatedAt = candidateCreatedAt,
                 )
             }
-            counts = counts.copy(alreadyExistingCount = alreadyExistingCount)
 
-            val created = productRepository.createBatch(productsToCreate)
-            if (created.size != productsToCreate.size) {
+            val creation = productRepository.createBatchSkippingExistingNames(
+                businessId = activeBusinessId,
+                products = productsToCreate,
+            )
+            if (creation.created.size + creation.alreadyExistingCount != productsToCreate.size) {
                 return failure(ScannedInvoiceProductImportError.STORAGE_UNAVAILABLE, counts)
             }
-            counts = counts.copy(importedCount = created.size)
+            counts = counts.copy(
+                importedCount = creation.created.size,
+                alreadyExistingCount = creation.alreadyExistingCount,
+            )
             try {
                 deleteDraftUseCase(draftId)
             } catch (cancellation: CancellationException) {
@@ -194,6 +190,10 @@ private data class EligibleProductRow(
 )
 
 private fun ParsedInvoiceLineItem.eligibleName(): String? {
+    // Una advertencia bloqueante sobre cualquier parte de la fila (geometría ambigua,
+    // corrección OCR, descuadre aritmético, etc.) invalida la importación automática completa.
+    // El nombre por sí solo no basta para afirmar que la línea representa un producto seguro.
+    if (requiresReview) return null
     if (!hasReliableRowSignal()) return null
     val candidate = description ?: return null
     if (!candidate.isHighConfidenceResolved()) return null

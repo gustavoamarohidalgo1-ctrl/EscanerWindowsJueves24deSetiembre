@@ -56,6 +56,7 @@ import com.facturastock.app.domain.repository.OnboardingProvisioningRepository
 import com.facturastock.app.domain.repository.OnboardingReservation
 import com.facturastock.app.domain.repository.OcrImageFile
 import com.facturastock.app.domain.repository.ProductRepository
+import com.facturastock.app.domain.repository.ProductDeletionResult
 import com.facturastock.app.domain.repository.ProductSalePriceMutationResult
 import com.facturastock.app.domain.repository.PublishedCapturedPage
 import com.facturastock.app.domain.repository.SupplierProductAliasRepository
@@ -548,7 +549,10 @@ class FakeProductRepository(
             failureHook.nextFailure = value
         }
 
+    var beforeCreate: suspend (Product) -> Unit = {}
+
     override suspend fun create(product: Product): Product {
+        beforeCreate(product)
         failureHook.throwIfScheduled()
         requirePrimaryKeyFree(product.productId !in products, "productId duplicado")
         val now = clock.now()
@@ -689,6 +693,20 @@ class FakeProductRepository(
         return removed
     }
 
+    override suspend fun deletePermanently(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): ProductDeletionResult {
+        failureHook.throwIfScheduled()
+        val stored = products[productId] ?: return ProductDeletionResult.NOT_FOUND
+        if (stored.businessId != businessId) return ProductDeletionResult.NOT_FOUND
+        if (expectedVersion < 1L || stored.version != expectedVersion) return ProductDeletionResult.STALE
+        products.remove(productId)
+        refreshFlows()
+        return ProductDeletionResult.DELETED
+    }
+
     override suspend fun archive(productId: ProductId): Boolean = setStatus(
         productId,
         CatalogStatus.ARCHIVED,
@@ -699,10 +717,34 @@ class FakeProductRepository(
         CatalogStatus.ACTIVE,
     )
 
-    private fun setStatus(productId: ProductId, status: CatalogStatus): Boolean {
+    override suspend fun archive(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): Boolean = setStatus(productId, CatalogStatus.ARCHIVED, businessId, expectedVersion)
+
+    override suspend fun restore(
+        businessId: BusinessId,
+        productId: ProductId,
+        expectedVersion: Long,
+    ): Boolean = setStatus(productId, CatalogStatus.ACTIVE, businessId, expectedVersion)
+
+    private fun setStatus(
+        productId: ProductId,
+        status: CatalogStatus,
+        expectedBusinessId: BusinessId? = null,
+        expectedVersion: Long? = null,
+    ): Boolean {
         failureHook.throwIfScheduled()
         val current = products[productId] ?: return false
-        products[productId] = current.copy(status = status, updatedAt = clock.now())
+        if ((expectedBusinessId != null && current.businessId != expectedBusinessId) ||
+            (expectedVersion != null && (expectedVersion < 1L || current.version != expectedVersion))
+        ) {
+            return false
+        }
+        if (current.status == status) return true
+        if (current.version == Long.MAX_VALUE) return false
+        products[productId] = current.copy(status = status, updatedAt = clock.now(), version = current.version + 1L)
         refreshFlows()
         return true
     }
@@ -847,8 +889,15 @@ class FakeInvoiceDraftRepository(
     override suspend fun updateDraft(draft: InvoiceDraft): Boolean {
         failureHook.throwIfScheduled()
         return lock.withLock {
-            if (draft.draftId !in drafts) return@withLock false
-            drafts[draft.draftId] = draft.copy(updatedAt = clock.now())
+            val current = drafts[draft.draftId] ?: return@withLock false
+            // Misma semántica que Room: editar un borrador preparado lo devuelve a revisión.
+            val editable =
+                if (current.status == DraftStatus.READY_TO_POST) {
+                    draft.copy(status = DraftStatus.NEEDS_REVIEW, updatedAt = clock.now())
+                } else {
+                    draft.copy(updatedAt = clock.now())
+                }
+            drafts[draft.draftId] = editable
             refreshFlows()
             true
         }
@@ -1032,16 +1081,31 @@ class FakeInvoiceDraftRepository(
             if (page.imageId in images) {
                 captureConflict("imageId legacy ocupado sin recibo de publicación")
             }
-            requireMutableImageDraft(page.draftId)
             val currentImages = images.values
                 .filter { it.draftId == page.draftId }
                 .sortedBy(InvoiceImage::pageIndex)
+            val invoiceScanRetake = intent == CapturedPageIntent.ReplaceSoleInvoiceScan
+            if (invoiceScanRetake) {
+                if (
+                    owningDraft.confirmedPurchaseId != null ||
+                    owningDraft.activeOcrRunId != null ||
+                    owningDraft.status !in INVOICE_SCAN_RETAKE_STATUSES ||
+                    currentImages.size != 1
+                ) {
+                    captureConflict(
+                        "El reintento del escaneo exige un borrador abierto con una sola página",
+                    )
+                }
+            } else {
+                requireMutableImageDraft(page.draftId)
+            }
             val replaced = when (intent) {
                 CapturedPageIntent.Append -> null
                 is CapturedPageIntent.Replace -> {
                     currentImages.firstOrNull { it.imageId == intent.targetImageId }
                         ?: throw StorageException(StorageError.Unavailable)
                 }
+                CapturedPageIntent.ReplaceSoleInvoiceScan -> currentImages.single()
             }
             val now = clock.now()
             val stamped = InvoiceImage(
@@ -1065,7 +1129,11 @@ class FakeInvoiceDraftRepository(
                 intent = intent,
                 replacedFilePath = replaced?.filePath,
             )
-            resetAfterImageMutation(stamped.draftId, now)
+            resetAfterImageMutation(
+                draftId = stamped.draftId,
+                now = now,
+                allowInvoiceScanRetake = invoiceScanRetake,
+            )
             refreshFlows()
             PublishedCapturedPage(stamped, replaced?.filePath)
         }
@@ -1346,8 +1414,25 @@ class FakeInvoiceDraftRepository(
         return current
     }
 
-    private fun resetAfterImageMutation(draftId: DraftId, now: Instant) {
-        val current = requireMutableImageDraft(draftId)
+    private fun resetAfterImageMutation(
+        draftId: DraftId,
+        now: Instant,
+        allowInvoiceScanRetake: Boolean = false,
+    ) {
+        val current = drafts.getValue(draftId)
+        if (
+            current.confirmedPurchaseId != null ||
+            (
+                !current.status.acceptsImageMutations &&
+                    !(allowInvoiceScanRetake && current.status in INVOICE_SCAN_RETAKE_STATUSES)
+                )
+        ) {
+            throw StorageException(
+                StorageError.ConstraintConflict(
+                    "El estado ${current.status} no admite mutaciones de imágenes",
+                ),
+            )
+        }
         publishedOcrSnapshotDraftIds -= draftId
         lines.values.removeAll { it.draftId == draftId }
         drafts[draftId] = current.copy(
@@ -1375,6 +1460,15 @@ class FakeInvoiceDraftRepository(
             activeOcrRunId = null,
             lastError = null,
             updatedAt = maxOf(current.updatedAt, now),
+        )
+    }
+
+    private companion object {
+        val INVOICE_SCAN_RETAKE_STATUSES = setOf(
+            DraftStatus.CAPTURED,
+            DraftStatus.ERROR,
+            DraftStatus.OCR_READY,
+            DraftStatus.NEEDS_REVIEW,
         )
     }
 
@@ -1417,7 +1511,18 @@ class FakeInvoiceDraftRepository(
         throw StorageException(StorageError.ConstraintConflict(detail))
 
     private fun touchDraft(draftId: DraftId, now: Instant) {
-        drafts[draftId]?.let { drafts[draftId] = it.copy(updatedAt = now) }
+        drafts[draftId]?.let { current ->
+            drafts[draftId] =
+                current.copy(
+                    updatedAt = now,
+                    status =
+                        if (current.status == DraftStatus.READY_TO_POST) {
+                            DraftStatus.NEEDS_REVIEW
+                        } else {
+                            current.status
+                        },
+                )
+        }
     }
 
     private fun sortedDraftsFor(businessId: BusinessId, status: DraftStatus?): List<InvoiceDraft> =

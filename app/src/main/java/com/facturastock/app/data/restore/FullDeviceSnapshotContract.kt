@@ -155,6 +155,7 @@ object FullDeviceSnapshotContract {
         "debts",
         "inventory_balances",
         "inventory_locations",
+        "invoice_inventory_receipts",
         "invoice_drafts",
         "invoice_header_edits",
         "invoice_images",
@@ -164,6 +165,7 @@ object FullDeviceSnapshotContract {
         "invoice_ocr_snapshots",
         "invoice_parsed_results",
         "outbox_operations",
+        "pending_sale_checkouts",
         "prepared_purchases",
         "products",
         "purchase_lines",
@@ -173,6 +175,7 @@ object FullDeviceSnapshotContract {
         "remote_purchase_changes",
         "remote_sync_states",
         "sale_lines",
+        "sale_voids",
         "sales",
         "stock_movements",
         "supplier_product_aliases",
@@ -185,12 +188,13 @@ object FullDeviceSnapshotContract {
      * preceden a cuentas por cobrar; exigirles tablas de v27 haría imposible restaurarlas antes de
      * ejecutar la cadena de migraciones no destructivas.
      */
-    fun requiredV1TablesForSchema(schemaVersion: Int): Set<String> =
-        if (schemaVersion >= DEBT_TABLES_SCHEMA_VERSION) {
-            REQUIRED_V1_TABLES
-        } else {
-            REQUIRED_V1_TABLES - DEBT_TABLES
-        }
+    fun requiredV1TablesForSchema(schemaVersion: Int): Set<String> {
+        var tables = REQUIRED_V1_TABLES
+        if (schemaVersion < DEBT_TABLES_SCHEMA_VERSION) tables = tables - DEBT_TABLES
+        if (schemaVersion < 28) tables = tables - setOf("invoice_inventory_receipts", "pending_sale_checkouts")
+        if (schemaVersion < 29) tables = tables - "sale_voids"
+        return tables
+    }
 
     private const val DEBT_TABLES_SCHEMA_VERSION = 27
     private val DEBT_TABLES = setOf("debts", "debt_payments")

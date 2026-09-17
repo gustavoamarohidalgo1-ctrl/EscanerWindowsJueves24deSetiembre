@@ -30,70 +30,88 @@ class FullPathMigrationTest {
     )
 
     @Test
-    fun migrate1To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(1)
+    fun migrate1ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(1)
 
     @Test
-    fun migrate2To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(2)
+    fun migrate2ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(2)
 
     @Test
-    fun migrate3To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(3)
+    fun migrate3ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(3)
 
     @Test
-    fun migrate4To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(4)
+    fun migrate4ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(4)
 
     @Test
-    fun migrate5To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(5)
+    fun migrate5ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(5)
 
     @Test
-    fun migrate6To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(6)
+    fun migrate6ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(6)
 
     @Test
-    fun migrate7To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(7)
+    fun migrate7ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(7)
 
     @Test
-    fun migrate8To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(8)
+    fun migrate8ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(8)
 
     @Test
-    fun migrate9To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(9)
+    fun migrate9ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(9)
 
     @Test
-    fun migrate10To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(10)
+    fun migrate10ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(10)
 
     @Test
-    fun migrate11To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(11)
+    fun migrate11ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(11)
 
     @Test
-    fun migrate12To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(12)
+    fun migrate12ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(12)
 
     @Test
-    fun migrate13To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(13)
+    fun migrate13ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(13)
 
     @Test
-    fun migrate14To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(14)
+    fun migrate14ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(14)
 
     @Test
-    fun migrate15To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(15)
+    fun migrate15ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(15)
 
     @Test
-    fun migrate16To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(16)
+    fun migrate16ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(16)
 
     @Test
-    fun migrate17To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(17)
+    fun migrate17ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(17)
 
     @Test
-    fun migrate18To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(18)
+    fun migrate18ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(18)
 
     @Test
-    fun migrate19To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(19)
+    fun migrate19ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(19)
 
     @Test
-    fun migrate20To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(20)
+    fun migrate20ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(20)
 
     @Test
-    fun migrate21To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(21)
+    fun migrate21ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(21)
 
     @Test
-    fun migrate22To23PreservesMaximumRepresentableGraph() = verifyFullPathFrom(22)
+    fun migrate22ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(22)
+
+    @Test
+    fun migrate23ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(23)
+
+    @Test
+    fun migrate24ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(24)
+
+    @Test
+    fun migrate25ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(25)
+
+    @Test
+    fun migrate26ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(26)
+
+    @Test
+    fun migrate27ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(27)
+
+    @Test
+    fun migrate28ToCurrentPreservesMaximumRepresentableGraph() = verifyFullPathFrom(28)
 
     private fun verifyFullPathFrom(sourceVersion: Int) {
         val databaseName = "full-path-migration-v$sourceVersion.db"
@@ -721,7 +739,7 @@ class FullPathMigrationTest {
     }
 
     private companion object {
-        const val CURRENT_SCHEMA_VERSION = 27
+        const val CURRENT_SCHEMA_VERSION = 29
         const val HEADER_REVIEW_SCHEMA_VERSION = 7
         const val TYPED_LINE_SCHEMA_VERSION = 8
         const val PURCHASE_UNIT_SCHEMA_VERSION = 9
@@ -812,6 +830,8 @@ class FullPathMigrationTest {
             FacturaStockDatabase.MIGRATION_24_25,
             FacturaStockDatabase.MIGRATION_25_26,
             FacturaStockDatabase.MIGRATION_26_27,
+            FacturaStockDatabase.MIGRATION_27_28,
+            FacturaStockDatabase.MIGRATION_28_29,
         )
     }
 }

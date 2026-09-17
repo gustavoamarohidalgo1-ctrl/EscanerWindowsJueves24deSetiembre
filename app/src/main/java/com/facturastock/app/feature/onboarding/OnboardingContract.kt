@@ -11,6 +11,7 @@ import java.math.BigDecimal
 object OnboardingContract {
     const val BUSINESS_NAME_MAX_LENGTH = 200
     const val WAREHOUSE_NAME_MAX_LENGTH = 100
+    const val DEFAULT_WAREHOUSE_NAME = "Almacén Principal"
 
     @Immutable
     data class State(
@@ -18,7 +19,7 @@ object OnboardingContract {
         val ruc: String = "",
         val taxRatePercent: String = "18",
         val costPolicy: CostPolicy = CostPolicy.NET,
-        val warehouseName: String = "",
+        val warehouseName: String = DEFAULT_WAREHOUSE_NAME,
         val isSaving: Boolean = false,
         val rucChecksumWarning: Boolean = false,
         val failure: Failure? = null,

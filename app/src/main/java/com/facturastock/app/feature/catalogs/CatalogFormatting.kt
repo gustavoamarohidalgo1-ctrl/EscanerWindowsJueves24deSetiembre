@@ -1,10 +1,10 @@
 package com.facturastock.app.feature.catalogs
 
-import com.facturastock.app.domain.model.UnitCost
+import com.facturastock.app.domain.model.InventoryCostAmount
 import java.math.BigDecimal
 
 /** Formato legible que conserva precisión útil sin mostrar ceros técnicos de escala 18. */
-internal fun UnitCost.toCatalogCostText(): String =
+internal fun InventoryCostAmount.toCatalogCostText(): String =
     "${amount.toCatalogAmountText()} ${currency.value}"
 
 internal fun BigDecimal.toCatalogAmountText(): String {

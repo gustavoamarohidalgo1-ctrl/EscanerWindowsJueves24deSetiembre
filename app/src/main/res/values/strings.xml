@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="matching_search_loading">Buscando productos…</string>
+    <string name="matching_search_error">No se pudieron buscar los productos. Inténtalo de nuevo.</string>
     <string name="app_name">FacturaStock</string>
 
     <string name="navigation_home">Inicio</string>
@@ -42,6 +44,17 @@
     <string name="sales_entry_kind_title">Tipo de venta</string>
     <string name="sales_entry_cash">Contado</string>
     <string name="sales_entry_credit">A crédito</string>
+    <string name="sales_entry_kind_help">Elige cómo se pagará la venta.</string>
+    <string name="sales_entry_cash_help">El cliente paga al momento.</string>
+    <string name="sales_entry_credit_help">Registra lo que el cliente pagará después.</string>
+    <string name="sales_entry_mode_title">¿Cómo quieres agregar los productos?</string>
+    <string name="sales_entry_scanner_help">Agrega productos con tu lector USB o Bluetooth.</string>
+    <string name="sales_entry_manual_help">Mira los productos y toca los que quieres vender.</string>
+    <string name="sales_step_back">Volver</string>
+    <string name="sales_current_entry">%1$s · %2$s</string>
+    <string name="sales_scanner_ready_title">Escanea un producto</string>
+    <string name="sales_scanner_resume">Continuar escaneando</string>
+    <string name="sales_scanner_cart_empty_message">Los productos que escanees aparecerán aquí.</string>
     <string name="invoice_hub_inventory_notice">Solo guardaremos en Productos los artículos detectados en la factura. No registraremos una compra ni cambiaremos las existencias. Con el respaldo activo, los productos se sincronizan con la nube.</string>
     <string name="invoice_hub_register_action">Abrir cámara</string>
     <string name="invoice_hub_register_working">Abriendo cámara…</string>
@@ -51,11 +64,18 @@
     <string name="invoice_hub_guide_open_camera">1. Abre la cámara.</string>
     <string name="invoice_hub_guide_take_photo">2. Toma una foto completa de la factura.</string>
     <string name="sales_mode_scanner">Escáner físico</string>
-    <string name="sales_mode_manual">Buscar</string>
+    <string name="sales_mode_manual">Venta manual</string>
     <string name="sales_scanner_inactive_title">Escáner no disponible</string>
     <string name="sales_attention_label">Revisión necesaria</string>
-    <string name="sales_scanner_help">Usa un lector USB o Bluetooth tipo teclado; escanea el código y presiona Enter.</string>
-    <string name="sales_scanner_association_message">Código nuevo. Busca el producto para asociarlo.</string>
+    <string name="sales_scanner_help">Escanea el código para agregar el producto. Si tu lector no envía Enter o Tab, pulsa Agregar a la venta cuando aparezca el código.</string>
+    <string name="sales_scanner_add_product">Agregar a la venta</string>
+    <string name="sales_scanner_read_incomplete">Lectura incompleta. Pulsa Reiniciar lector y vuelve a escanear el código completo.</string>
+    <string name="sales_scanner_read_too_long">El código supera los 128 caracteres. Revisa la configuración del lector y vuelve a escanear.</string>
+    <string name="sales_scanner_read_invalid_character">El lector envió caracteres no válidos. Revisa su configuración de teclado y vuelve a escanear.</string>
+    <string name="sales_scanner_queue_full">Hay demasiadas lecturas pendientes. Espera a que termine y vuelve a escanear este producto.</string>
+    <string name="sales_scanner_paused_for_edit">Lector pausado mientras editas.</string>
+    <string name="sales_scanner_processing_queue">Lecturas pendientes: %1$d</string>
+    <string name="sales_scanner_association_message">Código no encontrado. Vuelve a escanear o busca el producto.</string>
     <string name="sales_association_cancel">Cancelar asociación</string>
     <string name="sales_association_title">Asociar código a un producto recibido</string>
     <string name="sales_association_code">Código leído: %1$s</string>
@@ -69,6 +89,10 @@
     <string name="sales_name_match_similar">Nombre similar</string>
     <string name="sales_products_empty_title">Sin productos con stock</string>
     <string name="sales_products_empty_message">Registra una factura o cambia la búsqueda.</string>
+    <string name="sales_available_products_title">Productos disponibles para vender</string>
+    <string name="sales_available_products_empty">No hay productos con existencias disponibles en el almacén.</string>
+    <string name="sales_add_to_sale">+ Agregar a la venta</string>
+    <string name="sales_product_price">Precio: %1$s</string>
     <string name="sales_product_stock">%1$s %2$s · %3$s</string>
     <string name="sales_product_sku">SKU: %1$s</string>
     <string name="sales_product_has_barcode">Ya tiene otro código; se pedirá confirmación para reemplazarlo.</string>
@@ -77,8 +101,8 @@
     <string name="sales_location_title">Elige el almacén</string>
     <string name="sales_location_message">El stock se descontará del almacén elegido.</string>
     <string name="sales_location_option">%1$s · %2$s %3$s disponibles</string>
-    <string name="sales_cart_title">Carrito</string>
-    <string name="sales_cart_empty_message">Agrega un producto para comenzar.</string>
+    <string name="sales_cart_title">Productos en esta venta</string>
+    <string name="sales_cart_empty_message">Toca un producto del catálogo para agregarlo a la venta.</string>
     <string name="sales_line_location_stock">%1$s · disponibles: %2$s %3$s</string>
     <string name="sales_quantity_label">Cantidad</string>
     <string name="sales_quantity_decrease">−</string>
@@ -91,10 +115,10 @@
     <string name="sales_remove_line_accessibility">Quitar %1$s del carrito</string>
     <string name="sales_total">Total: %1$s</string>
     <string name="sales_total_pending">precio pendiente</string>
-    <string name="sales_checkout">Cobrar</string>
-    <string name="sales_confirm_title">Revisar venta</string>
-    <string name="sales_confirm_message">Total: %1$s. Se descontará el stock.</string>
-    <string name="sales_confirm_action">Confirmar venta</string>
+    <string name="sales_checkout">Concluir venta</string>
+    <string name="sales_confirm_title">Concluir venta</string>
+    <string name="sales_confirm_message">¿Deseas concluir la venta por un total de %1$s? Se descontará el stock del almacén.</string>
+    <string name="sales_confirm_action">Confirmar y concluir venta</string>
     <string name="sales_replace_barcode_title">¿Reemplazar el código guardado?</string>
     <string name="sales_replace_barcode_message">%1$s ya usa %2$s. Solo confirma si deseas sustituirlo por %3$s.</string>
     <string name="sales_replace_barcode_action">Reemplazar y agregar</string>
@@ -336,6 +360,13 @@
     <string name="catalog_ruc_invalid">Ingresa exactamente 11 dígitos.</string>
     <string name="catalog_sku_label">SKU (opcional)</string>
     <string name="catalog_barcode_label">Código de barras (opcional)</string>
+    <string name="catalog_product_price_label">Precio (opcional)</string>
+    <string name="catalog_product_quantity_label">Cantidad (opcional)</string>
+    <string name="catalog_scanned_barcode_label">Código de barras escaneado</string>
+    <string name="catalog_scanned_product_help">Este código quedará vinculado al producto para reconocerlo al vender. Completa los cuatro datos para guardarlo en el inventario.</string>
+    <string name="catalog_registration_quantity_label">Cantidad de productos</string>
+    <string name="catalog_registration_purchase_price_label">Precio de compra por unidad</string>
+    <string name="catalog_registration_sale_price_label">Precio de venta por unidad</string>
     <string name="catalog_unit_label">Unidad de inventario</string>
     <string name="catalog_location_label">Almacén predeterminado (opcional)</string>
     <string name="catalog_purchase_unit_label">Unidad de compra (opcional)</string>
@@ -354,6 +385,7 @@
     <string name="catalog_product_average_cost_unavailable">Costo promedio: Sin movimientos</string>
     <string name="catalog_product_average_cost_currency">%1$s: %2$s</string>
     <string name="catalog_product_position">%1$s · %2$s · costo %3$s</string>
+    <string name="catalog_product_position_single">%1$s · costo %2$s</string>
     <string name="catalog_product_no_stock">Sin existencias registradas.</string>
     <string name="catalog_product_aliases_title">Alias de proveedores</string>
     <string name="catalog_product_no_aliases">Sin alias registrados.</string>
@@ -419,7 +451,7 @@
     <string name="purchases_card_total">Total: %1$s</string>
     <string name="action_register_purchase">Registrar factura de compra</string>
     <string name="inventory_empty_title">Inventario por preparar</string>
-    <string name="inventory_empty_message">El inventario se actualizará cuando confirmes una factura de compra con sus productos vinculados.</string>
+    <string name="inventory_empty_message">Pulsa Registrar productos y escanea un código de barras. Completa el nombre, la cantidad y los precios para guardar tu primer producto.</string>
     <string name="settings_empty_title">Ajustes de la aplicación</string>
     <string name="settings_empty_message">Aquí podrás configurar moneda, región y preferencias de captura.</string>
 
@@ -546,6 +578,7 @@
     <string name="ocr_no_products_status">Productos no detectados</string>
     <string name="ocr_no_products_title">No encontramos productos en la factura</string>
     <string name="ocr_no_products_message">Reintenta o vuelve a tomar la foto con todos los productos visibles y el texto enfocado.</string>
+    <string name="ocr_action_continue_manual">Continuar y agregar productos</string>
     <string name="ocr_product_save_error_status">Guardado de productos</string>
     <string name="ocr_product_save_error_title">No se pudieron guardar los productos</string>
     <string name="ocr_product_save_error_message">No se pudo completar el guardado. Reintenta: reconoceremos los productos ya creados y no los duplicaremos.</string>
@@ -998,6 +1031,36 @@
     <string name="linking_equivalence_full">%1$s %2$s = %3$s %4$s</string>
     <string name="linking_equivalence_plain">1 unidad de compra = %1$s unidades de inventario</string>
 
+    <string name="matching_title">Revisar y Emparejar</string>
+    <string name="matching_subtitle">Comprueba los productos leídos en la boleta antes de guardarlos en el almacén.</string>
+    <string name="matching_status_ready">✓ Listo: %1$s</string>
+    <string name="matching_action_link">Vincular con mi producto</string>
+    <string name="matching_action_create">Crear como nuevo</string>
+    <string name="matching_action_change">Cambiar</string>
+    <string name="matching_search_placeholder">Buscar producto en mi catálogo…</string>
+    <string name="matching_action_save_to_warehouse">Guardar en Almacén (%1$d)</string>
+    <string name="matching_line_quantity">Cant: %1$s</string>
+    <string name="matching_line_cost">Costo: %1$s</string>
+    <string name="matching_line_code">Código: %1$s</string>
+    <string name="matching_dialog_link_title">Seleccionar producto de mi catálogo</string>
+    <string name="matching_dialog_link_no_results">No se encontraron productos coincidentes.</string>
+    <string name="matching_dialog_create_title">Crear producto nuevo</string>
+    <string name="matching_success_message">¡Inventario actualizado con éxito en el almacén!</string>
+    <string name="matching_empty_lines">No se encontraron líneas de productos válidas en el comprobante.</string>
+    <string name="matching_empty_lines_action">No se detectaron productos automáticos en el comprobante. Puedes agregarlos tú mismo a continuación.</string>
+    <string name="matching_add_product_cta">+ Agregar producto</string>
+    <string name="matching_add_another_product_cta">+ Agregar otro producto</string>
+    <string name="matching_duplicate_barcode_error">Este código de barras ya pertenece a otro producto.</string>
+    <string name="matching_pending_badge">Sin vincular</string>
+    <string name="matching_suggestions_label">¿Es alguno de estos productos?</string>
+    <string name="matching_line_quantity_unknown">Cant: sin leer</string>
+    <string name="matching_error_no_business">No hay un negocio activo para guardar el almacén.</string>
+    <string name="matching_error_invalid_draft">Esta revisión de factura no es válida.</string>
+    <string name="matching_error_cloud_bound">En un negocio compartido en la nube el stock debe entrar por una compra publicada. Un ajuste solo local se perdería al sincronizar.</string>
+    <string name="matching_error_unresolved">Vincula o descarta todas las líneas con descripción antes de guardar.</string>
+    <string name="matching_error_nothing_to_apply">No hay cantidades positivas para entrar al almacén.</string>
+    <string name="matching_error_missing_location">No hay un almacén activo para registrar el stock. Crea uno en Catálogos e inténtalo de nuevo.</string>
+
     <string name="summary_loading">Cargando el resumen de la compra…</string>
     <string name="summary_title">Resumen de compra</string>
     <string name="summary_edit_message">Resuelve los pendientes antes de preparar la compra.</string>
@@ -1041,16 +1104,27 @@
     <string name="summary_action_failed_title">No se pudo completar la acción</string>
     <string name="summary_action_failed_message">Tu información se conserva. Inténtalo de nuevo.</string>
 
-    <string name="inventory_search_label">Buscar producto, SKU o almacén</string>
+    <string name="inventory_search_label">Buscar por nombre</string>
+    <string name="inventory_search_hint">Escribe al menos 2 letras del nombre.</string>
     <string name="inventory_mode_search">Buscar</string>
     <string name="inventory_mode_scanner">Escáner físico</string>
     <string name="inventory_scanner_ready">Lector listo. Escanea el código del producto y presiona Enter.</string>
     <string name="inventory_scanner_inactive">Escáner en pausa. Conecta o activa un lector USB o Bluetooth tipo teclado.</string>
     <string name="inventory_scanner_searching">Buscando el producto…</string>
     <string name="inventory_scanner_invalid">El código debe tener entre 1 y 128 caracteres ASCII visibles.</string>
+    <string name="inventory_scanner_incomplete">Lectura incompleta. Pulsa Reiniciar lector y vuelve a escanear el código completo.</string>
+    <string name="inventory_scanner_too_long">El código supera los 128 caracteres. Revisa la configuración del lector y vuelve a escanear.</string>
     <string name="inventory_scanner_not_found">El código no está asociado a ningún producto de este negocio.</string>
     <string name="inventory_scanner_no_business">Configura un negocio antes de buscar productos.</string>
     <string name="inventory_scanner_lookup_failed">No se pudo buscar el producto. Vuelve a escanear el código.</string>
+    <string name="inventory_register_products">Registrar productos</string>
+    <string name="inventory_registration_help">Conecta tu escáner físico por USB o Bluetooth. Apunta al código de barras del producto y realiza la lectura.</string>
+    <string name="inventory_registration_ready">Esperando lectura del escáner</string>
+    <string name="inventory_registration_result_help">Después de escanear, completa el nombre, la cantidad y los precios de compra y venta. Si el producto ya existe, se abrirá su formulario para editarlo sin duplicarlo.</string>
+    <string name="inventory_registration_enter">El registro se abre con Enter o Tab. Si tu lector no los envía, pulsa Abrir registro cuando aparezca el código.</string>
+    <string name="inventory_register_manual">Registrar manualmente</string>
+    <string name="inventory_register_unmatched">Registrar producto con este código</string>
+    <string name="action_open_settings">Abrir ajustes</string>
     <string name="inventory_section_stock">Existencias</string>
     <string name="inventory_section_profit">Ganancias</string>
     <string name="inventory_profit_message">Proyección por unidad y sobre el stock actual, antes de descuentos e impuestos. No representa una ganancia realizada.</string>
@@ -1099,7 +1173,7 @@
         <item quantity="other">%1$d productos con existencias</item>
     </plurals>
     <string name="inventory_empty_filtered_title">No hay coincidencias</string>
-    <string name="inventory_empty_filtered_message">Prueba otra búsqueda o revisa el nombre del almacén.</string>
+    <string name="inventory_empty_filtered_message">Prueba con otras letras del nombre.</string>
     <string name="inventory_total_quantity">Existencia total: %1$s %2$s</string>
     <string name="inventory_total_average">Costo promedio total: %1$s</string>
     <string name="inventory_total_value">Valor estimado total: %1$s</string>
@@ -1147,7 +1221,7 @@
     <string name="action_return_inventory">Volver al inventario</string>
     <string name="inventory_detail_title">Trazabilidad del producto</string>
     <string name="inventory_detail_message">Existencias y movimientos registrados, de solo lectura.</string>
-    <string name="inventory_positions_section">Existencias por almacén</string>
+    <string name="inventory_positions_section">Existencias</string>
     <string name="inventory_movements_section">Movimientos (%1$d)</string>
     <string name="inventory_no_movements">Aún no hay movimientos para este producto.</string>
     <string name="inventory_movement_purchase">Entrada por compra</string>
@@ -1307,6 +1381,8 @@
     <string name="account_create_business_action">Crear negocio</string>
     <string name="account_business_created">Negocio creado. Selecciónalo en la lista para enlazar este celular.</string>
     <string name="account_link_updated">Negocio activo actualizado.</string>
+    <string name="account_deletion_pending_feedback">La eliminación fue aceptada y continuará en el servidor. La sesión quedó cerrada; los datos locales se conservaron. Aún no se confirmó que el borrado haya terminado.</string>
+    <string name="account_deletion_unconfirmed_feedback">No pudimos confirmar que el servidor recibiera o completara la eliminación. Cerramos la sesión y conservamos los datos locales. Cuando recuperes la conexión, inicia sesión y vuelve a solicitar la eliminación; si ya fue aceptada, el servidor continuará el mismo trabajo.</string>
     <string name="account_deleted_feedback">La cuenta en la nube se eliminó y la sesión quedó cerrada. Tus compras, ventas, deudas, abonos y borradores locales se conservaron en este dispositivo.</string>
     <string name="account_open_members">Miembros</string>
     <string name="account_open_invitations">Mis invitaciones</string>
@@ -1538,7 +1614,7 @@
         <item quantity="other">%1$d líneas vendidas</item>
     </plurals>
     <string name="reports_profit_formula">Sin impuestos − costo histórico. No incluye gastos del negocio.</string>
-    <string name="reports_total_charged">Total cobrado</string>
+    <string name="reports_total_charged">Total vendido</string>
     <string name="reports_net_revenue">Ingreso sin impuestos</string>
     <string name="reports_historical_cost">Costo histórico</string>
     <string name="reports_profit_unavailable_summary">Ganancia no disponible: %1$s</string>
@@ -1550,6 +1626,18 @@
     <string name="reports_other_currencies_title">Otras monedas</string>
     <string name="reports_other_currencies_description">Las monedas no se mezclan.</string>
     <string name="reports_empty_title">Sin ventas en este periodo</string>
-    <string name="reports_sale_identifier">Venta %1$s</string>
-    <string name="reports_sale_metadata">%1$s · %2$s</string>
+    <string name="reports_sale_title">Venta · %1$s</string>
+    <string name="reports_sale_product_quantity">%1$s %2$s</string>
+    <string name="reports_sale_expand_details">Ver ganancias y detalles</string>
+    <string name="reports_sale_collapse_details">Ocultar ganancias y detalles</string>
+    <string name="reports_sale_details_collapsed">Contraído</string>
+    <string name="reports_sale_details_expanded">Expandido</string>
+    <string name="reports_sale_line_profit">Ganancia del producto</string>
+    <string name="reports_sale_line_total">Total vendido</string>
+    <string name="scanner_code_label">Código del producto</string>
+    <string name="scanner_code_hint">Escanea o escribe el código</string>
+    <string name="scanner_code_submit">Abrir registro</string>
+    <string name="scanner_code_invalid">Código no válido. Revisa la lectura completa o vuelve a escanear.</string>
+    <string name="catalog_product_total_quantity_label">Existencias totales (opcional)</string>
+    <string name="scanner_code_reset">Reiniciar lector</string>
 </resources>

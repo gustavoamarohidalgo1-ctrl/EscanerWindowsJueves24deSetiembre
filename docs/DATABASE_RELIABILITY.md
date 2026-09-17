@@ -1,9 +1,9 @@
 # Confiabilidad de la base de datos local
 
 FacturaStock usa Room sobre SQLite como fuente de verdad **en el dispositivo**. El esquema vigente
-es v27 y contiene 32 tablas para negocio, catálogos, borradores OCR, compras, ventas, deudas, pagos,
-inventario, auditoría y sincronización. Este documento separa las garantías implementadas de los límites que
-todavía requieren una fase distinta de respaldo y restauración.
+es v28 y contiene 34 tablas para negocio, catálogos, borradores OCR, compras, ventas, deudas, pagos,
+inventario, auditoría, sincronización y recibos de confirmación. Este documento separa las garantías
+implementadas de los límites que todavía requieren una fase distinta de respaldo y restauración.
 
 ## Garantías implementadas
 
@@ -11,14 +11,18 @@ todavía requieren una fase distinta de respaldo y restauración.
 | --- | --- |
 | Escritura parcial de una compra o venta | Las cabeceras, líneas, saldos, movimientos, auditoría y outbox correspondientes se confirman en una sola transacción Room. Un fallo tardío revierte el lote completo. |
 | Doble toque o reintento | Claves únicas, claves idempotentes y compare-and-set (CAS) hacen que el segundo intento devuelva el resultado ya publicado o falle sin repetir inventario. |
+| Respuesta perdida al confirmar una venta cloud | `pending_sale_checkouts` conserva la intención antes de llamar a la nube y congela el borrador y sus líneas. Una respuesta incierta conserva esa intención para reintentar el mismo documento y la misma clave. |
+| Ingreso OCR parcialmente aplicado | Productos nuevos, outbox de catálogo, inventario, recibo y cierre del borrador se confirman juntos. `invoice_inventory_receipts` permite recuperar el éxito después de perder la respuesta y rechaza reintentos con contenido diferente. |
 | Concurrencia sobre existencias | `inventory_balances.version` protege cada cambio con CAS; los movimientos son append-only y permiten recalcular y comparar el saldo. |
 | Referencias inválidas | Foreign keys, índices únicos y triggers verifican negocio, catálogo, borrador, compra, venta, deuda, pago, producto, unidad y almacén, incluso cuando una FK simple no puede expresar el aislamiento entre negocios. |
 | Edición de historia publicada | Compras, ventas, deudas, pagos, líneas, movimientos y auditoría publicados tienen invariantes SQL que bloquean reemplazos, cambios o borrados no autorizados. La anulación de compra crea movimientos compensatorios; los pagos de deuda avanzan el saldo mediante CAS y permanecen append-only. |
 | Cierre de proceso durante uso normal | WAL está fijado explícitamente; Room reabre la base y los borradores, outbox y operaciones confirmadas permanecen en disco. |
-| Actualización de la app | Hay una migración explícita por cada salto v1→v27. No existe `fallbackToDestructiveMigration`. Todas las rutas históricas se validan contra los JSON exportados y ejecutan `foreign_key_check` e `integrity_check`. |
+| Apagado abrupto o pérdida de energía | `synchronous=FULL` se fija en cada apertura (`onOpen`) y exige sincronizar el WAL en cada commit. La durabilidad física depende de que el sistema de archivos y el dispositivo cumplan esas operaciones. |
+| Reporte de éxito sin evidencia | Todo guardado de producto verifica por relectura, dentro de su transacción, que la fila en disco coincide con lo escrito; la discrepancia falla como `StorageError.Unavailable`. |
+| Actualización de la app | Hay una migración explícita por cada salto v1→v28. No existe `fallbackToDestructiveMigration`. Las pruebas de todas las rutas históricas validan los JSON exportados y ejecutan `foreign_key_check` e `integrity_check`. |
 | Corrupción detectada al abrir | La factory productiva falla cerrada: no autoriza `allowDataLossOnRecovery` ni delega al handler que puede borrar la base y sus sidecars. Conserva el original para diagnóstico/recuperación explícita. |
 | Cambio de esquema accidental | `verifyRoomSchemaPolicy` exige el JSON nuevo, la migración declarada y registrada, WAL explícito y la factory no destructiva antes de compilar. La CI además protege el historial append-only. |
-| Consultas que crecen con el negocio | v27 conserva los índices compuestos de borradores, compras, ventas, auditoría, outbox, movimientos, inventario y espejo remoto, y añade los índices de cuentas por cobrar por estado, nombre y actualización. |
+| Consultas que crecen con el negocio | v28 conserva los índices compuestos de borradores, compras, ventas, auditoría, outbox, movimientos, inventario, espejo remoto y cuentas por cobrar, y añade índices por negocio para las dos tablas de confirmación. |
 
 Los importes monetarios son `Long` en unidades menores con moneda ISO 4217. Cantidades y costos se
 guardan como decimal textual exacto; no se usa `Double`. Los UUID, estados y fechas se validan antes
@@ -36,7 +40,7 @@ la transacción conserva intacta la base v22.
 Después sustituye índices cortos o redundantes por índices compuestos compatibles con las lecturas
 reales e instala triggers que rechazan nuevos cruces entre negocios. La prueba específica acredita
 preservación de filas, planes de consulta, rechazo de escrituras cruzadas y rollback del DDL. La
-prueba full-path recorre por separado cada origen v1…v22 hasta v23.
+prueba full-path actual incluye estos orígenes y los lleva hasta v28.
 
 ## Cambios v23 → v27
 
@@ -49,7 +53,36 @@ prueba full-path recorre por separado cada origen v1…v22 hasta v23.
   inventa cuentas por cobrar a partir de ventas históricas.
 
 `DebtMigrationTest` verifica preservación de las filas v26 e instalación del ledger nuevo;
-`FullPathMigrationTest` recorre cada origen histórico v1…v26 hasta v27.
+`FullPathMigrationTest` recorre actualmente cada origen histórico v1…v27 hasta v28.
+
+## Cambio v27 → v28
+
+La migración crea dos tablas vacías con claves foráneas e índices por negocio. No reinterpreta
+ventas, deudas ni movimientos históricos:
+
+- `pending_sale_checkouts` conserva por venta la versión esperada, huella, clave idempotente,
+  datos de cobro/crédito y vínculo cloud de la confirmación en curso. Los triggers validan la
+  intención, impiden mutarla o editar su borrador/líneas y la eliminan al publicar la venta.
+- `invoice_inventory_receipts` conserva por borrador el negocio, huella, cantidad de líneas
+  aplicadas y fecha. No depende por FK del borrador, porque ese borrador se elimina dentro del
+  mismo commit del ingreso.
+
+En una venta cloud, una confirmación remota definitiva puede completar el documento congelado
+aunque después se hayan archivado su producto, unidad o almacén. El commit exige que la confirmación
+remota corresponda a la intención pendiente y mantiene la identidad y los datos históricos de
+las líneas. Esa excepción no permite vender catálogo archivado mediante una venta local.
+Si la respuesta remota es incierta, el carrito sigue bloqueado hasta resolver el mismo intento;
+un error de transporte no prueba que el servidor haya rechazado la operación.
+
+En OCR, la transacción exige todas las líneas originales y valida también los extras manuales
+con identidad estable. Cantidad, costo, moneda o unidad incompletos bloquean el lote entero. Los
+movimientos antiguos `invoice-match:v1` solo se reconocen si coinciden con la revisión; un conflicto
+se conserva para reconciliación. El alcance y los límites del ingreso se detallan en
+[`INVOICE_PRODUCT_SCANNER.md`](INVOICE_PRODUCT_SCANNER.md).
+
+`CheckoutDurabilityMigrationTest` comprueba preservación de una fila de negocio v27, creación
+vacía de ambas tablas y comprobaciones de integridad y claves foráneas. Las pruebas de repositorio
+comprueban los estados pendientes, el rollback y los reintentos sobre Room real.
 
 ## Política de apertura y durabilidad
 
@@ -57,11 +90,17 @@ El builder productivo selecciona `WRITE_AHEAD_LOGGING` de forma explícita, habi
 usa `FailClosedSQLiteOpenHelperFactory`. WAL mejora la convivencia entre lecturas y una escritura y
 evita depender del modo `AUTOMATIC` de Room, que puede elegir otro journal según el dispositivo.
 
-La configuración Android habitual de WAL usa `synchronous=NORMAL`: mantiene consistencia y resiste
-un cierre de la app, pero un apagado abrupto del sistema o pérdida de energía todavía puede revertir
-la transacción más reciente. No se simula `FULL` con una PRAGMA aplicada a una sola conexión del
-pool. Adoptarlo exige configurar todas las conexiones de manera uniforme y medir la latencia en el
-dispositivo objetivo.
+El open helper de producción fija `synchronous=FULL` en `onOpen`, que corre sobre cada conexión
+que abre (incluida la que escribe). En modo WAL, `FULL` solicita sincronizar el WAL al confirmar
+cada transacción. Esto refuerza la durabilidad frente a un apagado abrupto, bajo las garantías de
+sincronización del almacenamiento. No protege frente a avería física, borrado de datos ni un
+dispositivo que incumpla esas garantías. El coste de sincronización depende del equipo y debe
+medirse en él; no se presupone una latencia imperceptible.
+
+Además, todo guardado de producto —alta, edición, lote del escáner de facturas y precio de venta—
+verifica por relectura, dentro de su misma transacción, que la fila quedó exactamente como se
+intentó escribir. Una discrepancia falla de forma explícita (`StorageError.Unavailable`) en lugar de
+anunciar un éxito sin evidencia en disco: "guardado" solo puede significar "legible y exacto".
 
 ## Verificación reproducible
 
@@ -78,17 +117,31 @@ Las pruebas focales son:
 - `DatabaseHardeningMigrationTest`: migración histórica v22→v23, índices, aislamiento entre negocios y
   rollback.
 - `DebtMigrationTest`: migración v26→v27, preservación de datos y estructura/invariantes de deudas.
-- `FullPathMigrationTest`: cada esquema histórico v1…v26 llega a v27 conservando su grafo máximo.
+- `CheckoutDurabilityMigrationTest`: migración v27→v28, preservación del negocio y creación vacía
+  de las tablas de confirmación.
+- `FullPathMigrationTest`: cada esquema histórico v1…v27 llega a v28 conservando su grafo máximo.
 - `LocalDatabaseOperationalPolicyTest`: WAL, foreign keys, `foreign_key_check` y `quick_check` en
   el builder productivo.
 - `FailClosedSQLiteOpenHelperFactoryTest`: apertura normal y preservación de la base/`-wal`/`-shm`
   frente a corrupción.
-- `RoomSaleRepositoryTest`: venta idempotente que sobrevive a checkpoint WAL, cierre y reapertura.
+- `RoomSaleRepositoryTest`: venta idempotente que sobrevive a checkpoint WAL, cierre y reapertura;
+  pérdida de respuesta cloud, congelación SQL del carrito, reintento exacto y confirmación con
+  catálogo archivado sin alterar las líneas históricas. También rechaza ese catálogo en ventas
+  locales.
+- `RoomInvoiceMatchingCommitRepositoryTest`: lote mixto incompleto sin escrituras, conversión de
+  unidades, rollback de productos/outbox/inventario/recibo ante fallo al cerrar el borrador,
+  respuesta perdida, reintento divergente, compatibilidad con movimientos antiguos y líneas
+  originales/manuales.
+- `ConfirmInvoiceMatchingUseCaseTest`, `MatchScannedInvoiceLinesUseCaseTest` e
+  `InvoiceMatchingViewModelTest`: conservación de unidad/moneda, validación de la revisión,
+  restauración acotada del estado y recuperación del resultado confirmado.
 - Suites de compra, anulación, catálogo, inventario y outbox: concurrencia, límites y rollback
   transaccional.
 
-La evidencia fechada de la última ejecución está en
+La evidencia histórica del 24 de agosto de 2026 está en
 [`test-evidence/2026-08-24-base-datos-solida.md`](test-evidence/2026-08-24-base-datos-solida.md).
+Ese informe acredita la revisión y las pruebas de esa fecha; no acredita por sí solo las suites
+añadidas para v28 ni sustituye su ejecución sobre el código vigente.
 
 ## Límites honestos
 
@@ -106,7 +159,8 @@ Una base local robusta no equivale a recuperación ante pérdida del dispositivo
 - Room no usa SQLCipher. El archivo queda protegido por el sandbox y el cifrado del dispositivo;
   el cifrado AES-GCM propio se aplica a imágenes retenidas, no a todas las tablas.
 
-Por tanto, antes de borrar datos, desinstalar o cambiar de equipo se debe conservar la exportación y
-contactar a soporte. Una fase de recuperación total tendría que añadir un formato completo y
-firmado, importación validada y cobertura del resto del estado solo local, con conflictos y pruebas
-de restauración; no debe afirmarse que esa capacidad ya existe.
+Antes de borrar datos, desinstalar o cambiar de equipo se debe conservar la exportación y contactar
+a soporte. Existe una base interna de `FULL_DEVICE_SNAPSHOT` con formato ZIP, validación y
+primitivas de recuperación, pero todavía no ofrece exportación/importación completa al usuario:
+la activación sigue en `NOT_READY` y no reemplaza la base activa. El trabajo pendiente se detalla en
+[`FULL_DEVICE_SNAPSHOT_FOUNDATION.md`](FULL_DEVICE_SNAPSHOT_FOUNDATION.md).

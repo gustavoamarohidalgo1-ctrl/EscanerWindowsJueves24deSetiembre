@@ -7,11 +7,11 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 
 /**
- * Estado reproducible para perfilar el arranque real hasta que Home tenga datos utilizables.
+ * Estado reproducible para perfilar el arranque real hasta que Vender publique su pantalla.
  *
  * El onboarding se completa desde [prepare] antes de que BaselineProfileRule o MacrobenchmarkRule
  * empiecen a capturar. Así el perfil de arranque no queda contaminado por un formulario de primer
- * uso y el bloque medido puede exigir el primer contenido operativo del dashboard.
+ * uso y el bloque medido puede exigir el primer contenido de la pantalla de ventas.
  */
 internal object StartupJourney {
     const val TARGET_PACKAGE = "com.facturastock.app"
@@ -19,20 +19,19 @@ internal object StartupJourney {
     private const val MAIN_ACTIVITY = "com.facturastock.app.MainActivity"
     private const val ONBOARDING_SCREEN_TAG = "onboarding_screen"
     private const val BUSINESS_NAME_TAG = "onboarding_business_name"
-    private const val WAREHOUSE_TAG = "onboarding_warehouse"
     private const val SUBMIT_TAG = "onboarding_submit"
-    private const val HOME_READY_TAG = "home_scan_cta"
+    private const val SALES_READY_TAG = "sales_entry_kind_screen"
+    private const val SALES_CASH_ENTRY_TAG = "sales_cash_entry"
     private const val BENCHMARK_BUSINESS_NAME = "BenchmarkBusiness"
-    private const val BENCHMARK_WAREHOUSE_NAME = "BenchmarkWarehouse"
     private const val SUPPRESS_DEFERRED_STARTUP_EXTRA =
         "com.facturastock.app.performance.SUPPRESS_DEFERRED_STARTUP"
     private const val START_TIMEOUT_MS = 20_000L
-    private const val HOME_TIMEOUT_MS = 30_000L
+    private const val SALES_TIMEOUT_MS = 30_000L
     private const val UI_STEP_TIMEOUT_MS = 10_000L
     private const val SUBMIT_TRANSITION_TIMEOUT_MS = 5_000L
     private const val SUBMIT_ATTEMPTS = 3
 
-    /** Deja el paquete fuera de primer uso y vuelve a Home antes de iniciar una captura. */
+    /** Deja el paquete fuera de primer uso y vuelve al lanzador antes de iniciar una captura. */
     fun prepare(resetPersistentState: Boolean = false) {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         if (resetPersistentState) {
@@ -55,10 +54,10 @@ internal object StartupJourney {
         }
 
         when (waitForEntryPoint(device)) {
-            EntryPoint.HOME -> Unit
+            EntryPoint.SALES -> Unit
             EntryPoint.ONBOARDING -> completeOnboarding(device)
         }
-        waitForHomeReady(device)
+        waitForSalesReady(device)
         device.pressHome()
         // La apertura auxiliar suprime el trabajo post-frame únicamente en benchmark/profile.
         // Detener el paquete garantiza que la captura comience desde un proceso nuevo.
@@ -69,40 +68,47 @@ internal object StartupJourney {
         device.waitForIdle()
     }
 
-    /** Home está listo solo cuando el estado cargado compone su acción principal. */
-    fun waitForHomeReady(device: UiDevice) {
+    /** La primera selección de Vender está lista cuando muestra su acción de contado habilitada. */
+    fun waitForSalesReady(device: UiDevice) {
         check(
             device.wait(
-                Until.hasObject(By.res(HOME_READY_TAG)),
-                HOME_TIMEOUT_MS,
+                Until.hasObject(By.res(SALES_READY_TAG)),
+                SALES_TIMEOUT_MS,
             ),
         ) {
-            "Home no publicó su contenido operativo ($HOME_READY_TAG)"
+            "Vender no publicó la selección de tipo de venta ($SALES_READY_TAG)"
         }
+        checkNotNull(
+            device.wait(
+                Until.findObject(By.res(SALES_CASH_ENTRY_TAG).enabled(true).clickable(true)),
+                SALES_TIMEOUT_MS,
+            ),
+        ) { "Vender no habilitó la acción de venta al contado ($SALES_CASH_ENTRY_TAG)" }
         device.waitForIdle()
     }
 
     private fun waitForEntryPoint(device: UiDevice): EntryPoint {
         val deadlineNanos = System.nanoTime() + START_TIMEOUT_MS * 1_000_000L
         while (System.nanoTime() < deadlineNanos) {
-            if (device.hasObject(By.res(HOME_READY_TAG))) return EntryPoint.HOME
+            if (device.hasObject(By.res(SALES_READY_TAG))) return EntryPoint.SALES
             if (device.hasObject(By.res(ONBOARDING_SCREEN_TAG))) {
                 return EntryPoint.ONBOARDING
             }
             device.wait(
-                Until.hasObject(By.res(HOME_READY_TAG)),
+                Until.hasObject(By.res(SALES_READY_TAG)),
                 250L,
             )
         }
-        error("MainActivity no llegó a onboarding ni a Home dentro del plazo")
+        error("MainActivity no llegó a onboarding ni a Vender dentro del plazo")
     }
 
     private fun completeOnboarding(device: UiDevice) {
+        // El onboarding compacto crea el almacén predeterminado; sólo el nombre del negocio
+        // requiere entrada. Completar el formulario real y guardar conserva ese contrato.
         enterText(device, BUSINESS_NAME_TAG, BENCHMARK_BUSINESS_NAME)
-        enterText(device, WAREHOUSE_TAG, BENCHMARK_WAREHOUSE_NAME)
 
         repeat(SUBMIT_ATTEMPTS) {
-            // El primer frame con ambos textos puede conservar fugazmente el CTA deshabilitado.
+            // El primer frame con el nombre puede conservar fugazmente el CTA deshabilitado.
             // Reubicarlo y exigir enabled evita que UiAutomator envíe un click que Compose descarte.
             scrollUntilFound(device, By.res(SUBMIT_TAG))
             val submit = checkNotNull(
@@ -114,9 +120,9 @@ internal object StartupJourney {
             submit.click()
 
             when (waitForSubmitOutcome(device)) {
-                SubmitOutcome.HOME -> return
+                SubmitOutcome.SALES -> return
                 SubmitOutcome.TRANSITION -> {
-                    waitForHomeReady(device)
+                    waitForSalesReady(device)
                     return
                 }
                 SubmitOutcome.ONBOARDING -> Unit
@@ -128,11 +134,11 @@ internal object StartupJourney {
     private fun waitForSubmitOutcome(device: UiDevice): SubmitOutcome {
         val deadlineNanos = System.nanoTime() + SUBMIT_TRANSITION_TIMEOUT_MS * 1_000_000L
         while (System.nanoTime() < deadlineNanos) {
-            if (device.hasObject(By.res(HOME_READY_TAG))) return SubmitOutcome.HOME
+            if (device.hasObject(By.res(SALES_READY_TAG))) return SubmitOutcome.SALES
             if (!device.hasObject(By.res(ONBOARDING_SCREEN_TAG))) {
                 return SubmitOutcome.TRANSITION
             }
-            device.wait(Until.hasObject(By.res(HOME_READY_TAG)), 250L)
+            device.wait(Until.hasObject(By.res(SALES_READY_TAG)), 250L)
         }
         return SubmitOutcome.ONBOARDING
     }
@@ -176,12 +182,12 @@ internal object StartupJourney {
     }
 
     private enum class EntryPoint {
-        HOME,
+        SALES,
         ONBOARDING,
     }
 
     private enum class SubmitOutcome {
-        HOME,
+        SALES,
         TRANSITION,
         ONBOARDING,
     }

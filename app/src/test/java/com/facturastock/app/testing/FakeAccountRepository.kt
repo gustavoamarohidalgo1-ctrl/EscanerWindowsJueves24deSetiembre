@@ -21,6 +21,7 @@ class FakeAccountRepository(
     initialSession: AccountSession = AccountSession.SignedOut,
     override val available: Boolean = true,
     private val connectivity: FakeFirebaseConnectivity = FakeFirebaseConnectivity(),
+    override val accountDeletionAvailable: Boolean = available,
 ) : AccountRepository {
     private val sessionFlow = MutableStateFlow(
         if (available) initialSession else AccountSession.Unavailable,

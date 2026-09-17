@@ -243,12 +243,30 @@ class FullDeviceSnapshotArchiveValidatorTest {
             FullDeviceSnapshotArchiveFailureCode.MANIFEST_CONTRACT_VIOLATION,
         )
 
-        val currentSchema = manifestFor(payloads, sourceDatabaseSchemaVersion = 27)
+        val previousSchema = manifestFor(payloads, sourceDatabaseSchemaVersion = 28)
+        assertTrue(
+            FullDeviceSnapshotArchiveValidator().validateAndStage(
+                writeArchive(previousSchema, payloads), nextStage(),
+            ) is FullDeviceSnapshotArchiveValidationResult.Validated,
+        )
+        val currentSchema = manifestFor(payloads, sourceDatabaseSchemaVersion = 29)
         val currentSchemaResult = FullDeviceSnapshotArchiveValidator().validateAndStage(
             writeArchive(currentSchema, payloads),
             nextStage(),
         )
         assertTrue(currentSchemaResult is FullDeviceSnapshotArchiveValidationResult.Validated)
+        assertRejected(
+            FullDeviceSnapshotArchiveValidator().validateAndStage(
+                writeArchive(
+                    currentSchema.copy(tableDigests = currentSchema.tableDigests.filterNot {
+                        it.tableName == "sale_voids"
+                    }),
+                    payloads,
+                ),
+                nextStage(),
+            ),
+            FullDeviceSnapshotArchiveFailureCode.MANIFEST_CONTRACT_VIOLATION,
+        )
         val currentWithoutDebts = currentSchema.copy(
             tableDigests = currentSchema.tableDigests.filterNot {
                 it.tableName == "debts" || it.tableName == "debt_payments"
@@ -263,7 +281,7 @@ class FullDeviceSnapshotArchiveValidatorTest {
         )
 
         listOf(
-            valid.copy(sourceDatabaseSchemaVersion = 28),
+            valid.copy(sourceDatabaseSchemaVersion = 30),
             valid.copy(requiredRestoreChecks = valid.requiredRestoreChecks.dropLast(1)),
         ).forEach { incompatible ->
             assertRejected(

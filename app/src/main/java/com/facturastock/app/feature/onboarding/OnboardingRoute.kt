@@ -220,36 +220,6 @@ fun OnboardingScreen(
                 )
             }
 
-            OnboardingDivider()
-            OnboardingSectionTitle(R.string.onboarding_section_inventory)
-
-            OutlinedTextField(
-                value = state.warehouseName,
-                onValueChange = { value ->
-                    onAction(
-                        OnboardingContract.Action.WarehouseNameChanged(
-                            value.take(OnboardingContract.WAREHOUSE_NAME_MAX_LENGTH),
-                        ),
-                    )
-                },
-                label = { Text(stringResource(R.string.onboarding_warehouse_label)) },
-                supportingText = {
-                    Text(
-                        stringResource(
-                            R.string.onboarding_warehouse_help_counter,
-                            state.warehouseName.length,
-                            OnboardingContract.WAREHOUSE_NAME_MAX_LENGTH,
-                        ),
-                    )
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(OnboardingTestTags.WAREHOUSE),
-            )
-
             if (state.rucChecksumWarning) {
                 StatusCard(
                     statusLabel = stringResource(R.string.ruc_checksum_warning_label),

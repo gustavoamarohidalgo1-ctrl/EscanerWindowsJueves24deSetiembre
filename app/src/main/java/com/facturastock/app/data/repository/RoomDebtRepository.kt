@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteFullException
 import androidx.room.withTransaction
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.data.local.FacturaStockDatabase
+import com.facturastock.app.data.local.dao.DebtPaymentReportRow
 import com.facturastock.app.data.local.dao.DebtSummaryRow
 import com.facturastock.app.data.local.dao.DebtWithGraph
 import com.facturastock.app.data.local.entity.DebtEntity
@@ -17,6 +18,7 @@ import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.DebtDetail
 import com.facturastock.app.domain.model.DebtLine
 import com.facturastock.app.domain.model.DebtPayment
+import com.facturastock.app.domain.model.DebtPaymentReportItem
 import com.facturastock.app.domain.model.DebtPaymentMethod
 import com.facturastock.app.domain.model.DebtStatus
 import com.facturastock.app.domain.model.DebtSummary
@@ -39,6 +41,7 @@ import com.facturastock.app.domain.repository.RemoteDebtSyncRepository
 import java.time.Instant
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -69,6 +72,16 @@ class RoomDebtRepository @Inject constructor(
     ): Flow<DebtDetail?> = database.debtDao()
         .observeDetail(businessId.value, debtId.value)
         .map { graph -> graph?.toDomain() }
+        .flowOn(dispatchers.io)
+
+    override fun observePaymentsInRange(
+        businessId: BusinessId,
+        startInclusive: Instant,
+        endExclusive: Instant,
+    ): Flow<List<DebtPaymentReportItem>> = database.debtDao()
+        .observePaymentsInRange(businessId.value, startInclusive.toEpochMilli(), endExclusive.toEpochMilli())
+        .distinctUntilChanged()
+        .map { rows -> rows.map { it.toDomain() } }
         .flowOn(dispatchers.io)
 
     override suspend fun recordPayment(
@@ -139,14 +152,16 @@ class RoomDebtRepository @Inject constructor(
         if (debt.businessId != businessId.value) {
             return PreparedDebtPayment.Rejected(RecordDebtPaymentResult.NotFound)
         }
+        if (database.saleVoidDao().findBySaleId(businessId.value, debt.saleId) != null) {
+            return PreparedDebtPayment.Rejected(RecordDebtPaymentResult.NotFound)
+        }
         val paymentId = deterministicPaymentId(command.debtId, command.expectedVersion)
         val idempotencyKey = paymentId.idempotencyKey(command.debtId)
         val eventAt = maxOf(command.occurredAt.toEpochMilli(), debt.updatedAt)
         database.debtDao().findPaymentByIdempotencyKey(idempotencyKey)?.let { existing ->
             return if (existing.matches(command, businessId, paymentId)) {
-                val summary = checkNotNull(
-                    database.debtDao().findSummary(businessId.value, command.debtId.value),
-                ).toDomain()
+                val summary = database.debtDao().findSummary(businessId.value, command.debtId.value)
+                    ?.toDomain() ?: return PreparedDebtPayment.Rejected(RecordDebtPaymentResult.NotFound)
                 PreparedDebtPayment.Rejected(
                     RecordDebtPaymentResult.AlreadyRecorded(summary, existing.toDomain()),
                 )
@@ -199,6 +214,11 @@ class RoomDebtRepository @Inject constructor(
         try {
             return database.withTransaction {
                 val dao = database.debtDao()
+                val currentDebt = dao.findDebt(command.debtId.value)
+                    ?: return@withTransaction RecordDebtPaymentResult.NotFound
+                if (currentDebt.businessId != businessId.value ||
+                    database.saleVoidDao().findBySaleId(businessId.value, currentDebt.saleId) != null
+                ) return@withTransaction RecordDebtPaymentResult.NotFound
                 dao.findPaymentByIdempotencyKey(ready.document.idempotencyKey)?.let { existing ->
                     if (existing.matches(
                             command,
@@ -297,6 +317,10 @@ class RoomDebtRepository @Inject constructor(
         command: RecordDebtPaymentCommand,
         ready: PreparedDebtPayment.Ready,
     ): RecordDebtPaymentResult {
+        val currentDebt = database.debtDao().findDebt(command.debtId.value)
+        if (currentDebt != null && currentDebt.businessId == businessId.value &&
+            database.saleVoidDao().findBySaleId(businessId.value, currentDebt.saleId) != null
+        ) return RecordDebtPaymentResult.NotFound
         database.debtDao().findPaymentByIdempotencyKey(ready.document.idempotencyKey)
             ?.let { existing ->
                 if (existing.matches(
@@ -349,46 +373,6 @@ class RoomDebtRepository @Inject constructor(
         )
     }
 
-    private fun DebtSummaryRow.toDomain(): DebtSummary {
-        require(lineCount > 0) { "Una deuda persistida debe conservar líneas de venta" }
-        return debt.toDomainSummary(lineCount)
-    }
-
-    private fun DebtEntity.toDomainSummary(lineCount: Int): DebtSummary {
-        val currency = CurrencyCode.of(currencyCode)
-        return DebtSummary(
-            debtId = checkNotNull(DebtId.parse(debtId)),
-            businessId = checkNotNull(BusinessId.parse(businessId)),
-            saleId = checkNotNull(SaleId.parse(saleId)),
-            debtorName = debtorName,
-            originalAmount = Money.ofMinor(originalAmountMinorUnits, currency),
-            balance = Money.ofMinor(balanceMinorUnits, currency),
-            status = DebtStatus.valueOf(status),
-            lineCount = lineCount,
-            dueAt = dueAt?.let(Instant::ofEpochMilli),
-            version = version,
-            createdAt = Instant.ofEpochMilli(createdAt),
-            updatedAt = Instant.ofEpochMilli(updatedAt),
-            paidAt = paidAt?.let(Instant::ofEpochMilli),
-        )
-    }
-
-    private fun DebtPaymentEntity.toDomain(): DebtPayment {
-        val currency = CurrencyCode.of(currencyCode)
-        return DebtPayment(
-            paymentId = checkNotNull(DebtPaymentId.parse(paymentId)),
-            debtId = checkNotNull(DebtId.parse(debtId)),
-            amount = Money.ofMinor(amountMinorUnits, currency),
-            method = DebtPaymentMethod.valueOf(method),
-            note = note,
-            reference = reference,
-            expectedDebtVersion = expectedDebtVersion,
-            balanceAfter = Money.ofMinor(balanceAfterMinorUnits, currency),
-            occurredAt = Instant.ofEpochMilli(occurredAt),
-            createdAt = Instant.ofEpochMilli(createdAt),
-        )
-    }
-
     private fun DebtPaymentEntity.matches(
         command: RecordDebtPaymentCommand,
         businessId: BusinessId,
@@ -409,6 +393,47 @@ class RoomDebtRepository @Inject constructor(
         "debt-payment:v1:${debtId.value}:$value"
 }
 
+private fun DebtPaymentEntity.toDomain(): DebtPayment {
+    val currency = CurrencyCode.of(currencyCode)
+    return DebtPayment(
+        paymentId = checkNotNull(DebtPaymentId.parse(paymentId)),
+        debtId = checkNotNull(DebtId.parse(debtId)),
+        amount = Money.ofMinor(amountMinorUnits, currency),
+        method = DebtPaymentMethod.valueOf(method),
+        note = note,
+        reference = reference,
+        expectedDebtVersion = expectedDebtVersion,
+        balanceAfter = Money.ofMinor(balanceAfterMinorUnits, currency),
+        occurredAt = Instant.ofEpochMilli(occurredAt),
+        createdAt = Instant.ofEpochMilli(createdAt),
+    )
+}
+
+
+internal fun DebtSummaryRow.toDomain(): DebtSummary {
+    require(lineCount > 0) { "Una deuda persistida debe conservar líneas de venta" }
+    return debt.toDomainSummary(lineCount)
+}
+
+private fun DebtEntity.toDomainSummary(lineCount: Int): DebtSummary {
+    val currency = CurrencyCode.of(currencyCode)
+    return DebtSummary(
+        debtId = checkNotNull(DebtId.parse(debtId)),
+        businessId = checkNotNull(BusinessId.parse(businessId)),
+        saleId = checkNotNull(SaleId.parse(saleId)),
+        debtorName = debtorName,
+        originalAmount = Money.ofMinor(originalAmountMinorUnits, currency),
+        balance = Money.ofMinor(balanceMinorUnits, currency),
+        status = DebtStatus.valueOf(status),
+        lineCount = lineCount,
+        dueAt = dueAt?.let(Instant::ofEpochMilli),
+        version = version,
+        createdAt = Instant.ofEpochMilli(createdAt),
+        updatedAt = Instant.ofEpochMilli(updatedAt),
+        paidAt = paidAt?.let(Instant::ofEpochMilli),
+    )
+}
+
 private sealed interface PreparedDebtPayment {
     data class Ready(
         val document: RemoteDebtPaymentDocument,
@@ -426,3 +451,10 @@ private data class PaymentAuthorization(
 )
 
 private class DebtPaymentRace : RuntimeException()
+
+internal fun DebtPaymentReportRow.toDomain(): DebtPaymentReportItem = DebtPaymentReportItem(
+    businessId = checkNotNull(BusinessId.parse(payment.businessId)),
+    saleId = checkNotNull(SaleId.parse(saleId)),
+    debtorName = debtorName,
+    payment = payment.toDomain(),
+)

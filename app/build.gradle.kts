@@ -111,7 +111,7 @@ check(configuredMinSdk in 1..configuredTargetSdk) {
 val rawVersionCode = providers.environmentVariable("FACTURASTOCK_VERSION_CODE").orNull
 val configuredVersionCode =
     if (rawVersionCode == null) {
-        1
+        13
     } else {
         val normalized = rawVersionCode.trim()
         check(Regex("[1-9][0-9]{0,9}").matches(normalized)) {
@@ -127,7 +127,7 @@ val configuredVersionCode =
 val rawVersionName = providers.environmentVariable("FACTURASTOCK_VERSION_NAME").orNull
 val configuredVersionName =
     if (rawVersionName == null) {
-        "1.0.0"
+        "1.0.12"
     } else {
         val normalized = rawVersionName.trim()
         check(Regex("[0-9A-Za-z](?:[0-9A-Za-z._+-]{0,99})?").matches(normalized)) {
@@ -197,7 +197,7 @@ android {
         versionCode = configuredVersionCode
         versionName = configuredVersionName
         testInstrumentationRunner = "com.facturastock.app.testing.HiltTestRunner"
-        // Solo la variante profile lo apaga para que la captura termine en Home sin mezclar
+        // Solo la variante profile lo apaga para que la captura termine en Vender sin mezclar
         // mantenimiento post-arranque. Producción y benchmark conservan el comportamiento real.
         buildConfigField("boolean", "RUN_DEFERRED_STARTUP", "true")
         // Vacío en builds locales/no configurados. El gate de distribución exige una URL HTTPS
@@ -1581,34 +1581,12 @@ val verifyCloudAppCheckBoundaries by tasks.registering {
 
 val verifyCloudSparkBoundaries by tasks.registering {
     group = "verification"
-    description = "Verifies that cloudSpark uses real config and never connects paid/emulated services."
+    description = "Verifies that cloudSpark sources never connect paid/emulated services."
 
     val sparkSources = layout.projectDirectory.dir("src/spark")
     inputs.dir(sparkSources)
-    inputs.property("firebaseProjectConfigured", firebaseProjectId.isNotBlank())
-    inputs.property("firebaseApplicationConfigured", firebaseApplicationId.isNotBlank())
-    inputs.property("firebaseApiKeyConfigured", firebaseApiKey.isNotBlank())
 
     doLast {
-        check(firebaseProjectId.isNotBlank()) {
-            "cloudSpark requiere firebase.projectId en local.properties"
-        }
-        check(firebaseApplicationId.isNotBlank()) {
-            "cloudSpark requiere firebase.applicationId en local.properties"
-        }
-        check(firebaseApiKey.isNotBlank()) {
-            "cloudSpark requiere firebase.apiKey en local.properties"
-        }
-        check(Regex("[a-z][a-z0-9-]{4,28}[a-z0-9]").matches(firebaseProjectId)) {
-            "firebase.projectId no tiene sintaxis Firebase válida"
-        }
-        check(Regex("1:[0-9]+:android:[0-9a-f]+").matches(firebaseApplicationId)) {
-            "firebase.applicationId no tiene sintaxis Android Firebase válida"
-        }
-        check(Regex("AIza[0-9A-Za-z_-]{35}").matches(firebaseApiKey)) {
-            "firebase.apiKey no tiene sintaxis Firebase válida"
-        }
-
         val forbiddenRuntimeFragments =
             setOf(
                 ".useEmulator(",
@@ -1632,6 +1610,36 @@ val verifyCloudSparkBoundaries by tasks.registering {
             }
         check(violations.isEmpty()) {
             "cloudSpark contiene conexiones prohibidas:\n${violations.joinToString("\n")}"
+        }
+    }
+}
+
+val verifyCloudSparkConfiguration by tasks.registering {
+    group = "verification"
+    description = "Requires valid Firebase configuration only when building cloudSpark."
+    dependsOn(verifyCloudSparkBoundaries)
+    inputs.property("firebaseProjectConfigured", firebaseProjectId.isNotBlank())
+    inputs.property("firebaseApplicationConfigured", firebaseApplicationId.isNotBlank())
+    inputs.property("firebaseApiKeyConfigured", firebaseApiKey.isNotBlank())
+
+    doLast {
+        check(firebaseProjectId.isNotBlank()) {
+            "cloudSpark requiere FACTURASTOCK_FIREBASE_PROJECT_ID o firebase.projectId"
+        }
+        check(firebaseApplicationId.isNotBlank()) {
+            "cloudSpark requiere FACTURASTOCK_FIREBASE_APPLICATION_ID o firebase.applicationId"
+        }
+        check(firebaseApiKey.isNotBlank()) {
+            "cloudSpark requiere FACTURASTOCK_FIREBASE_API_KEY o firebase.apiKey"
+        }
+        check(Regex("[a-z][a-z0-9-]{4,28}[a-z0-9]").matches(firebaseProjectId)) {
+            "firebase.projectId no tiene sintaxis Firebase válida"
+        }
+        check(Regex("1:[0-9]+:android:[0-9a-f]+").matches(firebaseApplicationId)) {
+            "firebase.applicationId no tiene sintaxis Android Firebase válida"
+        }
+        check(Regex("AIza[0-9A-Za-z_-]{35}").matches(firebaseApiKey)) {
+            "firebase.apiKey no tiene sintaxis Firebase válida"
         }
     }
 }
@@ -1858,12 +1866,11 @@ val verifyR8ReleaseConfiguration by tasks.registering {
             }
         }
         setOf(
-            "com/facturastock/app/feature/home/HomeRouteKt",
-            "com/facturastock/app/feature/home/HomeScreenKt",
-            "com/facturastock/app/feature/home/HomeDashboardContentKt",
-        ).forEach { requiredHomeOwner ->
-            check(startupRules.any { rule -> startupRuleOwner(rule) == requiredHomeOwner }) {
-                "El Startup Profile termina antes del Home listo: falta $requiredHomeOwner"
+            "com/facturastock/app/feature/sales/SalesRouteKt",
+            "com/facturastock/app/feature/sales/SalesScreenKt",
+        ).forEach { requiredSalesOwner ->
+            check(startupRules.any { rule -> startupRuleOwner(rule) == requiredSalesOwner }) {
+                "El Startup Profile termina antes de Vender listo: falta $requiredSalesOwner"
             }
         }
 
@@ -1888,16 +1895,22 @@ val verifyR8ReleaseConfiguration by tasks.registering {
         ) {
             "El onboarding debe prepararse desde estado durable limpio antes de cada perfil"
         }
-        check(generatorText.contains("StartupJourney.waitForHomeReady")) {
-            "El perfil debe recorrer el arranque hasta que Home esté operativo"
+        check(generatorText.contains("StartupJourney.waitForSalesReady")) {
+            "El perfil debe recorrer el arranque hasta que Vender esté operativo"
         }
         val startupJourneyText = startupJourney.asFile.readText()
         check(
             startupJourneyText.contains(
-                "private const val HOME_READY_TAG = \"home_scan_cta\"",
-            ),
+                "private const val SALES_READY_TAG = \"sales_entry_kind_screen\"",
+            ) && startupJourneyText.contains("Until.hasObject(By.res(SALES_READY_TAG))") &&
+                startupJourneyText.contains(
+                    "private const val SALES_CASH_ENTRY_TAG = \"sales_cash_entry\"",
+                ) &&
+                startupJourneyText.contains(
+                    "Until.findObject(By.res(SALES_CASH_ENTRY_TAG).enabled(true).clickable(true))",
+                ),
         ) {
-            "El recorrido de perfil perdió el marcador de contenido Home"
+            "El recorrido de perfil debe esperar el selector de ventas y su acción habilitada"
         }
     }
 }
@@ -2088,8 +2101,10 @@ verifyOfflineFirstBoundaries.configure {
     dependsOn(verifyCloudAppCheckBoundaries, verifyCloudSparkBoundaries)
 }
 
-tasks.matching { task -> task.name == "assembleCloudSpark" }.configureEach {
-    dependsOn(verifyCloudSparkBoundaries)
+// También protege package/bundle/install: el control pertenece al pre-build de la variante,
+// no al preBuild compartido que ejecutan localDebug y los gates sin credenciales de CI.
+tasks.matching { task -> task.name == "preCloudSparkBuild" }.configureEach {
+    dependsOn(verifyCloudSparkConfiguration)
 }
 
 val verifyRoomSchemaPolicy by tasks.registering {

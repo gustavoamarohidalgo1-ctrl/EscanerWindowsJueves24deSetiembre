@@ -83,6 +83,13 @@ class OcrViewModel @Inject constructor(
 
             OcrContract.Action.Cancel -> cancelOcr()
             OcrContract.Action.EnterManually -> enterManually()
+            OcrContract.Action.ContinueToMatching -> {
+                val draftId = uiState.value.draftId
+                if (draftId != null) {
+                    terminalEffectEmitted = true
+                    executeMain { emitEffect(OcrContract.Effect.OpenMatching(draftId)) }
+                }
+            }
             OcrContract.Action.BackSelected -> {
                 if (
                     !uiState.value.isRunning &&
@@ -147,62 +154,41 @@ class OcrViewModel @Inject constructor(
                 } catch (failure: Throwable) {
                     throw InvoiceParsingStageException(failure)
                 }
-                withContext(dispatcherProvider.main) {
-                    updateState {
-                        if (isRunning && !isCancelling) {
-                            copy(stage = null, isSavingProducts = true)
-                        } else {
-                            this
-                        }
-                    }
-                }
-                OcrProductImportOutcome(
-                    pageCount = ocrResult.pageCount,
-                    result = importScannedInvoiceProductsUseCase(draftId, parsedInvoice),
-                )
+                val eligibleCount = parsedInvoice.lineItems.items.count { !it.description?.value.isNullOrBlank() }
+                ocrResult.pageCount to eligibleCount
             },
-            onSuccess = { outcome ->
+            onSuccess = { (pageCount, eligibleCount) ->
                 ocrJob = null
-                when (val result = outcome.result) {
-                    is ImportScannedInvoiceProductsResult.Success -> {
-                        updateState {
-                            copy(
-                                isRunning = false,
-                                isSavingProducts = false,
-                                isCancelling = false,
-                                isEnteringManually = false,
-                                isRecoveringInterruptedOcr = false,
-                                completedPageCount = outcome.pageCount,
-                                failure = null,
-                                manualEntryFailed = false,
-                            )
-                        }
-                        terminalEffectEmitted = true
-                        emitEffect(
-                            OcrContract.Effect.OpenProducts(
-                                createdCount = result.counts.importedCount,
-                                existingCount = result.counts.alreadyExistingCount,
-                                skippedCount = result.counts.duplicateLineCount +
-                                    result.counts.skippedLineCount,
-                            ),
+                if (eligibleCount == 0) {
+                    updateState {
+                        copy(
+                            stage = null,
+                            isRunning = false,
+                            isSavingProducts = false,
+                            isCancelling = false,
+                            isEnteringManually = false,
+                            isRecoveringInterruptedOcr = false,
+                            completedPageCount = 0,
+                            failure = OcrContract.Failure.NO_PRODUCTS_FOUND,
+                            manualEntryFailed = false,
                         )
                     }
-
-                    is ImportScannedInvoiceProductsResult.Failure -> {
-                        updateState {
-                            copy(
-                                stage = null,
-                                isRunning = false,
-                                isSavingProducts = false,
-                                isCancelling = false,
-                                isEnteringManually = false,
-                                isRecoveringInterruptedOcr = false,
-                                completedPageCount = 0,
-                                failure = result.error.toUiFailure(),
-                                manualEntryFailed = false,
-                            )
-                        }
+                } else {
+                    updateState {
+                        copy(
+                            stage = null,
+                            isRunning = false,
+                            isSavingProducts = false,
+                            isCancelling = false,
+                            isEnteringManually = false,
+                            isRecoveringInterruptedOcr = false,
+                            completedPageCount = pageCount,
+                            failure = null,
+                            manualEntryFailed = false,
+                        )
                     }
+                    terminalEffectEmitted = true
+                    emitEffect(OcrContract.Effect.OpenMatching(draftId))
                 }
             },
             onFailure = { failure ->
@@ -361,6 +347,7 @@ class OcrViewModel @Inject constructor(
     private fun cancelOcr() {
         if (
             !uiState.value.isRunning ||
+            uiState.value.isSavingProducts ||
             uiState.value.isCancelling ||
             cancellationJob?.isActive == true
         ) {

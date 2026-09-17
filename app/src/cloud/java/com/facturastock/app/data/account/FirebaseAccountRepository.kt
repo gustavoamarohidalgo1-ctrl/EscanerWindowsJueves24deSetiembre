@@ -1,6 +1,7 @@
 package com.facturastock.app.data.account
 
 import com.facturastock.app.data.sync.FirebaseBackupRuntime
+import com.facturastock.app.data.sync.FirebaseBackendMode
 import com.facturastock.app.domain.error.AccountError
 import com.facturastock.app.domain.error.AccountException
 import com.facturastock.app.domain.error.DomainResult
@@ -43,6 +44,9 @@ class FirebaseAccountRepository @Inject constructor(
 
     override val available: Boolean
         get() = runtime.config != null
+
+    override val accountDeletionAvailable: Boolean
+        get() = available && runtime.backendMode == FirebaseBackendMode.CALLABLES
 
     /**
      * Marca de sesión expirada fijada por [recoverSession]: aunque el SDK siga viendo un
@@ -245,7 +249,7 @@ class FirebaseAccountRepository @Inject constructor(
                 // Segunda frontera de identidad: aunque Auth cambiase fuera de este
                 // repositorio, Functions rechaza un JWT que no corresponda al usuario que
                 // reautenticó y autorizó esta eliminación.
-                .call(mapOf("expectedUid" to expectedUid))
+                .call(mapOf("expectedUid" to expectedUid, "responseVersion" to 2))
                 .await()
             val data = result.data as? Map<*, *>
                 ?: throw AccountException(AccountError.Unexpected)

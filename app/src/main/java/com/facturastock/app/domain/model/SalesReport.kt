@@ -1,6 +1,10 @@
 package com.facturastock.app.domain.model
 
+import com.facturastock.app.domain.model.id.ProductId
+import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.SaleId
+import com.facturastock.app.domain.model.id.SaleLineId
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 
@@ -36,6 +40,56 @@ enum class RealizedProfitIssue {
     DECIMAL_LIMIT_EXCEEDED,
 }
 
+/** Producto vendido y su ganancia realizada usando exclusivamente valores históricos. */
+data class RealizedSaleLineProfit(
+    val saleLineId: SaleLineId,
+    val productId: ProductId,
+    val position: Int,
+    val productName: String,
+    val unitCode: String,
+    val locationName: String,
+    /** Nula únicamente si una persistencia inválida impide reconstruirla con seguridad. */
+    val quantity: Quantity?,
+    val totalCharged: Money,
+    val netRevenue: Money,
+    val historicalCost: ExactMonetaryAmount?,
+    val grossProfit: ExactMonetaryAmount?,
+    val issues: Set<RealizedProfitIssue> = emptySet(),
+) {
+    init {
+        require(position >= 0) { "La posición de una línea realizada no puede ser negativa" }
+        require(productName.isNotBlank() && unitCode.isNotBlank() && locationName.isNotBlank()) {
+            "Una línea realizada debe conservar sus descripciones históricas"
+        }
+        require(quantity != null || RealizedProfitIssue.INVALID_PERSISTED_DATA in issues) {
+            "Una cantidad ausente debe quedar marcada como dato histórico inválido"
+        }
+        require(totalCharged.currency == netRevenue.currency) {
+            "Total cobrado e ingreso neto de línea deben compartir moneda"
+        }
+        require(
+            totalCharged.minorUnits >= 0L &&
+                netRevenue.minorUnits in 0L..totalCharged.minorUnits,
+        ) { "Los ingresos de una línea realizada no pueden ser negativos" }
+        require((historicalCost == null) == (grossProfit == null)) {
+            "Costo histórico y ganancia de línea deben estar ambos disponibles o ambos ausentes"
+        }
+        require(issues.isEmpty() == (historicalCost != null)) {
+            "Una ganancia de línea disponible no puede ocultar alertas de costeo"
+        }
+        historicalCost?.let { cost ->
+            val profit = requireNotNull(grossProfit)
+            require(cost.currency == totalCharged.currency && profit.currency == totalCharged.currency) {
+                "Ingreso, costo y ganancia de línea deben compartir moneda"
+            }
+            require(cost.amount.signum() >= 0) { "El costo histórico de línea no puede ser negativo" }
+            require(
+                profit.amount.compareTo(netRevenue.toMajor().subtract(cost.amount)) == 0,
+            ) { "La ganancia de línea no coincide con ingreso neto menos costo histórico" }
+        }
+    }
+}
+
 /**
  * Resultado realizado e inmutable de una venta confirmada.
  *
@@ -49,17 +103,44 @@ data class RealizedSaleProfit(
     val netRevenue: Money,
     val historicalCost: ExactMonetaryAmount?,
     val grossProfit: ExactMonetaryAmount?,
-    val lineCount: Int,
+    val lines: List<RealizedSaleLineProfit>,
     val postedAt: Instant,
     val issues: Set<RealizedProfitIssue> = emptySet(),
 ) {
+    val lineCount: Int
+        get() = lines.size
+
     init {
-        require(lineCount > 0) { "Una venta confirmada debe tener líneas" }
+        require(lines.isNotEmpty()) { "Una venta confirmada debe tener líneas" }
+        require(lines.map(RealizedSaleLineProfit::saleLineId).distinct().size == lines.size) {
+            "Una venta realizada no puede repetir saleLineId"
+        }
+        require(lines.map(RealizedSaleLineProfit::position) == lines.indices.toList()) {
+            "Las líneas realizadas deben conservar posiciones densas y ordenadas"
+        }
         require(totalCharged.currency == netRevenue.currency) {
             "Total cobrado e ingreso neto deben compartir moneda"
         }
+        require(lines.all { it.totalCharged.currency == totalCharged.currency }) {
+            "Todas las líneas realizadas deben usar la moneda de la venta"
+        }
+        require(
+            lines.fold(0L) { total, line -> Math.addExact(total, line.totalCharged.minorUnits) } ==
+                totalCharged.minorUnits,
+        ) { "El total cobrado no coincide con sus líneas realizadas" }
+        require(
+            lines.fold(0L) { total, line -> Math.addExact(total, line.netRevenue.minorUnits) } ==
+                netRevenue.minorUnits,
+        ) { "El ingreso neto no coincide con sus líneas realizadas" }
         require(totalCharged.minorUnits >= 0L && netRevenue.minorUnits >= 0L) {
             "Los ingresos de una venta no pueden ser negativos"
+        }
+        val lineIssues = lines.flatMap(RealizedSaleLineProfit::issues).toSet()
+        require(issues.containsAll(lineIssues)) {
+            "La venta debe conservar todas las alertas de sus líneas"
+        }
+        require((issues - lineIssues).all { it == RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED }) {
+            "Una venta sólo puede añadir alertas propias por límites del agregado"
         }
         require((historicalCost == null) == (grossProfit == null)) {
             "Costo histórico y ganancia deben estar ambos disponibles o ambos ausentes"
@@ -73,6 +154,12 @@ data class RealizedSaleProfit(
                 "Ingreso, costo y ganancia deben compartir moneda"
             }
             require(cost.amount.signum() >= 0) { "El costo histórico no puede ser negativo" }
+            val expectedCost = lines.fold(BigDecimal.ZERO) { total, line ->
+                total.add(requireNotNull(line.historicalCost).amount)
+            }
+            require(cost.amount.compareTo(expectedCost) == 0) {
+                "El costo histórico no coincide con sus líneas realizadas"
+            }
             require(
                 profit.amount.compareTo(netRevenue.toMajor().subtract(cost.amount)) == 0,
             ) { "La ganancia no coincide con ingreso neto menos costo histórico" }
@@ -115,8 +202,15 @@ data class SalesReport(
     val primaryCurrency: CurrencyCode,
     val sales: List<RealizedSaleProfit>,
     val totalsByCurrency: List<SalesReportTotals>,
+    /** Identidad del negocio que produjo estas filas, también cuando cambia la configuración. */
+    val businessId: BusinessId? = null,
+    val debtPayments: List<DebtPaymentReportItem> = emptyList(),
 ) {
     init {
+        validateDebtPaymentsInReport(debtPayments, businessId, range)
+        require(sales.map(RealizedSaleProfit::saleId).distinct().size == sales.size) {
+            "El reporte no puede repetir una venta"
+        }
         require(sales.zipWithNext().all { (first, second) ->
             first.postedAt > second.postedAt ||
                 (first.postedAt == second.postedAt && first.saleId.value >= second.saleId.value)

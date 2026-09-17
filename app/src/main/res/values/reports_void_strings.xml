@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reports_void_action">Anular venta</string>
+    <string name="reports_void_cancel">Cancelar</string>
+    <string name="reports_void_retry">Volver a revisar</string>
+    <string name="reports_void_title">¿Anular esta venta?</string>
+    <string name="reports_void_message">La venta dejará de contar en Reportes y los productos volverán a sus almacenes. Se conservará el historial de la venta.</string>
+    <string name="reports_void_loading">Revisando la venta y el stock que se devolverá…</string>
+    <string name="reports_void_saving">Anulando la venta…</string>
+    <string name="reports_void_date">Fecha: %1$s</string>
+    <string name="reports_void_total">Importe de la venta: %1$s</string>
+    <string name="reports_void_stock">Productos que volverán al stock</string>
+    <string name="reports_void_line">%1$s · %2$s %3$s
+Almacén: %4$s</string>
+    <string name="reports_void_debt">Saldo pendiente que se cancelará: %1$s</string>
+    <string name="reports_void_refund">Dinero ya cobrado que debes devolver al cliente: %1$s. La aplicación no transfiere ni devuelve dinero automáticamente.</string>
+    <string name="reports_void_no_refund">Esta venta no tiene dinero cobrado que devolver.</string>
+    <string name="reports_void_success">Venta anulada. El stock quedó devuelto y Reportes se actualizará automáticamente.</string>
+    <string name="reports_void_notice_dismiss">Entendido</string>
+    <string name="reports_void_error_load">No se pudo revisar la venta. Vuelve a intentarlo.</string>
+    <string name="reports_void_error_save">No pudimos confirmar la anulación. Vuelve a revisar la venta antes de reintentar.</string>
+    <string name="reports_void_error_stale">La venta cambió. Revisa los importes y productos actualizados y confirma nuevamente.</string>
+    <string name="reports_void_error_business">El negocio activo cambió. Cierra este aviso y vuelve a abrir la venta en su negocio.</string>
+    <string name="reports_void_error_missing">Esta venta ya no está disponible. Cierra este aviso y actualiza Reportes.</string>
+    <string name="reports_void_error_unauthorized">Tu usuario no tiene permiso para anular esta venta.</string>
+    <string name="reports_void_error_shared">La anulación con devolución de stock está disponible para negocios locales. Todavía no está disponible para negocios compartidos.</string>
+    <string name="reports_void_error_history">No se puede anular porque el historial de la venta o del stock está incompleto. No se aplicó la anulación.</string>
+</resources>

@@ -38,6 +38,7 @@ class AccountViewModel @Inject constructor(
     dispatcherProvider: DispatcherProvider,
 ) : UdfViewModel<AccountContract.State, AccountContract.Action, AccountContract.Effect>(
     initialState = AccountContract.State(
+        accountDeletionAvailable = accountRepository.accountDeletionAvailable,
         email = savedStateHandle.get<String>(EMAIL_KEY).orEmpty()
             .take(AccountContract.EMAIL_MAX_LENGTH),
     ),
@@ -61,7 +62,7 @@ class AccountViewModel @Inject constructor(
     @Volatile
     private var membershipIdentityGeneration: Long = 0L
     private var pendingDeletionUid: String? = null
-    private var deletionConfirmedInThisProcess: Boolean = false
+    private var deletionOutcomeInThisProcess: AccountContract.Feedback? = null
     @Volatile
     private var activeConfigurationIsDemo: Boolean = false
 
@@ -133,7 +134,10 @@ class AccountViewModel @Inject constructor(
             AccountContract.Action.SignOutConfirmed -> signOut()
 
             AccountContract.Action.DeleteAccountRequested -> executeMain {
-                if (uiState.value.session.canRequestAccountDeletion() && !uiState.value.isWorking) {
+                if (
+                    uiState.value.accountDeletionAvailable &&
+                    uiState.value.session.canRequestAccountDeletion() && !uiState.value.isWorking
+                ) {
                     updateState {
                         copy(
                             showAccountDeletionDialog = true,
@@ -849,6 +853,7 @@ class AccountViewModel @Inject constructor(
     private fun deleteAccount() {
         val snapshot = uiState.value
         if (
+            !snapshot.accountDeletionAvailable ||
             !snapshot.session.canRequestAccountDeletion() ||
             !snapshot.canConfirmAccountDeletion ||
             snapshot.isWorking ||
@@ -859,7 +864,7 @@ class AccountViewModel @Inject constructor(
         }
         val expectedUid = snapshot.session.authenticatedUidOrNull() ?: return
         val reauthenticationPassword = snapshot.accountDeletionPassword
-        deletionConfirmedInThisProcess = false
+        deletionOutcomeInThisProcess = null
         accountDeletionRequestJob = executeIo(
             before = {
                 updateState {
@@ -893,7 +898,11 @@ class AccountViewModel @Inject constructor(
             onSuccess = { attempt ->
                 when (val result = attempt.result) {
                     is DomainResult.Success -> {
-                        deletionConfirmedInThisProcess = true
+                        deletionOutcomeInThisProcess = if (result.value.isPending) {
+                            AccountContract.Feedback.ACCOUNT_DELETION_PENDING
+                        } else {
+                            AccountContract.Feedback.ACCOUNT_DELETED
+                        }
                         pendingDeletionUid = expectedUid
                         updateState {
                             copy(
@@ -1009,9 +1018,14 @@ class AccountViewModel @Inject constructor(
     }
 
     private fun clearPendingDeletion(showFeedback: Boolean) {
-        val showConfirmedDeletionFeedback = showFeedback && deletionConfirmedInThisProcess
+        val deletionFeedback = if (showFeedback) {
+            deletionOutcomeInThisProcess ?: AccountContract.Feedback.ACCOUNT_DELETION_UNCONFIRMED
+        } else {
+            null
+        }
+        val showConfirmedDeletionFeedback = deletionFeedback == AccountContract.Feedback.ACCOUNT_DELETED
         pendingDeletionUid = null
-        deletionConfirmedInThisProcess = false
+        deletionOutcomeInThisProcess = null
         updateState {
             copy(
                 isWorking = false,
@@ -1020,11 +1034,7 @@ class AccountViewModel @Inject constructor(
                 deletionPendingSignOut = false,
                 password = if (showConfirmedDeletionFeedback) "" else password,
                 memberships = if (showConfirmedDeletionFeedback) emptyList() else memberships,
-                feedback = if (showConfirmedDeletionFeedback) {
-                    AccountContract.Feedback.ACCOUNT_DELETED
-                } else {
-                    null
-                },
+                feedback = deletionFeedback,
                 failure = null,
             )
         }

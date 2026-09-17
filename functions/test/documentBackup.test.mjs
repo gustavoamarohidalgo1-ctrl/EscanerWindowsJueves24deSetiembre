@@ -787,6 +787,58 @@ test("upload y purge concurrentes nunca dejan objeto huérfano", async () => {
   assert.equal((await bucket.file(pathFor(upload)).exists())[0], false);
 });
 
+test("un finalizador revocado conserva el objeto confirmado por un retry concurrente", async () => {
+  const user = await verifiedUser();
+  const { businessId, purchaseId } = await seed(user);
+  const upload = uploadRequest(businessId, purchaseId);
+  const request = { auth: { uid: user.uid, token: { email_verified: true } }, data: upload };
+  const file = bucket.file(pathFor(upload));
+  let signalSaved;
+  let releaseFirstUpload;
+  const saved = new Promise((resolve) => { signalSaved = resolve; });
+  const released = new Promise((resolve) => { releaseFirstUpload = resolve; });
+  const first = uploadPurchaseDocumentHandler(request, decodeJpeg, () => ({
+    file: () => ({
+      async save(...args) {
+        await file.save(...args);
+        signalSaved();
+        await released;
+      },
+      getMetadata: (...args) => file.getMetadata(...args),
+      delete: (...args) => file.delete(...args),
+    }),
+  })).then(
+    value => ({ value }),
+    error => ({ error }),
+  );
+  try {
+    // The first invocation has a durable RESERVED marker and bytes, but has not finalized.
+    await Promise.race([
+      saved,
+      first.then((result) => { throw result.error ?? new Error("upload did not pause"); }),
+    ]);
+    const replay = await uploadPurchaseDocumentHandler(request, decodeJpeg, () => bucket);
+    assert.equal(replay.ok, true);
+    const backupRef = db.doc(`businesses/${businessId}/documentBackups/${upload.document.imageId}`);
+    assert.equal((await backupRef.get()).data().status, "COMPLETE");
+
+    await db.doc(`businesses/${businessId}/members/${user.uid}`).delete();
+    releaseFirstUpload();
+    const late = await first;
+    assert.equal(late.error?.message, "NOT_A_MEMBER");
+    assert.equal((await file.exists())[0], true);
+    assert.equal((await backupRef.get()).data().status, "COMPLETE");
+    assert.equal(
+      (await db.doc(`businesses/${businessId}/documentSyncOperations/${sha(upload.idempotencyKey)}`).get())
+        .data().status,
+      "COMPLETE",
+    );
+  } finally {
+    releaseFirstUpload();
+    await first;
+  }
+});
+
 test("lock de account deletion gana tras reserva y limpia un save tardío", async () => {
   const user = await verifiedUser();
   const { businessId, purchaseId } = await seed(user);

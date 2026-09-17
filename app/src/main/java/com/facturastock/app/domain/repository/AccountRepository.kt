@@ -15,6 +15,10 @@ interface AccountRepository {
     /** `false` en el flavor local o sin Firebase configurado: la nube no existe aquí. */
     val available: Boolean
 
+    /** Capacidad real del backend activo; Spark no dispone del servicio de borrado remoto. */
+    val accountDeletionAvailable: Boolean
+        get() = available
+
     /** Estado actual de la sesión; emite en cada cambio de autenticación o de enlace. */
     fun observeSession(): Flow<AccountSession>
 

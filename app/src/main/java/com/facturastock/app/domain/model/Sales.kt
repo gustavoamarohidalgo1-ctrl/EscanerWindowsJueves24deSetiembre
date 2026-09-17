@@ -52,6 +52,11 @@ data class SaleCartLine(
     }
 }
 
+data class PendingSaleCheckout(
+    val debtorName: String?,
+    val debtDueAt: Instant?,
+)
+
 data class SaleCart(
     val saleId: SaleId,
     val businessId: BusinessId,
@@ -68,6 +73,7 @@ data class SaleCart(
     val createdAt: Instant,
     val updatedAt: Instant,
     val postedAt: Instant?,
+    val pendingCheckout: PendingSaleCheckout? = null,
 ) {
     init {
         require(version >= 0L) { "version no puede ser negativa" }

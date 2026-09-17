@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.facturastock.app.core.coroutines.DefaultDispatcherProvider
@@ -16,11 +17,21 @@ import com.facturastock.app.domain.model.id.ImageId
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import kotlin.math.PI
+import kotlin.math.roundToInt
+import kotlin.math.tan
+import kotlin.random.Random
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -141,6 +152,199 @@ class LocalImageQualityAnalyzerTest {
             .single()
         assertTrue(kotlin.math.abs(warning.estimatedDegreesTenths) in 40..80)
         assertTrue(warning.confidencePermille >= LocalImageQualityAnalyzer.MIN_SKEW_CONFIDENCE_PERMILLE)
+    }
+
+    @Test
+    fun blockLuminanceMatchesPreviousRowsExactlyWithAlphaAndPartialBlocks() = runBlocking {
+        for (height in listOf(1, 15, 16, 17, 33)) {
+            val width = if (height == 33) 768 else 37
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val random = Random(height)
+            val pixels = IntArray(width * height) { random.nextInt() }
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+            try {
+                assertArrayEquals(
+                    "height=$height",
+                    previousLuminance(bitmap),
+                    analyzer.readLuminance(bitmap),
+                )
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    @Test
+    fun precomputedInkMatchesPreviousSkewExactlyAcrossSparseDenseAndBoundaryInputs() = runBlocking {
+        for ((width, height) in listOf(95 to 160, 96 to 96, 97 to 129, 400 to 600, 767 to 768)) {
+            for (fixture in 0..5) {
+                val gray = qualityFixture(width, height, fixture)
+                val mean = meanLuminance(gray)
+                assertEquals(
+                    "${width}x$height fixture=$fixture",
+                    previousSkew(gray, width, height, mean),
+                    analyzer.estimateSkew(gray, width, height, mean),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun canceledQualityKernelsDoNotReturnPartialResults() = runBlocking {
+        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        try {
+            val luminance = launch(start = CoroutineStart.UNDISPATCHED) {
+                currentCoroutineContext().cancel()
+                analyzer.readLuminance(bitmap)
+                fail("El cálculo de luminancia debe respetar la cancelación")
+            }
+            val skew = launch(start = CoroutineStart.UNDISPATCHED) {
+                currentCoroutineContext().cancel()
+                analyzer.estimateSkew(ByteArray(96 * 96), 96, 96, 200)
+                fail("El cálculo de inclinación debe respetar la cancelación")
+            }
+            luminance.join()
+            skew.join()
+            assertTrue(luminance.isCancelled)
+            assertTrue(skew.isCancelled)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** Diagnóstico del kernel; no es un presupuesto ni una medición de fluidez de la app. */
+    @Test
+    fun recordSkewKernelDiagnosticWithTheSameSyntheticInvoice() = runBlocking {
+        val width = 768
+        val height = 768
+        for ((fixture, label) in listOf(4 to "sparse", 5 to "dense", 1 to "uniformDark")) {
+            val gray = qualityFixture(width, height, fixture)
+            val mean = meanLuminance(gray)
+            val expected = previousSkew(gray, width, height, mean)
+            repeat(3) {
+                previousSkew(gray, width, height, mean)
+                analyzer.estimateSkew(gray, width, height, mean)
+            }
+            val before = LongArray(9)
+            val after = LongArray(9)
+            repeat(9) { index ->
+                fun measurePrevious() {
+                    val start = System.nanoTime()
+                    val result = previousSkew(gray, width, height, mean)
+                    before[index] = System.nanoTime() - start
+                    assertEquals(expected, result)
+                }
+                suspend fun measureCurrent() {
+                    val start = System.nanoTime()
+                    val result = analyzer.estimateSkew(gray, width, height, mean)
+                    after[index] = System.nanoTime() - start
+                    assertEquals(expected, result)
+                }
+                if (index % 2 == 0) {
+                    measurePrevious()
+                    measureCurrent()
+                } else {
+                    measureCurrent()
+                    measurePrevious()
+                }
+            }
+            val threshold = minOf(180, mean - 25)
+            var sampledPoints = 0
+            var inkPoints = 0
+            for (y in height / 20 until height - height / 20 step 2) {
+                for (x in width / 20 until width - width / 20 step 2) {
+                    sampledPoints++
+                    if ((gray[y * width + x].toInt() and 255) <= threshold) inkPoints++
+                }
+            }
+            val pointScratchBytes = if (threshold > 0) sampledPoints * Int.SIZE_BYTES else 0
+            Log.i(
+                "ImageKernelDiagnostic",
+                "skew768 synthetic $label; sampledPoints=$sampledPoints; inkPoints=$inkPoints; " +
+                    "pointScratchBytes=$pointScratchBytes; " +
+                    "previousNs=${before.joinToString()}; currentNs=${after.joinToString()}; " +
+                    "previousMedianNs=${before.sorted()[4]}; currentMedianNs=${after.sorted()[4]}",
+            )
+        }
+    }
+
+    private fun previousLuminance(bitmap: Bitmap): ByteArray {
+        val width = bitmap.width
+        val gray = ByteArray(width * bitmap.height)
+        val row = IntArray(width)
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, width, 0, y, width, 1)
+            for (x in row.indices) {
+                val color = row[x]
+                val alpha = color ushr 24 and 255
+                fun composite(channel: Int): Int = (channel * alpha + 255 * (255 - alpha) + 127) / 255
+                val red = composite(color ushr 16 and 255)
+                val green = composite(color ushr 8 and 255)
+                val blue = composite(color and 255)
+                gray[y * width + x] = ((red * 77 + green * 150 + blue * 29) ushr 8).toByte()
+            }
+        }
+        return gray
+    }
+
+    private fun qualityFixture(width: Int, height: Int, fixture: Int): ByteArray {
+        val random = Random(width * height + fixture)
+        return ByteArray(width * height) { index ->
+            val x = index % width
+            val y = index / width
+            when (fixture) {
+                0 -> 255
+                1 -> 25
+                2 -> random.nextInt(256)
+                3 -> if ((x + y) % 2 == 0) 0 else 255
+                4 -> if (x in 70 until width - 70 && (y - x / 10) % 45 in 0..2) 10 else 245
+                else -> if (x < width / 4 || y % 9 < 4) 45 else 210
+            }.toByte()
+        }
+    }
+
+    private fun meanLuminance(gray: ByteArray): Int =
+        (gray.sumOf { (it.toInt() and 255).toLong() } / gray.size).toInt()
+
+    /** Referencia anterior con 21 barridos: conserva orden, umbrales y redondeo. */
+    private fun previousSkew(
+        gray: ByteArray,
+        width: Int,
+        height: Int,
+        meanLuminance: Int,
+    ): LocalImageQualityAnalyzer.SkewEstimate {
+        if (width < 96 || height < 96) return LocalImageQualityAnalyzer.SkewEstimate()
+        val threshold = minOf(180, meanLuminance - 25)
+        if (threshold <= 0) return LocalImageQualityAnalyzer.SkewEstimate()
+        val marginX = width / 20
+        val marginY = height / 20
+        val centerX = width / 2
+        var bestAngle = 0
+        var bestScore = Long.MIN_VALUE
+        var zeroScore = 0L
+        for (angle in -10..10) {
+            val tangent = tan(angle * PI / 180.0)
+            val histogram = IntArray(height + 320)
+            for (y in marginY until height - marginY step 2) {
+                for (x in marginX until width - marginX step 2) {
+                    if ((gray[y * width + x].toInt() and 255) <= threshold) {
+                        val projected = (y - tangent * (x - centerX)).roundToInt() + 160
+                        if (projected in histogram.indices) histogram[projected]++
+                    }
+                }
+            }
+            var score = 0L
+            histogram.forEach { count -> score += count.toLong() * count }
+            if (angle == 0) zeroScore = score
+            if (score > bestScore) {
+                bestScore = score
+                bestAngle = angle
+            }
+        }
+        if (bestScore <= 0 || bestAngle == 0) return LocalImageQualityAnalyzer.SkewEstimate()
+        val improvement = ((bestScore - zeroScore).coerceAtLeast(0) * 1_000 / bestScore).toInt()
+        if (improvement < 30) return LocalImageQualityAnalyzer.SkewEstimate()
+        return LocalImageQualityAnalyzer.SkewEstimate(bestAngle * 10, improvement)
     }
 
     private fun writeSolidJpeg(name: String, width: Int, height: Int, color: Int): File {

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="inventory_stock_editor_scroll_help">Desliza para ver los demás datos. Guardar y Cancelar permanecen abajo.</string>
+    <string name="inventory_stock_editor_quantity">Cantidad actual (total en esta ubicación)</string>
+    <string name="inventory_stock_editor_purchase_price">Precio de compra por unidad</string>
+    <string name="inventory_stock_editor_sale_price">Precio de venta por unidad</string>
+    <string name="inventory_stock_editor_unit">Cantidad y precios expresados en unidades de inventario: %1$s.</string>
+    <string name="inventory_stock_editor_unknown_unit">unidad del producto</string>
+    <string name="inventory_stock_editor_adjustment_help">Compra es el costo promedio actual. La cantidad reemplaza el total, no se suma. Al cambiar cantidad o compra se registra un ajuste y se conserva el historial de compras y ventas.</string>
+    <string name="inventory_stock_editor_loading">Cargando cantidad y costo actuales…</string>
+    <string name="inventory_stock_editor_load_failed_title">No se pudieron cargar las existencias</string>
+    <string name="inventory_stock_editor_load_failed">Reintenta antes de guardar para revisar la cantidad y el costo actuales.</string>
+    <string name="inventory_stock_editor_all_locations_total">Total en todas las ubicaciones: %1$s</string>
+    <string name="inventory_stock_editor_total_unknown">Total en todas las ubicaciones: falta revisar cantidades sin registrar</string>
+    <string name="inventory_stock_editor_choose_location">Seleccionar ubicación para editar</string>
+    <string name="inventory_stock_editor_location_balance">Cantidad: %1$s · Compra por unidad: %2$s %3$s</string>
+    <string name="inventory_stock_editor_unknown_cost">Sin costo registrado</string>
+    <string name="inventory_stock_editor_unknown_quantity">Sin cantidad registrada</string>
+    <string name="inventory_stock_editor_location_help">Selecciona una ubicación para ver y editar su cantidad total y su costo. Los costos de distintas monedas se muestran por separado.</string>
+    <string name="inventory_stock_editor_location">Ubicación: %1$s</string>
+    <string name="inventory_stock_editor_shared_help">En este inventario compartido puedes editar los datos del producto y el precio de venta. La cantidad y el costo se muestran para consulta.</string>
+    <string name="inventory_stock_editor_missing_cost_help">Para aumentar la cantidad sin un costo registrado, ingresa el precio de compra por unidad. El valor 0 es válido e indica un costo de cero.</string>
+</resources>

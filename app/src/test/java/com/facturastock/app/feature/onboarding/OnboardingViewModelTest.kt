@@ -85,6 +85,10 @@ class OnboardingViewModelTest {
 
             viewModel.onAction(OnboardingContract.Action.BusinessNameChanged("Bodega Lola"))
             runCurrent()
+            assertTrue(viewModel.uiState.value.canSave)
+
+            viewModel.onAction(OnboardingContract.Action.WarehouseNameChanged(""))
+            runCurrent()
             assertFalse(viewModel.uiState.value.canSave)
 
             viewModel.onAction(OnboardingContract.Action.WarehouseNameChanged("Almacén central"))
