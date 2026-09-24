@@ -1,6 +1,7 @@
 package com.facturastock.app.navigation
 
 import android.os.Build
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import androidx.compose.ui.semantics.Role
@@ -254,8 +255,11 @@ class InventoryProductActionsJourneyTest {
 
         replaceInventoryInput("zz")
         waitForTag(InventoryTestTags.EMPTY)
-        composeRule.onNodeWithTag(ScannerCodeInputTestTags.RESET).performClick()
+        // Inventario ya no muestra «Reiniciar lector»: borrar el campo restablece la lista.
+        replaceInventoryInput("")
         assertInventoryInput("")
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.RESET).assertDoesNotExist()
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.SUBMIT).assertDoesNotExist()
         composeRule
             .onNodeWithTag(InventoryTestTags.LIST_SCREEN)
             .performScrollToNode(hasTestTag(InventoryTestTags.product(product.productId)))
@@ -265,7 +269,12 @@ class InventoryProductActionsJourneyTest {
         val barcode = "0001234567895"
         runBlocking { assertTrue(products.update(product.copy(barcode = barcode))) }
         replaceInventoryInput(barcode)
-        composeRule.onNodeWithTag(ScannerCodeInputTestTags.SUBMIT).assertIsEnabled().performClick()
+        // Sin botón «Abrir por código», el Enter final del lector confirma la lectura.
+        scenario.onActivity { activity ->
+            val field = requireNotNull(activity.window.decorView.findViewWithTag<EditText>(ScannerCodeInputTestTags.FIELD))
+            field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        }
         waitForTag(CatalogsTestTags.PRODUCT_NAME)
         composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_NAME).performScrollTo().assertTextContains(product.name)
         runBlocking { assertEquals(product.productId, products.findByBarcode(businessId, barcode)?.productId) }

@@ -49,7 +49,6 @@ object AppRoutes {
     const val PURCHASES = "purchases"
     const val INVENTORY = "inventory"
     const val INVENTORY_REGISTER = "inventory/register"
-    const val SETTINGS = "settings"
     const val ONBOARDING = "onboarding"
 
     const val ACCOUNT = "account"
@@ -99,7 +98,6 @@ object AppRoutes {
             titleRes = R.string.navigation_products,
         ),
         RouteDefinition(PURCHASES, titleRes = R.string.navigation_purchase_history),
-        RouteDefinition(SETTINGS, titleRes = R.string.navigation_settings),
         RouteDefinition(ONBOARDING, titleRes = R.string.onboarding_title),
         RouteDefinition(ACCOUNT, titleRes = R.string.navigation_account),
         RouteDefinition(ACCOUNT_MEMBERS, titleRes = R.string.navigation_account_members),

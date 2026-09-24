@@ -267,7 +267,7 @@ data class ReconciliationReport(
 
 /** Normalización de nombre de producto para el enlace exacto local↔remoto. */
 fun normalizeProductName(name: String): String =
-    name.trim().uppercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+    name.trim().uppercase(Locale.ROOT).replace(WhitespaceRun, " ")
 
 /**
  * Reconciliador puro: compara el libro remoto completo contra la instantánea local.
@@ -474,3 +474,6 @@ private data class RemoteProductBalance(
     val productName: String?,
     val remoteNet: BigDecimal,
 )
+
+// Compilada una vez: antes se creaba una expresión regular nueva en cada normalización.
+private val WhitespaceRun = Regex("\\s+")

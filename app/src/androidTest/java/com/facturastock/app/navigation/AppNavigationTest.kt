@@ -292,7 +292,8 @@ class AppNavigationTest {
         composeRule.waitForIdle()
         assertRoute(navController, AppRoutes.INVENTORY_REGISTER)
         composeRule.onNodeWithTag(InventoryTestTags.REGISTRATION_SCREEN).assertIsDisplayed()
-        click(R.string.action_return_inventory)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
+        composeRule.waitForIdle()
         assertRoute(navController, AppRoutes.INVENTORY)
     }
 
@@ -345,7 +346,6 @@ class AppNavigationTest {
         }
 
         composeRule.runOnIdle {
-            navController.navigate(AppRoutes.SETTINGS)
             navController.navigate(AppRoutes.imagePreview(draftId, captureId))
         }
         composeRule.waitForIdle()

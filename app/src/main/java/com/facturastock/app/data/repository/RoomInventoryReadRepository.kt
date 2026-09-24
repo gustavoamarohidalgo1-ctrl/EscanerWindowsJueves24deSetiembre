@@ -12,6 +12,7 @@ import com.facturastock.app.data.local.dao.InventoryListReadRow
 import com.facturastock.app.data.local.dao.InventoryReadBalanceRow
 import com.facturastock.app.data.local.dao.InventoryProductHeaderReadRow
 import com.facturastock.app.data.local.storageCatching
+import com.facturastock.app.domain.model.AsciiPatterns
 import com.facturastock.app.domain.model.CatalogStatus
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.InventoryAverageCostRequest
@@ -623,7 +624,7 @@ private fun String?.toDecimalOrIssue(
     nonNegative: Boolean = false,
 ): BigDecimal? {
     val value = this ?: return null
-    if (value.length > MAX_COSTING_TEXT || !SIGNED_PLAIN_DECIMAL.matches(value)) {
+    if (value.length > MAX_COSTING_TEXT || !isSignedPlainDecimal(value)) {
         issues += InventoryDiagnosticIssue.INVALID_LEDGER_DATA
         return null
     }
@@ -681,4 +682,8 @@ private fun corrupt(message: String, cause: Throwable? = null): Nothing =
     throw IOException(message, cause)
 
 private val SIGNED_PLAIN_DECIMAL = Regex("^-?\\d+(\\.\\d+)?$")
+
+// El diagnóstico lee cada saldo y movimiento: el recorrido ASCII evita un matcher ICU por valor.
+private fun isSignedPlainDecimal(value: String): Boolean =
+    AsciiPatterns.isSignedPlainDecimal(value) || SIGNED_PLAIN_DECIMAL.matches(value)
 private const val MAX_COSTING_TEXT = 166

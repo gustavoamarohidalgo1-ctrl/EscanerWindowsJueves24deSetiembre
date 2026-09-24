@@ -15,7 +15,6 @@
     <string name="navigation_purchase_history">Historial de facturas</string>
     <string name="navigation_inventory">Inventario</string>
     <string name="navigation_settings">Ajustes</string>
-    <string name="navigation_open_settings">Abrir ajustes</string>
     <string name="sales_title">Ventas</string>
     <string name="debtors_title">Deudores</string>
     <string name="debt_entry_title">Nueva deuda</string>

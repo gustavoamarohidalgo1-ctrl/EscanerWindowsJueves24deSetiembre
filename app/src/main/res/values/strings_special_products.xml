@@ -6,7 +6,5 @@
     <string name="catalog_special_product_quantity">Kilos iniciales (kg)</string>
     <string name="catalog_special_product_cost_label">Costo por kilo</string>
     <string name="catalog_special_product_price_label">Precio de venta por kilo</string>
-    <string name="catalog_special_product_unit">Unidad: kilogramo (kg)</string>
-    <string name="catalog_special_product_location_label">Almacén de existencias</string>
     <string name="catalog_special_product_location_required">Selecciona un almacén activo para registrar los kilos iniciales.</string>
 </resources>

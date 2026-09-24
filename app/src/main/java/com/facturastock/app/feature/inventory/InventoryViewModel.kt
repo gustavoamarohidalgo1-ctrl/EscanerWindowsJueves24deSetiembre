@@ -59,6 +59,9 @@ class InventoryViewModel @Inject constructor(
     private var profitSearchTermsByProduct: Map<ProductId, List<String>> = emptyMap()
     private var searchJob: Job? = null
     private var searchGeneration = 0L
+    // La revisión del inventario corre sola una vez por pantalla, sin tarjeta ni mensajes.
+    private var automaticDiagnosisRequested = false
+    private var automaticDiagnosis: Job? = null
 
     init {
         load()
@@ -485,6 +488,10 @@ class InventoryViewModel @Inject constructor(
                             it == InventoryContract.Failure.DIAGNOSTIC_FAILED
                         },
                     )
+                }
+                if (!automaticDiagnosisRequested && prepared.items.isNotEmpty()) {
+                    automaticDiagnosisRequested = true
+                    diagnose(silent = true)
                 }
                 break
             }
@@ -950,12 +957,17 @@ class InventoryViewModel @Inject constructor(
         savedStateHandle.remove<String>(PRICE_VALUE_KEY)
     }
 
-    private fun diagnose() {
+    /**
+     * [silent] es la revisión automática: no bloquea el lector, no muestra progreso ni errores y
+     * sólo aporta las alertas de cada producto. La manual conserva su comportamiento visible.
+     */
+    private fun diagnose(silent: Boolean = false) {
         if (uiState.value.isDiagnosing || uiState.value.productId != null) return
+        if (silent && automaticDiagnosis?.isActive == true) return
         val startingSnapshot = uiState.value.allItems
-        executeIo(
+        val job = executeIo(
             before = {
-                updateState { copy(isDiagnosing = true, failure = null) }
+                if (!silent) updateState { copy(isDiagnosing = true, failure = null) }
             },
             operation = diagnoseInventory::invoke,
             onSuccess = { report ->
@@ -974,25 +986,29 @@ class InventoryViewModel @Inject constructor(
                     if (uiState.value.section == InventoryContract.ListSection.STOCK) cancelSearch()
                     updateState {
                         copy(
-                            isDiagnosing = false,
+                            isDiagnosing = if (silent) isDiagnosing else false,
                             diagnosticReport = prepared.first,
                             allItems = prepared.second,
                             items = prepared.third,
-                            failure = null,
+                            failure = if (silent) failure else null,
                         )
                     }
                     break
                 }
             },
             onFailure = {
-                updateState {
-                    copy(
-                        isDiagnosing = false,
-                        failure = InventoryContract.Failure.DIAGNOSTIC_FAILED,
-                    )
+                // La revisión automática es interna: si falla, la pantalla no cambia.
+                if (!silent) {
+                    updateState {
+                        copy(
+                            isDiagnosing = false,
+                            failure = InventoryContract.Failure.DIAGNOSTIC_FAILED,
+                        )
+                    }
                 }
             },
         )
+        if (silent) automaticDiagnosis = job
     }
 
     private companion object {

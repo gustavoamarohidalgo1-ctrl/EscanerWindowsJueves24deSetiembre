@@ -12,6 +12,7 @@ import com.facturastock.app.data.local.entity.InventoryBalanceEntity
 import com.facturastock.app.data.local.entity.OutboxOperationEntity
 import com.facturastock.app.data.local.entity.PurchaseEntity
 import com.facturastock.app.data.local.entity.StockMovementEntity
+import com.facturastock.app.domain.model.AsciiPatterns
 import com.facturastock.app.domain.model.AuditEventType
 import com.facturastock.app.domain.model.OutboxOperationStatus
 import com.facturastock.app.domain.model.PurchaseOverrideRole
@@ -165,7 +166,7 @@ abstract class PurchaseVoidDao {
     private fun validateEnvelope(batch: PurchaseVoidBatch) {
         require(batch.expectedPurchaseUpdatedAt >= 0L)
         require(batch.voidedAt > batch.expectedPurchaseUpdatedAt)
-        require(Regex("[0-9a-f]{64}").matches(batch.expectedImpactHash))
+        require(AsciiPatterns.isLowerHex(batch.expectedImpactHash, 64))
         require(batch.reason == batch.reason.trim() && batch.reason.length in 10..500)
         require(batch.actorId.isNotBlank() && batch.actorId.length <= 128)
         require(batch.actorRole in setOf(

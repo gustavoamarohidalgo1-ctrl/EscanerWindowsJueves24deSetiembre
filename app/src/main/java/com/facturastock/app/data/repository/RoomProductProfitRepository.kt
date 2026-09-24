@@ -3,6 +3,7 @@ package com.facturastock.app.data.repository
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.data.local.dao.ProductDao
 import com.facturastock.app.data.local.dao.ProductProfitReadRow
+import com.facturastock.app.domain.model.AsciiPatterns
 import com.facturastock.app.domain.model.CatalogStatus
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.ExactMonetaryAmount
@@ -257,8 +258,13 @@ private inline fun <T> List<T>.sumDecimal(value: (T) -> BigDecimal): BigDecimal 
 
 private fun String.toBoundedPlainDecimalOrNull(signed: Boolean): BigDecimal? {
     if (length > MAX_PERSISTED_DECIMAL_CHARACTERS) return null
-    val pattern = if (signed) SIGNED_PLAIN_DECIMAL else PLAIN_DECIMAL
-    if (!pattern.matches(this)) return null
+    // Se lee por producto y almacén en cada emisión: el recorrido ASCII evita el matcher ICU.
+    val plain = if (signed) {
+        AsciiPatterns.isSignedPlainDecimal(this) || SIGNED_PLAIN_DECIMAL.matches(this)
+    } else {
+        AsciiPatterns.isPlainDecimal(this) || PLAIN_DECIMAL.matches(this)
+    }
+    if (!plain) return null
     return runCatching { BigDecimal(this) }.getOrNull()
 }
 

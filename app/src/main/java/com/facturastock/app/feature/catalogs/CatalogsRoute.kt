@@ -3,6 +3,7 @@ package com.facturastock.app.feature.catalogs
 import androidx.activity.compose.BackHandler
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -96,6 +97,7 @@ fun CatalogsRoute(
     onProductSaved: (CatalogsContract.Effect.ProductSaved) -> Unit = { onBack() },
     isSalesRegistration: Boolean = false,
     isManualRegistration: Boolean = false,
+    isSpecialRegistration: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(enabled = isSalesRegistration || isManualRegistration || state.isSpecialEntryPending ||
@@ -114,6 +116,7 @@ fun CatalogsRoute(
         onAction = viewModel::onAction,
         modifier = modifier,
         isManualRegistration = isManualRegistration,
+        isSpecialRegistration = isSpecialRegistration,
     )
 }
 
@@ -123,6 +126,7 @@ fun CatalogsScreen(
     onAction: (Action) -> Unit,
     modifier: Modifier = Modifier,
     isManualRegistration: Boolean = false,
+    isSpecialRegistration: Boolean = false,
 ) {
     if (isManualRegistration || state.isManualEntryPending || state.manualEntryFailure != null ||
         (state.form as? Form.ProductForm)?.isManualRegistration == true
@@ -130,7 +134,13 @@ fun CatalogsScreen(
         ManualProductRegistrationScreen(state, onAction, modifier)
         return
     }
-    Box(modifier = modifier.fillMaxSize()) {
+    // El producto por kilo se registra sobre un fondo negro: el catálogo no se ve detrás del
+    // formulario, tampoco mientras se prepara ni durante la transición de salida.
+    val specialBackdrop = isSpecialRegistration || state.isSpecialEntryPending ||
+        (state.form as? Form.ProductForm)?.isSpecialRegistration == true
+    if (specialBackdrop) {
+        Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim))
+    } else Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             CatalogTabs(state.section, onAction)
             CatalogSearchAndFilters(
@@ -162,13 +172,14 @@ fun CatalogsScreen(
         CatalogDetailDialog(detail = detail, onAction = onAction)
     }
     state.form?.let { form ->
-        CatalogFormDialog(state = state, form = form, onAction = onAction)
+        CatalogFormDialog(state = state, form = form, onAction = onAction, opaqueBackdrop = specialBackdrop)
     }
     if (state.isScannerEntryPending || state.isInventoryEntryPending || state.isSpecialEntryPending) {
         CatalogModal(
             title = stringResource(R.string.catalog_products),
             onDismiss = { onAction(Action.CloseForm) },
             testTag = CatalogsTestTags.FORM,
+            opaqueBackdrop = specialBackdrop,
         ) {
             val failure = when {
                 state.isSpecialEntryPending -> state.specialEntryFailure
@@ -756,7 +767,12 @@ private fun UnitDetailContent(detail: Detail.UnitDetail) {
 }
 
 @Composable
-private fun CatalogFormDialog(state: State, form: Form, onAction: (Action) -> Unit) {
+private fun CatalogFormDialog(
+    state: State,
+    form: Form,
+    onAction: (Action) -> Unit,
+    opaqueBackdrop: Boolean = false,
+) {
     if (form is Form.ProductForm && form.isInventoryOrigin) {
         InventoryProductEditorDialog(state, form, onAction)
         return
@@ -765,6 +781,7 @@ private fun CatalogFormDialog(state: State, form: Form, onAction: (Action) -> Un
         title = stringResource(form.titleRes()),
         onDismiss = { if (!state.isSaving) onAction(Action.CloseForm) },
         testTag = CatalogsTestTags.FORM,
+        opaqueBackdrop = opaqueBackdrop,
     ) {
         Text(
             text = stringResource(form.titleRes()),
@@ -985,14 +1002,7 @@ private fun SpecialProductFormFields(state: State, form: Form.ProductForm, onAct
         testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
         onValueChange = { onAction(Action.ProductPriceChanged(it)) },
     )
-    Text(stringResource(R.string.catalog_special_product_unit), style = MaterialTheme.typography.bodyMedium)
-    LocationSelector(
-        selected = form.locationId,
-        options = state.locationOptions.filter { it.status == com.facturastock.app.domain.model.CatalogStatus.ACTIVE },
-        enabled = !state.isSaving, allowNone = false,
-        labelRes = R.string.catalog_special_product_location_label,
-        onSelected = { onAction(Action.ProductLocationSelected(it)) },
-    )
+    // Unidad (kg) y almacén no se muestran: la unidad es fija y el almacén es el primero activo.
     if (state.locationOptions.none { it.locationId == form.locationId && it.status == com.facturastock.app.domain.model.CatalogStatus.ACTIVE }) {
         Text(stringResource(R.string.catalog_special_product_location_required), color = MaterialTheme.colorScheme.error)
     }
@@ -1421,6 +1431,7 @@ private fun CatalogModal(
     title: String,
     onDismiss: () -> Unit,
     testTag: String,
+    opaqueBackdrop: Boolean = false,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Dialog(
@@ -1431,6 +1442,8 @@ private fun CatalogModal(
             modifier = Modifier
                 .suppressScannerTrailingKeys()
                 .fillMaxSize()
+                // Negro opaco en lugar del oscurecido translúcido: tapa también la barra superior.
+                .then(if (opaqueBackdrop) Modifier.background(MaterialTheme.colorScheme.scrim) else Modifier)
                 .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
                 .imePadding()
                 .padding(FacturaStockDesign.spacing.lg),

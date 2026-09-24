@@ -1,5 +1,6 @@
 package com.facturastock.app.domain.repository
 
+import com.facturastock.app.domain.model.AsciiPatterns
 import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.Quantity
 import com.facturastock.app.domain.model.id.BusinessId
@@ -39,7 +40,7 @@ data class SaleVoidPreview(
             require(debtBalanceToCancel.minorUnits in 0L..total.minorUnits)
             require(refundAmount.minorUnits == total.minorUnits - debtBalanceToCancel.minorUnits)
         }
-        require(Regex("[0-9a-f]{64}").matches(impactHash))
+        require(AsciiPatterns.isLowerHex(impactHash, 64))
     }
 }
 

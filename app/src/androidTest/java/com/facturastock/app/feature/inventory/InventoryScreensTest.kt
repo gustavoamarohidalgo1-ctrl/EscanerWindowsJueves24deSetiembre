@@ -467,14 +467,9 @@ class InventoryScreensTest {
         var state by mutableStateOf(
             InventoryContract.State(isRegisteringProducts = true, scannerActive = true),
         )
-        var returnedToInventory = false
-
         composeRule.setContent {
             FacturaStockTheme {
-                InventoryRegistrationScreen(
-                    state = state,
-                    onBack = { returnedToInventory = true },
-                )
+                InventoryRegistrationScreen(state = state)
             }
         }
 
@@ -523,10 +518,8 @@ class InventoryScreensTest {
             "Escáner en pausa. Conecta o activa un lector USB o Bluetooth tipo teclado.",
         ).assertIsDisplayed()
 
-        composeRule.onNodeWithText("Volver al inventario")
-            .performScrollTo()
-            .performClick()
-        composeRule.runOnIdle { assertTrue(returnedToInventory) }
+        // La flecha de la barra superior es la única salida: no hay botón duplicado.
+        composeRule.onNodeWithText("Volver al inventario").assertDoesNotExist()
     }
 
     @Test

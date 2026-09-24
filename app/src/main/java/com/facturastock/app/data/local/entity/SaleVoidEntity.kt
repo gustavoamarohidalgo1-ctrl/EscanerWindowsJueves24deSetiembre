@@ -8,6 +8,7 @@ import com.facturastock.app.data.local.requireCanonicalUuid
 import com.facturastock.app.data.local.requireCurrencyCode
 import com.facturastock.app.data.local.requireMinorUnits
 import com.facturastock.app.data.local.requireText
+import com.facturastock.app.domain.model.AsciiPatterns
 
 /** Recibo inmutable: anula el efecto económico de la venta sin modificar su historia. */
 @Entity(
@@ -42,7 +43,7 @@ data class SaleVoidEntity(
     init {
         requireCanonicalUuid(saleId, "saleId")
         requireCanonicalUuid(businessId, "businessId")
-        require(Regex("[0-9a-f]{64}").matches(impactHash))
+        require(AsciiPatterns.isLowerHex(impactHash, 64))
         requireMinorUnits(refundedAmountMinorUnits, "refundedAmountMinorUnits")
         requireMinorUnits(cancelledDebtBalanceMinorUnits, "cancelledDebtBalanceMinorUnits")
         requireCurrencyCode(currencyCode, "currencyCode")

@@ -1,5 +1,6 @@
 package com.facturastock.app.data.local
 
+import com.facturastock.app.domain.model.AsciiPatterns
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.ExactDecimalPolicy
 import com.facturastock.app.domain.model.InventoryCostingDecimalPolicy
@@ -23,16 +24,24 @@ import java.math.BigDecimal
 const val MAX_CONFIDENCE = 1_000
 
 private const val NIL_UUID = "00000000-0000-0000-0000-000000000000"
-private val CanonicalUuid = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 private val PlainDecimal = Regex("^\\d+(\\.\\d+)?$")
 private val SignedPlainDecimal = Regex("^-?\\d+(\\.\\d+)?$")
 private val RucPattern = Regex("^\\d{11}$")
-private val Sha256Pattern = Regex("^[0-9a-f]{64}$")
-private val UnitCodePattern = Regex("^[A-Z0-9]{1,16}$")
+private const val RUC_LENGTH = 11
+private const val SHA256_HEX_LENGTH = 64
+private const val MAX_UNIT_CODE_LENGTH = 16
 private const val MAX_COSTING_INPUT_CHARACTERS = 166
 
+// Cada fila leída de Room pasa por estas validaciones. El recorrido ASCII resuelve el caso
+// normal sin abrir un matcher ICU; el patrón original decide sólo el texto que no reconoce.
+private fun isPlainDecimal(value: String): Boolean =
+    AsciiPatterns.isPlainDecimal(value) || PlainDecimal.matches(value)
+
+private fun isSignedPlainDecimal(value: String): Boolean =
+    AsciiPatterns.isSignedPlainDecimal(value) || SignedPlainDecimal.matches(value)
+
 internal fun requireCanonicalUuid(value: String, field: String): String {
-    require(CanonicalUuid.matches(value) && value != NIL_UUID) {
+    require(AsciiPatterns.isLowercaseUuid(value) && value != NIL_UUID) {
         "$field debe ser un UUID canónico en minúsculas y distinto del nulo: ${value.take(64)}"
     }
     return value
@@ -42,7 +51,7 @@ internal fun requireCanonicalUuidOrNull(value: String?, field: String): String? 
     value?.let { requireCanonicalUuid(it, field) }
 
 internal fun requireDecimalText(value: String, field: String, allowZero: Boolean): String {
-    require(value.length <= ExactDecimalPolicy.MAX_INPUT_CHARACTERS && PlainDecimal.matches(value)) {
+    require(value.length <= ExactDecimalPolicy.MAX_INPUT_CHARACTERS && isPlainDecimal(value)) {
         "$field debe ser texto decimal plano sin signo ni exponente: ${value.take(64)}"
     }
     val decimal = try {
@@ -73,8 +82,8 @@ internal fun requireCostingDecimalText(
     allowZero: Boolean,
     allowNegative: Boolean = false,
 ): String {
-    val pattern = if (allowNegative) SignedPlainDecimal else PlainDecimal
-    require(value.length <= MAX_COSTING_INPUT_CHARACTERS && pattern.matches(value)) {
+    val plain = if (allowNegative) isSignedPlainDecimal(value) else isPlainDecimal(value)
+    require(value.length <= MAX_COSTING_INPUT_CHARACTERS && plain) {
         "$field debe ser texto decimal plano${if (allowNegative) " firmado" else ""} " +
             "sin exponente: ${value.take(64)}"
     }
@@ -121,7 +130,7 @@ internal fun requireSignedNonZeroCostingDecimalText(value: String, field: String
 /** Valida un decimal plano firmado y exacto, incluido cero (sin exponente ni `+`). */
 internal fun requireSignedDecimalText(value: String, field: String): String {
     require(
-        value.length <= ExactDecimalPolicy.MAX_INPUT_CHARACTERS && SignedPlainDecimal.matches(value),
+        value.length <= ExactDecimalPolicy.MAX_INPUT_CHARACTERS && isSignedPlainDecimal(value),
     ) {
         "$field debe ser texto decimal plano firmado sin exponente: ${value.take(64)}"
     }
@@ -168,7 +177,7 @@ internal fun requireConfidenceOrNull(value: Int?, field: String): Int? {
 
 internal fun requireRuc(value: String, field: String): String {
     val trimmed = value.trim()
-    require(RucPattern.matches(trimmed)) { "$field debe ser un RUC de 11 dígitos: ${value.take(32)}" }
+    require(AsciiPatterns.isAsciiDigits(trimmed, RUC_LENGTH) || RucPattern.matches(trimmed)) { "$field debe ser un RUC de 11 dígitos: ${value.take(32)}" }
     return trimmed
 }
 
@@ -176,13 +185,13 @@ internal fun requireRucOrNull(value: String?, field: String): String? =
     value?.let { requireRuc(it, field) }
 
 internal fun requireSha256(value: String, field: String): String {
-    require(Sha256Pattern.matches(value)) { "$field debe ser un hash SHA-256 en minúsculas" }
+    require(AsciiPatterns.isLowerHex(value, SHA256_HEX_LENGTH)) { "$field debe ser un hash SHA-256 en minúsculas" }
     return value
 }
 
 internal fun requireUnitCode(value: String, field: String): String {
     val normalized = value.trim().uppercase()
-    require(UnitCodePattern.matches(normalized)) { "$field debe ser un código de unidad válido: $value" }
+    require(AsciiPatterns.isUpperAlphanumeric(normalized, 1, MAX_UNIT_CODE_LENGTH)) { "$field debe ser un código de unidad válido: $value" }
     return normalized
 }
 

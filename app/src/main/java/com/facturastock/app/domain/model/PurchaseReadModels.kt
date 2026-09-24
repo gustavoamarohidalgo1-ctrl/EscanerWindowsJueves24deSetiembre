@@ -258,7 +258,7 @@ data class PurchaseReadDetail(
         require(lines.map(PurchaseReadLine::position) == lines.indices.toList())
         require(lines.all { it.total.currency == currency })
         require(movements.all { it.purchaseId == summary.purchaseId })
-        require(Regex("[0-9a-f]{64}").matches(preparedLogicalHash))
+        require(AsciiPatterns.isLowerHex(preparedLogicalHash, 64))
         require(
             lines.groupBy(PurchaseReadLine::productId).values.all { productLines ->
                 productLines.map(PurchaseReadLine::productProvenance).distinct().size == 1

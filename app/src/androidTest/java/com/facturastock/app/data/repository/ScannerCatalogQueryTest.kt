@@ -99,6 +99,48 @@ class ScannerCatalogQueryTest {
             }
         }
 
+    @Test
+    fun barcodeSupersequenceQueryMatchesKotlinSubsequenceFilter() =
+        runBlocking {
+            listOf(
+                product(1, sku = null, barcode = "7753176004930"),
+                product(2, sku = null, barcode = "77531760049301"),
+                product(3, sku = null, barcode = "7753176004931"),
+                product(4, sku = null, barcode = "1753176004930"),
+                product(5, sku = null, barcode = "7531760049300"),
+                product(6, sku = null, barcode = "ZUKO753176004930"),
+                product(7, sku = null, barcode = "75317600493"),
+                product(8, sku = "753176004930", barcode = null),
+            ).forEach { products.create(it) }
+            products.create(product(9, sku = null, barcode = "7753176004930", business = OTHER_BUSINESS_ID))
+
+            val full = products.listForBusiness(BUSINESS_ID)
+            for (scanned in listOf("753176004930", "75317600493", "7531760", "000000", "9")) {
+                val min = scanned.length + 1
+                val max = scanned.length + 2
+                // Mismo criterio que la implementación por defecto: largo acotado y subsecuencia.
+                val expected =
+                    full.filter { product ->
+                        val stored = product.barcode ?: return@filter false
+                        stored.length in min..max && isSubsequence(stored, scanned)
+                    }
+                assertEquals(
+                    "lectura $scanned",
+                    expected.ids(),
+                    products.listBarcodeSupersequences(BUSINESS_ID, scanned, min, max).ids(),
+                )
+            }
+        }
+
+    private fun isSubsequence(
+        text: String,
+        needle: String,
+    ): Boolean {
+        var matched = 0
+        text.forEach { if (matched < needle.length && it == needle[matched]) matched++ }
+        return matched == needle.length
+    }
+
     private fun List<Product>.ids(): Set<ProductId> = map { it.productId }.toSortedSet(compareBy { it.value })
 
     private fun product(

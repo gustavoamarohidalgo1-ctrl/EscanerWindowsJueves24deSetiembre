@@ -63,6 +63,8 @@ fun ScannerCodeInput(
     @StringRes hintRes: Int = R.string.scanner_code_hint,
     @StringRes supportingTextRes: Int? = null,
     isOtherTextInputFocused: Boolean = false,
+    // Inventario muestra sólo el campo: el lector físico confirma con su Enter de fin de lectura.
+    showActions: Boolean = true,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -153,7 +155,7 @@ fun ScannerCodeInput(
                 modifier = Modifier.testTag(ScannerCodeInputTestTags.ERROR),
             )
         }
-        Row(
+        if (showActions) Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm),
         ) {

@@ -1259,10 +1259,15 @@ class SalesViewModel
             // Un código personalizado exacto puede ser también una lectura truncada de otro GTIN.
             // Nunca se sustituye por el código largo: ambos requieren una elección explícita.
             if (requiresSuspiciousExactBarcodeReview(scan.value)) {
-                // Sólo un código guardado 1–2 dígitos más largo puede competir con este exacto:
-                // SQLite los filtra sin materializar el catálogo completo en cada lectura.
+                // Sólo un código guardado 1–2 dígitos más largo que contenga la lectura como
+                // subsecuencia puede competir con este exacto: SQLite descarta el resto.
                 val lengthCandidates = withContext(dispatcherProvider.io) {
-                    products.listByBarcodeLength(scan.businessId, scan.value.length + 1, scan.value.length + 2)
+                    products.listBarcodeSupersequences(
+                        scan.businessId,
+                        scan.value,
+                        scan.value.length + 1,
+                        scan.value.length + 2,
+                    )
                 }
                 val competitors = withContext(dispatcherProvider.default) {
                     findSuspiciousExactBarcodeMatches(scan.value, scan.businessId, product.productId, lengthCandidates)

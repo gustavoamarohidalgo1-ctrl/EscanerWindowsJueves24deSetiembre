@@ -19,8 +19,8 @@ class NavigationContractTest {
 
     @Test
     fun registryContainsThreeCommercialTopLevelsAndLegacyAliases() {
-        assertEquals(33, AppRoutes.all.size)
-        assertEquals(33, AppRoutes.all.map { it.pattern }.distinct().size)
+        assertEquals(32, AppRoutes.all.size)
+        assertEquals(32, AppRoutes.all.map { it.pattern }.distinct().size)
         assertEquals(
             setOf(
                 AppRoutes.SALES,
@@ -38,7 +38,8 @@ class NavigationContractTest {
         assertFalse(AppRoutes.INVOICES in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.PRODUCTS in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.PURCHASES in AppRoutes.topLevel.map { it.pattern })
-        assertFalse(AppRoutes.SETTINGS in AppRoutes.topLevel.map { it.pattern })
+        // Ajustes se retiró: ninguna ruta, ni principal ni secundaria, debe volver a exponerla.
+        assertFalse("settings" in AppRoutes.all.map { it.pattern })
         assertTrue(AppRoutes.SYNC in AppRoutes.all.map { it.pattern })
     }
 

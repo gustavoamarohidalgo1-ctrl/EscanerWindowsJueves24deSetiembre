@@ -1,21 +1,19 @@
 package com.facturastock.app.domain.model.id
 
-import java.util.Locale
+import com.facturastock.app.domain.model.AsciiPatterns
 import java.util.UUID
 
 private val NilUuid = UUID(0L, 0L)
 
-private fun canonicalUuidOrNull(input: String): UUID? {
-    if (input.length != 36 || input != input.lowercase(Locale.ROOT)) {
-        return null
-    }
-    val parsed = try {
-        UUID.fromString(input)
-    } catch (_: IllegalArgumentException) {
-        return null
-    }
-    return parsed.takeIf { it != NilUuid && it.toString() == input }
-}
+private const val NIL_UUID_TEXT = "00000000-0000-0000-0000-000000000000"
+
+/**
+ * Sólo el formato 8-4-4-4-12 en hexadecimal minúsculo sobrevive a `UUID.fromString` y
+ * `toString` sin cambios, así que el texto validado ya es la forma canónica. Cada fila leída
+ * crea varios identificadores: comprobarlo carácter a carácter evita el UUID intermedio.
+ */
+private fun canonicalUuidTextOrNull(input: String): String? =
+    input.takeIf { AsciiPatterns.isLowercaseUuid(it) && it != NIL_UUID_TEXT }
 
 @JvmInline
 value class DraftId private constructor(val value: String) {
@@ -26,7 +24,7 @@ value class DraftId private constructor(val value: String) {
         }
 
         fun parse(input: String?): DraftId? =
-            input?.let(::canonicalUuidOrNull)?.let { DraftId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { DraftId(it) }
     }
 }
 
@@ -40,7 +38,7 @@ value class OcrRunId private constructor(val value: String) {
         }
 
         fun parse(input: String?): OcrRunId? =
-            input?.let(::canonicalUuidOrNull)?.let { OcrRunId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { OcrRunId(it) }
     }
 }
 
@@ -53,7 +51,7 @@ value class CaptureId private constructor(val value: String) {
         }
 
         fun parse(input: String?): CaptureId? =
-            input?.let(::canonicalUuidOrNull)?.let { CaptureId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { CaptureId(it) }
     }
 }
 
@@ -66,7 +64,7 @@ value class LineId private constructor(val value: String) {
         }
 
         fun parse(input: String?): LineId? =
-            input?.let(::canonicalUuidOrNull)?.let { LineId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { LineId(it) }
     }
 }
 
@@ -79,7 +77,7 @@ value class PurchaseId private constructor(val value: String) {
         }
 
         fun parse(input: String?): PurchaseId? =
-            input?.let(::canonicalUuidOrNull)?.let { PurchaseId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { PurchaseId(it) }
     }
 }
 
@@ -92,7 +90,7 @@ value class SaleId private constructor(val value: String) {
         }
 
         fun parse(input: String?): SaleId? =
-            input?.let(::canonicalUuidOrNull)?.let { SaleId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { SaleId(it) }
     }
 }
 
@@ -105,7 +103,7 @@ value class SaleLineId private constructor(val value: String) {
         }
 
         fun parse(input: String?): SaleLineId? =
-            input?.let(::canonicalUuidOrNull)?.let { SaleLineId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { SaleLineId(it) }
     }
 }
 
@@ -118,7 +116,7 @@ value class DebtId private constructor(val value: String) {
         }
 
         fun parse(input: String?): DebtId? =
-            input?.let(::canonicalUuidOrNull)?.let { DebtId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { DebtId(it) }
     }
 }
 
@@ -131,7 +129,7 @@ value class DebtPaymentId private constructor(val value: String) {
         }
 
         fun parse(input: String?): DebtPaymentId? =
-            input?.let(::canonicalUuidOrNull)?.let { DebtPaymentId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { DebtPaymentId(it) }
     }
 }
 
@@ -144,7 +142,7 @@ value class BusinessId private constructor(val value: String) {
         }
 
         fun parse(input: String?): BusinessId? =
-            input?.let(::canonicalUuidOrNull)?.let { BusinessId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { BusinessId(it) }
     }
 }
 
@@ -157,7 +155,7 @@ value class SupplierId private constructor(val value: String) {
         }
 
         fun parse(input: String?): SupplierId? =
-            input?.let(::canonicalUuidOrNull)?.let { SupplierId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { SupplierId(it) }
     }
 }
 
@@ -170,7 +168,7 @@ value class UnitId private constructor(val value: String) {
         }
 
         fun parse(input: String?): UnitId? =
-            input?.let(::canonicalUuidOrNull)?.let { UnitId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { UnitId(it) }
     }
 }
 
@@ -183,7 +181,7 @@ value class LocationId private constructor(val value: String) {
         }
 
         fun parse(input: String?): LocationId? =
-            input?.let(::canonicalUuidOrNull)?.let { LocationId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { LocationId(it) }
     }
 }
 
@@ -196,7 +194,7 @@ value class ProductId private constructor(val value: String) {
         }
 
         fun parse(input: String?): ProductId? =
-            input?.let(::canonicalUuidOrNull)?.let { ProductId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { ProductId(it) }
     }
 }
 
@@ -209,7 +207,7 @@ value class AliasId private constructor(val value: String) {
         }
 
         fun parse(input: String?): AliasId? =
-            input?.let(::canonicalUuidOrNull)?.let { AliasId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { AliasId(it) }
     }
 }
 
@@ -222,6 +220,6 @@ value class ImageId private constructor(val value: String) {
         }
 
         fun parse(input: String?): ImageId? =
-            input?.let(::canonicalUuidOrNull)?.let { ImageId(it.toString()) }
+            input?.let(::canonicalUuidTextOrNull)?.let { ImageId(it) }
     }
 }

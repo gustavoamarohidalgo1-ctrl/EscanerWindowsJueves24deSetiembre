@@ -21,7 +21,7 @@ enum class DebtPaymentMethod { CASH, YAPE, PLIN, BANK_TRANSFER, OTHER }
 fun normalizeDebtorName(raw: String): String {
     val normalized = Normalizer.normalize(raw, Normalizer.Form.NFKC)
         .trim()
-        .replace(Regex("\\s+"), " ")
+        .replace(WhitespaceRun, " ")
     require(normalized.length in 2..120) {
         "El nombre del deudor debe tener entre 2 y 120 caracteres"
     }
@@ -135,3 +135,6 @@ data class DebtDetail(
         })
     }
 }
+
+// Compilada una vez: antes se creaba una expresión regular nueva en cada normalización.
+private val WhitespaceRun = Regex("\\s+")

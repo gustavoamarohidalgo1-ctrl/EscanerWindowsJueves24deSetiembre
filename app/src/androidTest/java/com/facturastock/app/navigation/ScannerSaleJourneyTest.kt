@@ -53,6 +53,7 @@ import com.facturastock.app.domain.repository.UnitRepository
 import com.facturastock.app.feature.catalogs.CatalogsTestTags
 import com.facturastock.app.feature.common.ScannerCodeInputTestTags
 import com.facturastock.app.feature.debtors.DebtorsTestTags
+import com.facturastock.app.feature.inventory.INVENTORY_IDLE_READ_RESET_MILLIS
 import com.facturastock.app.feature.inventory.InventoryTestTags
 import com.facturastock.app.feature.reports.ReportsTestTags
 import com.facturastock.app.feature.sales.SalesTestTags
@@ -419,10 +420,7 @@ class ScannerSaleJourneyTest {
             )
         }
 
-        composeRule
-            .onNodeWithText(context.getString(R.string.action_return_inventory))
-            .performScrollTo()
-            .performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
         waitForTag(InventoryTestTags.LIST_SCREEN)
         navigate(R.string.navigation_sales)
         expectDirectCashSale()
@@ -505,7 +503,7 @@ class ScannerSaleJourneyTest {
         waitForReader()
         registerProduct("00112233", "Arroz lector", "8.50", KeyEvent.KEYCODE_ENTER)
         registerProduct("00445566", "Azúcar lector", "5.00", KeyEvent.KEYCODE_TAB)
-        composeRule.onNodeWithText(context.getString(R.string.action_return_inventory)).performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
         waitForTag(InventoryTestTags.LIST_SCREEN)
         navigate(R.string.navigation_sales)
         expectDirectCashSale()
@@ -1305,7 +1303,7 @@ class ScannerSaleJourneyTest {
     }
 
     @Test
-    fun inventoryListReceivesUsbWithoutOpeningAnotherPageAndAllowsConfirmationWithoutEnter() {
+    fun inventoryListKeepsUsbWithoutEnterUnconfirmedAndNextTerminatedReadIsClean() {
         waitForTag(SalesTestTags.SCREEN)
         navigate(R.string.navigation_inventory)
         waitForTag(InventoryTestTags.LIST_SCREEN)
@@ -1318,13 +1316,17 @@ class ScannerSaleJourneyTest {
             assertEquals("00990011", field.text.toString())
         }
         composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
-        composeRule.onNodeWithTag(ScannerCodeInputTestTags.SUBMIT).assertIsEnabled().performClick()
-        waitForTag(CatalogsTestTags.PRODUCT_BARCODE)
-        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_BARCODE).assertTextContains("00990011")
-        composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performScrollTo().performClick()
-        waitForTag(InventoryTestTags.LIST_SCREEN)
+        // Inventario sólo muestra el campo: sin Enter/Tab del lector la lectura no se confirma.
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.SUBMIT).assertDoesNotExist()
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.RESET).assertDoesNotExist()
 
-        // El código cancelado y la trama sin sufijo no deben mezclarse con la lectura siguiente.
+        // Tras la pausa, la trama sin sufijo se descarta y no se mezcla con la lectura siguiente.
+        waitForInventoryIdleReset()
+        scenario.onActivity { activity ->
+            val field = requireNotNull(activity.window.decorView.findViewWithTag<EditText>(ScannerCodeInputTestTags.FIELD))
+            assertEquals("", field.text.toString())
+        }
+        composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
         scan("00880022", KeyEvent.KEYCODE_TAB)
         waitForTag(CatalogsTestTags.PRODUCT_BARCODE)
         composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_BARCODE).assertTextContains("00880022")
@@ -1339,8 +1341,9 @@ class ScannerSaleJourneyTest {
         composeRule.waitForIdle()
         scan("1".repeat(129), terminator = null)
         composeRule.onNodeWithText(context.getString(R.string.inventory_scanner_too_long)).assertIsDisplayed()
-        composeRule.onNodeWithTag(ScannerCodeInputTestTags.RESET).assertIsEnabled().performClick()
-        composeRule.onNodeWithText(context.getString(R.string.inventory_scanner_too_long)).assertDoesNotExist()
+        // Inventario ya no muestra «Reiniciar lector»: tras una pausa el lector se limpia solo.
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.RESET).assertDoesNotExist()
+        waitForInventoryIdleReset()
         scan("00334455", KeyEvent.KEYCODE_ENTER)
         waitForTag(CatalogsTestTags.PRODUCT_BARCODE)
         composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_BARCODE).assertTextContains("00334455")
@@ -1835,6 +1838,13 @@ class ScannerSaleJourneyTest {
     }
 
     /** Down/Up físicos, incluido sufijo doble CR/LF: pasan por MainActivity y el adaptador. */
+    /** Espera más que la pausa tras la cual Inventario descarta una lectura pendiente o rechazada. */
+    private fun waitForInventoryIdleReset() {
+        Thread.sleep(INVENTORY_IDLE_READ_RESET_MILLIS + 500L)
+        composeRule.mainClock.advanceTimeBy(INVENTORY_IDLE_READ_RESET_MILLIS + 500L)
+        composeRule.waitForIdle()
+    }
+
     private fun scan(
         value: String,
         terminator: Int?,

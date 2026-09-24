@@ -331,6 +331,23 @@ interface ProductDao {
         maxLength: Int,
     ): List<ProductEntity>
 
+    /**
+     * [listByBarcodeLength] restringido a códigos que contienen la lectura como subsecuencia
+     * (`%7%7%5%…%`). Un exacto sospechoso sólo compite con esos códigos; antes se leían y
+     * convertían todos los GTIN del largo pedido en cada lectura del escáner.
+     */
+    @Query(
+        "SELECT * FROM products WHERE businessId = :businessId AND barcode IS NOT NULL " +
+            "AND length(barcode) BETWEEN :minLength AND :maxLength " +
+            "AND barcode LIKE :subsequencePattern ORDER BY productId",
+    )
+    suspend fun listBarcodeSupersequences(
+        businessId: String,
+        minLength: Int,
+        maxLength: Int,
+        subsequencePattern: String,
+    ): List<ProductEntity>
+
     @Query("SELECT COUNT(*) FROM products WHERE businessId = :businessId")
     suspend fun countForBusiness(businessId: String): Int
 

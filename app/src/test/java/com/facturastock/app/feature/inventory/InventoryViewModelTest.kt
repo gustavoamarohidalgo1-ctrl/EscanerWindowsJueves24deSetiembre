@@ -233,6 +233,45 @@ class InventoryViewModelTest {
         }
 
     @Test
+    fun `the inventory review runs once by itself without blocking the reader or showing progress`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            activate()
+            inventoryReads.replaceInventory(BUSINESS_ID, listOf(sugar(), rice()))
+            val pending = CompletableDeferred<InventoryDiagnosticReport>()
+            inventoryReads.diagnoseHandler = { pending.await() }
+            val viewModel = createViewModel()
+            runCurrent()
+
+            // Arranca sola al cargar la lista, sin estado visible de «revisando».
+            assertEquals(1, inventoryReads.diagnoseCalls.size)
+            assertFalse(viewModel.uiState.value.isDiagnosing)
+
+            pending.complete(report(divergent = setOf(SUGAR_ID)))
+            runCurrent()
+            assertTrue(InventoryDataAlert.PROJECTION_DIVERGENCE in viewModel.uiState.value.alertsOf(SUGAR_ID))
+
+            // Nuevas emisiones del inventario no repiten la revisión automática.
+            inventoryReads.replaceInventory(BUSINESS_ID, listOf(sugar(version = 5L), rice()))
+            runCurrent()
+            assertEquals(1, inventoryReads.diagnoseCalls.size)
+        }
+
+    @Test
+    fun `a failing automatic inventory review stays silent`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            activate()
+            inventoryReads.replaceInventory(BUSINESS_ID, listOf(sugar(), rice()))
+            inventoryReads.diagnoseHandler = { throw IllegalStateException("ledger unavailable") }
+            val viewModel = createViewModel()
+            runCurrent()
+
+            assertEquals(1, inventoryReads.diagnoseCalls.size)
+            assertNull(viewModel.uiState.value.failure)
+            assertFalse(viewModel.uiState.value.isDiagnosing)
+            assertEquals(2, viewModel.uiState.value.items.size)
+        }
+
+    @Test
     fun `a diagnostic finishing after a stock update cannot attach outdated divergence alerts`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             activate()
@@ -265,7 +304,8 @@ class InventoryViewModelTest {
 
             assertFalse(viewModel.uiState.value.isLoading)
             assertEquals(emptySet<InventoryDataAlert>(), viewModel.uiState.value.items.first().allAlerts)
-            assertNull(viewModel.uiState.value.diagnosticReport)
+            // La revisión automática al cargar encontró el libro consistente.
+            assertTrue(viewModel.uiState.value.diagnosticReport!!.isConsistent)
 
             inventoryReads.diagnosticReport = report(divergent = setOf(SUGAR_ID))
             viewModel.onAction(InventoryContract.Action.RunDiagnostic)
@@ -286,7 +326,7 @@ class InventoryViewModelTest {
             val healed = viewModel.uiState.value
             assertTrue(healed.diagnosticReport!!.isConsistent)
             assertTrue(healed.allItems.none { InventoryDataAlert.PROJECTION_DIVERGENCE in it.allAlerts })
-            assertEquals(2, inventoryReads.diagnoseCalls.size)
+            assertEquals(3, inventoryReads.diagnoseCalls.size)
         }
 
     @Test
@@ -396,24 +436,26 @@ class InventoryViewModelTest {
         runTest(context = mainDispatcherRule.dispatcher) {
             activate()
             inventoryReads.replaceInventory(BUSINESS_ID, listOf(sugar()))
-            val pending = CompletableDeferred<InventoryDiagnosticReport>()
-            inventoryReads.diagnoseHandler = { pending.await() }
             val viewModel = createViewModel()
             runCurrent()
-
-            viewModel.onAction(InventoryContract.Action.RunDiagnostic)
-            runCurrent()
-            viewModel.onAction(InventoryContract.Action.RunDiagnostic)
-            runCurrent()
-
+            // La revisión automática ya terminó al cargar; las manuales se cuentan desde aquí.
             assertEquals(1, inventoryReads.diagnoseCalls.size)
+            val pending = CompletableDeferred<InventoryDiagnosticReport>()
+            inventoryReads.diagnoseHandler = { pending.await() }
+
+            viewModel.onAction(InventoryContract.Action.RunDiagnostic)
+            runCurrent()
+            viewModel.onAction(InventoryContract.Action.RunDiagnostic)
+            runCurrent()
+
+            assertEquals(2, inventoryReads.diagnoseCalls.size)
             assertTrue(viewModel.uiState.value.isDiagnosing)
 
             pending.complete(report(divergent = setOf(SUGAR_ID)))
             runCurrent()
 
             assertFalse(viewModel.uiState.value.isDiagnosing)
-            assertEquals(1, inventoryReads.diagnoseCalls.size)
+            assertEquals(2, inventoryReads.diagnoseCalls.size)
             assertTrue(InventoryDataAlert.PROJECTION_DIVERGENCE in viewModel.uiState.value.alertsOf(SUGAR_ID))
 
             val detailViewModel = createViewModel(
@@ -423,7 +465,7 @@ class InventoryViewModelTest {
             detailViewModel.onAction(InventoryContract.Action.RunDiagnostic)
             runCurrent()
 
-            assertEquals(1, inventoryReads.diagnoseCalls.size)
+            assertEquals(2, inventoryReads.diagnoseCalls.size)
             assertFalse(detailViewModel.uiState.value.isDiagnosing)
         }
 

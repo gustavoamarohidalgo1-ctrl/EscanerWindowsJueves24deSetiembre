@@ -4942,6 +4942,16 @@ class SalesViewModelTest {
             return delegate.listByBarcodeLength(businessId, minLength, maxLength)
         }
 
+        override suspend fun listBarcodeSupersequences(
+            businessId: BusinessId,
+            scannedDigits: String,
+            minLength: Int,
+            maxLength: Int,
+        ): List<Product> {
+            countCatalogRead()
+            return delegate.listBarcodeSupersequences(businessId, scannedDigits, minLength, maxLength)
+        }
+
         private fun countCatalogRead() {
             catalogReadCalls += 1
             nextCatalogReadFailure?.let { failure ->

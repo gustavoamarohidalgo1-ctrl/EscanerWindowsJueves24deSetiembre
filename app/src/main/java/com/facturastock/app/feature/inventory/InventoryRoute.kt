@@ -20,6 +20,7 @@ import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.domain.model.id.PurchaseId
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.FeatureLoadContent
+import com.facturastock.app.feature.common.ReadPhysicalInput
 import com.facturastock.app.feature.common.ScannerCodeInput
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.components.FacturaStockTopBarAction
@@ -42,16 +43,14 @@ fun InventoryRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val diagnosticFailed = state.failure == InventoryContract.Failure.DIAGNOSTIC_FAILED
-    val showDiagnostic = remember(state.allItems, state.diagnosticReport, state.isDiagnosing, diagnosticFailed) {
-        inventoryDiagnosticIsRelevant(
-            items = state.allItems,
-            report = state.diagnosticReport,
-            isRunning = state.isDiagnosing,
-            failed = diagnosticFailed,
-        )
-    }
 
-    val scanner = if (state.productId == null) rememberInventoryScannerInput(state, viewModel) else null
+    val scanner =
+        if (state.productId == null) {
+            // Inventario no muestra «Reiniciar lector»: el lector se limpia solo tras una pausa.
+            rememberInventoryScannerInput(state, viewModel, autoResetIdleRead = true)
+        } else {
+            null
+        }
     InventoryTopBarActions(
         state = state,
         onRegisterProducts = onRegisterProducts,
@@ -130,29 +129,35 @@ fun InventoryRoute(
                 if (state.productId == null) {
                     Column(Modifier.fillMaxSize()) {
                         if (scanner != null) {
-                            ScannerCodeInput(
-                                enabled = state.isRegisteringProducts && state.canRouteScannerInput,
-                                physicalInput = scanner.physicalInput,
-                                onClearPhysicalInput = scanner.clear,
-                                onCode = scanner.submit,
-                                searchQuery = state.query,
-                                onSearchQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
-                                labelRes = R.string.inventory_unified_input_label,
-                                hintRes = R.string.inventory_unified_input_hint,
-                                supportingTextRes = R.string.inventory_unified_input_help,
-                                submitLabelRes = R.string.inventory_unified_open_code,
-                                modifier = Modifier.padding(FacturaStockDesign.spacing.md),
-                            )
-                            Text(
-                                text = stringResource(inventoryScannerMessage(state)),
-                                color =
-                                    if (state.scannerFailure != null) {
-                                        MaterialTheme.colorScheme.error
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),
-                            )
+                            ReadPhysicalInput(scanner.physicalInput) { currentPhysicalInput ->
+                                ScannerCodeInput(
+                                    enabled = state.isRegisteringProducts && state.canRouteScannerInput,
+                                    physicalInput = currentPhysicalInput,
+                                    onClearPhysicalInput = scanner.clear,
+                                    onCode = scanner.submit,
+                                    searchQuery = state.query,
+                                    onSearchQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
+                                    labelRes = R.string.inventory_unified_input_label,
+                                    hintRes = R.string.inventory_unified_input_hint,
+                                    supportingTextRes = R.string.inventory_unified_input_help,
+                                    showActions = false,
+                                    modifier = Modifier.padding(FacturaStockDesign.spacing.md),
+                                )
+                            }
+                            // Sólo avisos útiles (búsqueda en curso o errores); el reposo del lector
+                            // («Esperando lectura…», «en pausa», «Cargando…») no ocupa la pantalla.
+                            inventoryListScannerMessage(state)?.let { messageRes ->
+                                Text(
+                                    text = stringResource(messageRes),
+                                    color =
+                                        if (state.scannerFailure != null) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),
+                                )
+                            }
                             if (state.scannerFailure == InventoryContract.ScannerFailure.LOOKUP_FAILED) {
                                 FacturaStockSecondaryButton(
                                     text = stringResource(R.string.action_retry),
@@ -172,7 +177,8 @@ fun InventoryRoute(
                             isLoading = state.isLoading,
                             isDiagnosing = state.isDiagnosing,
                             diagnosticFailed = diagnosticFailed,
-                            showDiagnostic = showDiagnostic,
+                            // La revisión del inventario corre sola en segundo plano, sin tarjeta.
+                            showDiagnostic = false,
                             showNameSearch = scanner == null,
                             onQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
                             onSearchFocusChange = { viewModel.onAction(InventoryContract.Action.SearchFocusChanged(it)) },
@@ -263,3 +269,11 @@ private fun InventoryTopBarActions(
         onDispose { currentOnTopBarActionsAvailable(emptyList()) }
     }
 }
+
+/** Mensaje del lector en el listado: nulo mientras sólo espera lecturas o carga la pantalla. */
+internal fun inventoryListScannerMessage(state: InventoryContract.State): Int? =
+    inventoryScannerMessage(state).takeUnless { messageRes ->
+        messageRes == R.string.inventory_registration_ready ||
+            messageRes == R.string.inventory_scanner_inactive ||
+            messageRes == R.string.feature_loading_message
+    }

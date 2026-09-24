@@ -192,6 +192,21 @@ interface ProductRepository {
             product.barcode?.length?.let { it in minLength..maxLength } == true
         }
 
+    /**
+     * Subconjunto de [listByBarcodeLength] cuyo código contiene [scannedDigits] como
+     * subsecuencia: los únicos que pueden ser esa lectura con dígitos perdidos. Los demás
+     * nunca compiten con un exacto sospechoso, así que filtrarlos antes no cambia el resultado.
+     */
+    suspend fun listBarcodeSupersequences(
+        businessId: BusinessId,
+        scannedDigits: String,
+        minLength: Int,
+        maxLength: Int,
+    ): List<Product> =
+        listByBarcodeLength(businessId, minLength, maxLength).filter { product ->
+            product.barcode?.let { containsSubsequence(it, scannedDigits) } == true
+        }
+
     /** Archivo lógico sobre la versión vigente; nunca elimina saldos ni historia. */
     suspend fun archive(productId: ProductId): Boolean
 
@@ -215,4 +230,14 @@ interface ProductRepository {
         productId: ProductId,
         expectedVersion: Long,
     ): Boolean
+}
+
+/** `true` si todos los caracteres de [needle] aparecen en [text] en el mismo orden. */
+internal fun containsSubsequence(text: String, needle: String): Boolean {
+    var matched = 0
+    for (char in text) {
+        if (matched == needle.length) return true
+        if (char == needle[matched]) matched++
+    }
+    return matched == needle.length
 }

@@ -520,6 +520,29 @@ class RoomProductRepository @Inject constructor(
             }
         }
 
+    override suspend fun listBarcodeSupersequences(
+        businessId: BusinessId,
+        scannedDigits: String,
+        minLength: Int,
+        maxLength: Int,
+    ): List<Product> {
+        // El patrón LIKE sólo es exacto para dígitos ASCII; otro texto usa el filtro general.
+        if (scannedDigits.isEmpty() || scannedDigits.any { it !in '0'..'9' }) {
+            return super.listBarcodeSupersequences(businessId, scannedDigits, minLength, maxLength)
+        }
+        val pattern = buildString(scannedDigits.length * 2 + 1) {
+            append('%')
+            scannedDigits.forEach { digit -> append(digit).append('%') }
+        }
+        return withContext(dispatchers.io) {
+            storageCatching {
+                productDao
+                    .listBarcodeSupersequences(businessId.value, minLength, maxLength, pattern)
+                    .map(ProductEntity::toDomain)
+            }
+        }
+    }
+
     override suspend fun archive(productId: ProductId): Boolean = setStatus(
         productId,
         CatalogStatus.ARCHIVED,

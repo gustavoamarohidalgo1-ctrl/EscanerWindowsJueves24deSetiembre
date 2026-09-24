@@ -29,6 +29,7 @@ import com.facturastock.app.core.input.KeyboardWedgeReadError
 import com.facturastock.app.core.input.KeyboardWedgeRouter
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.PhysicalScannerRegistration
+import com.facturastock.app.feature.common.ReadPhysicalInput
 import com.facturastock.app.feature.common.ScannerCodeInput
 import com.facturastock.app.ui.theme.FacturaStockDesign
 import kotlinx.coroutines.launch
@@ -79,10 +80,12 @@ fun SalesRoute(
                 }
             }
         }
-    var physicalInput by remember(viewModel) { mutableStateOf("") }
+    // Cada tecla del lector escribe aquí. Sólo el campo lo lee (ver ReadPhysicalInput), así una
+    // lectura de 13 dígitos no recompone 13 veces toda la ruta de Ventas.
+    val physicalInput = remember(viewModel) { mutableStateOf("") }
     val clearScannerInput = {
         KeyboardWedgeRouter.reset()
-        physicalInput = ""
+        physicalInput.value = ""
         viewModel.onAction(SalesContract.Action.ScannerReadReset)
     }
 
@@ -200,7 +203,7 @@ fun SalesRoute(
         onScan = { value ->
             viewModel.onAction(SalesContract.Action.BarcodeScanned(value))
         },
-        onInputChanged = { physicalInput = it },
+        onInputChanged = { physicalInput.value = it },
         onReadError = { error ->
             viewModel.onAction(
                 SalesContract.Action.ScannerReadFailed(
@@ -228,26 +231,28 @@ fun SalesRoute(
             if (state.entryStep == SalesContract.EntryStep.SELL &&
                 state.mode == SalesContract.EntryMode.SCANNER
             ) {
-                ScannerCodeInput(
-                    // Permanece tocable al editar el deudor; el registro HID conserva arriba
-                    // todos sus guards. Al recuperar foco, el otro campo publica su pérdida.
-                    enabled = if (state.unifiedInput) state.copy(isTextInputFocused = false).canRouteScannerInput
-                        else state.canRouteScannerInput,
-                    physicalInput = physicalInput,
-                    onClearPhysicalInput = clearScannerInput,
-                    onCode = { value ->
-                        viewModel.onAction(SalesContract.Action.BarcodeScanned(value))
-                    },
-                    submitLabelRes = if (state.unifiedInput) R.string.sales_unified_add_code else R.string.sales_scanner_add_product,
-                    searchQuery = state.query.takeIf { state.unifiedInput },
-                    onSearchQueryChange = if (state.unifiedInput) {
-                        { value -> viewModel.onAction(SalesContract.Action.SearchChanged(value)) }
-                    } else null,
-                    isOtherTextInputFocused = state.unifiedInput && state.isTextInputFocused,
-                    labelRes = if (state.unifiedInput) R.string.sales_unified_input_label else R.string.scanner_code_label,
-                    hintRes = if (state.unifiedInput) R.string.sales_unified_input_hint else R.string.scanner_code_hint,
-                    modifier = Modifier.padding(FacturaStockDesign.spacing.md),
-                )
+                ReadPhysicalInput(physicalInput) { currentPhysicalInput ->
+                    ScannerCodeInput(
+                        // Permanece tocable al editar el deudor; el registro HID conserva arriba
+                        // todos sus guards. Al recuperar foco, el otro campo publica su pérdida.
+                        enabled = if (state.unifiedInput) state.copy(isTextInputFocused = false).canRouteScannerInput
+                            else state.canRouteScannerInput,
+                        physicalInput = currentPhysicalInput,
+                        onClearPhysicalInput = clearScannerInput,
+                        onCode = { value ->
+                            viewModel.onAction(SalesContract.Action.BarcodeScanned(value))
+                        },
+                        submitLabelRes = if (state.unifiedInput) R.string.sales_unified_add_code else R.string.sales_scanner_add_product,
+                        searchQuery = state.query.takeIf { state.unifiedInput },
+                        onSearchQueryChange = if (state.unifiedInput) {
+                            { value -> viewModel.onAction(SalesContract.Action.SearchChanged(value)) }
+                        } else null,
+                        isOtherTextInputFocused = state.unifiedInput && state.isTextInputFocused,
+                        labelRes = if (state.unifiedInput) R.string.sales_unified_input_label else R.string.scanner_code_label,
+                        hintRes = if (state.unifiedInput) R.string.sales_unified_input_hint else R.string.scanner_code_hint,
+                        modifier = Modifier.padding(FacturaStockDesign.spacing.md),
+                    )
+                }
                 SalesScannerFeedback(
                     state = state,
                     modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),

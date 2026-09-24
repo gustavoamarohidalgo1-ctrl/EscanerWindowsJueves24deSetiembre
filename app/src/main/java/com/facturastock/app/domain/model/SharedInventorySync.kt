@@ -237,4 +237,7 @@ fun canonicalLocationName(value: String): String =
     Normalizer.normalize(value, Normalizer.Form.NFKC)
         .trim()
         .lowercase(Locale.ROOT)
-        .replace(Regex("\\s+"), " ")
+        .replace(WhitespaceRun, " ")
+
+// Compilada una vez: antes se creaba una expresión regular nueva en cada normalización.
+private val WhitespaceRun = Regex("\\s+")

@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.feature.common.CollectUiEffects
+import com.facturastock.app.feature.common.ReadPhysicalInput
 import com.facturastock.app.feature.common.ScannerCodeInput
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.theme.FacturaStockDesign
@@ -73,15 +74,16 @@ fun InventoryRegistrationRoute(
     }
     InventoryRegistrationScreen(
         state = state,
-        onBack = onBack,
         onRetry = { viewModel.onAction(InventoryContract.Action.Retry) },
         scannerContent = {
-            ScannerCodeInput(
-                enabled = state.isRegisteringProducts && state.canRouteScannerInput,
-                physicalInput = scanner.physicalInput,
-                onClearPhysicalInput = scanner.clear,
-                onCode = scanner.submit,
-            )
+            ReadPhysicalInput(scanner.physicalInput) { currentPhysicalInput ->
+                ScannerCodeInput(
+                    enabled = state.isRegisteringProducts && state.canRouteScannerInput,
+                    physicalInput = currentPhysicalInput,
+                    onClearPhysicalInput = scanner.clear,
+                    onCode = scanner.submit,
+                )
+            }
         },
         modifier = modifier,
     )
@@ -90,7 +92,6 @@ fun InventoryRegistrationRoute(
 @Composable
 fun InventoryRegistrationScreen(
     state: InventoryContract.State,
-    onBack: () -> Unit,
     onRetry: () -> Unit = {},
     modifier: Modifier = Modifier,
     scannerContent: (@Composable () -> Unit)? = null,
@@ -156,11 +157,7 @@ fun InventoryRegistrationScreen(
                 }
             }
         }
-        FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_return_inventory),
-            onClick = onBack,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        // Sin «Volver al inventario»: la flecha de la barra superior ya regresa.
     }
 }
 

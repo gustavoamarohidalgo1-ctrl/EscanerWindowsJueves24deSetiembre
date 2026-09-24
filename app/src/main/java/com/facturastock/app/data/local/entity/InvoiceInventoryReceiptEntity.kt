@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.facturastock.app.domain.model.AsciiPatterns
 
 /** Sobrevive al borrado del borrador y permite reconocer un ACK local perdido. */
 @Entity(
@@ -30,7 +31,7 @@ data class InvoiceInventoryReceiptEntity(
             .requireCanonicalUuid(draftId, "draftId")
         com.facturastock.app.data.local
             .requireCanonicalUuid(businessId, "businessId")
-        require(Regex("[0-9a-f]{64}").matches(contentHash))
+        require(AsciiPatterns.isLowerHex(contentHash, 64))
         require(appliedLineCount > 0)
         require(appliedAt >= 0)
     }

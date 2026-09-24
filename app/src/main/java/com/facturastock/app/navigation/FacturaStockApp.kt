@@ -23,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -81,7 +80,6 @@ import com.facturastock.app.feature.sales.SalesContract
 import com.facturastock.app.feature.sales.SalesRoute
 import com.facturastock.app.feature.sales.SalesScreen
 import com.facturastock.app.feature.sales.SalesTestTags
-import com.facturastock.app.feature.settings.SettingsRoute
 import com.facturastock.app.feature.source.SourceRoute
 import com.facturastock.app.feature.summary.PurchaseSummaryRoute
 import com.facturastock.app.feature.sync.SyncRoute
@@ -477,25 +475,7 @@ private fun FacturaStockContent(
                     } else {
                         null
                     },
-                    actionIconRes = if (currentDefinition?.topLevel == true) {
-                        R.drawable.ic_settings
-                    } else {
-                        null
-                    },
-                    actionContentDescription = if (currentDefinition?.topLevel == true) {
-                        stringResource(R.string.navigation_open_settings)
-                    } else {
-                        null
-                    },
-                    onActionClick = if (currentDefinition?.topLevel == true) {
-                        {
-                            requestNavigation(
-                                PendingNavigation(AppRoutes.SETTINGS, topLevel = false),
-                            )
-                        }
-                    } else {
-                        null
-                    },
+                    // Sin engranaje: la pantalla Ajustes se retiró porque el negocio no la usa.
                 )
             },
             bottomBar = {
@@ -608,8 +588,6 @@ private fun FacturaStockNavHost(
     onInventoryTopBarActionsAvailable: (List<FacturaStockTopBarAction>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uriHandler = LocalUriHandler.current
-
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -854,6 +832,7 @@ private fun FacturaStockNavHost(
                 CatalogsRoute(
                     onBack = navController::popBackStack,
                     isManualRegistration = entry.arguments?.getString(AppRoutes.MANUAL_PRODUCT) == "true",
+                    isSpecialRegistration = entry.arguments?.getString(AppRoutes.SPECIAL_PRODUCT) == "true",
                 )
             } else {
                 TopLevelPlaceholderScreen(
@@ -984,7 +963,6 @@ private fun FacturaStockNavHost(
             } else {
                 InventoryRegistrationScreen(
                     state = InventoryContract.State(scannerActive = true),
-                    onBack = navController::popBackStack,
                 )
             }
         }
@@ -1022,42 +1000,6 @@ private fun FacturaStockNavHost(
                 TopLevelPlaceholderScreen(
                     titleRes = R.string.inventory_detail_title,
                     messageRes = R.string.inventory_detail_message,
-                )
-            }
-        }
-        composable(AppRoutes.SETTINGS) {
-            if (useInjectedViewModels) {
-                SettingsRoute(
-                    onOpenDemoCapture = { draftId, captureId ->
-                        navController.navigate(AppRoutes.imagePreview(draftId, captureId)) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenDemoPurchase = { purchaseId ->
-                        navController.navigate(AppRoutes.purchaseDetail(purchaseId)) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenAccount = {
-                        navController.navigate(AppRoutes.ACCOUNT) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenSync = {
-                        navController.navigate(AppRoutes.SYNC) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenPrivacyPolicy = { url ->
-                        // La URL proviene de BuildConfig y el gate release exige HTTPS. Fallar al
-                        // abrir el navegador no altera configuración ni datos locales.
-                        runCatching { uriHandler.openUri(url) }
-                    },
-                )
-            } else {
-                TopLevelPlaceholderScreen(
-                    titleRes = R.string.settings_empty_title,
-                    messageRes = R.string.settings_empty_message,
                 )
             }
         }
