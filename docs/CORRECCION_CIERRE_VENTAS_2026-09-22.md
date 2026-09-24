@@ -1,0 +1,30 @@
+**Corrección del cierre al agregar productos en Ventas — 22 de septiembre de 2026**
+
+El registro de la tablet contiene cuatro cierres con `ComposeRuntimeError: pending composition has not been applied`. Las trazas identifican el mismo recorrido: una actualización de `AndroidView` cambia el estado del campo del lector; `TextView.setEnabled` reinicia el IME; `onCreateInputConnection` busca elementos vecinos mediante `focusSearch`; esa búsqueda entra en el cálculo de foco de una lista Compose y fuerza una subcomposición mientras todavía se están aplicando cambios. [Trazas del cierre](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/crash.log).
+
+El comportamiento del framework está confirmado en [TextView de AOSP Android 10](https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-10.0.0_r47/core/java/android/widget/TextView.java#8637): al crear la conexión se exploran vecinos para establecer los indicadores de navegación anterior/siguiente del IME. `setText` también puede reiniciar la conexión, por lo que desplazar únicamente la llamada a `setEnabled` dejaría otra entrada al mismo mecanismo.
+
+El cambio productivo se limita a [ScannerCodeInput.kt](/Users/gustavo/Desktop/ProyectoMayda/app/src/main/java/com/facturastock/app/feature/common/ScannerCodeInput.kt:369). Una bandera local hace que `focusSearch` devuelva `null` únicamente durante la preparación de la conexión nativa. Se conserva el valor anterior y se restaura en `finally`, incluso si la preparación falla o devuelve una conexión nula. Fuera de ese bloque, la búsqueda de foco sigue delegándose al framework.
+
+El campo mantiene sus acciones explícitas `DONE` y `SEARCH`, su conexión nativa y los controles existentes de permisos, ciclo de vida y rechazo de conexiones antiguas. La corrección no introduce cambios en la base de datos, el carrito ni las cantidades vendidas.
+
+La [prueba de regresión](/Users/gustavo/Desktop/ProyectoMayda/app/src/androidTest/java/com/facturastock/app/feature/common/ScannerInputConnectionRegressionTest.kt) utiliza un `EditText` nativo como control positivo: confirma que el framework recorre el árbol de foco, exige que el campo del lector no lo haga al crear la conexión y comprueba que la navegación normal funcione después. También verifica las acciones del IME y la configuración de entrada. Contra el código original falló con `Creating the IME connection must not reenter the parent focus tree`; con la corrección pasó en el emulador API 35. [Evidencia previa](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/red-regression.txt), [resultado corregido](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/green-instrumentation.txt).
+
+| Validación | Resultado |
+| --- | --- |
+| Instrumentación en emulador API 35 | 42 pruebas aprobadas, incluida la regresión, el recorrido de 32 escaneos rápidos con desplazamiento del carrito y recorridos de ventas/lector |
+| Pruebas unitarias localDebug | 1.843 aprobadas; cero fallos, errores u omitidas |
+| `ciStaticAnalysis`, `lintLocalDebug`, `compileCloudDebugKotlin` | `BUILD SUCCESSFUL`; lint sin errores, con 76 advertencias |
+| Compilación localDebug y APK de pruebas | `BUILD SUCCESSFUL` |
+
+[Resumen de pruebas unitarias](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/unit-summary.json), [compilación y pruebas](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/green-build.log). Las evidencias de esta corrección se conservan en `build/reports/sales-crash-2026-09-22`.
+
+La misma regresión se ejecutó de forma aislada en la Huawei AGS6-W09, Android 10/API 29. Falló contra la instalación original con la aserción esperada y pasó tras actualizar (`OK (1 test)`). Se usó únicamente la prueba del campo nativo; los recorridos de ventas con datos sintéticos se ejecutaron en el emulador. [Antes](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-red-regression.txt), [después](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-green-regression.txt).
+
+Se guardó una copia privada de seguridad y del APK anterior. La tablet recibió una actualización de la misma variante `localDebug`, versión 1.0.12/código 13, con la misma firma y sin desinstalar la aplicación principal. El SHA-256 del APK instalado coincide con el del APK probado. El paquete temporal de pruebas se retiró al terminar. [Instalación](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-install.txt), [verificación del APK](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-apk-verification.json).
+
+La comparación de las copias de la base, incluyendo su WAL, confirmó que la estructura y todas las filas de las 37 tablas son idénticas antes y después de la actualización y las pruebas. `PRAGMA integrity_check` devolvió `ok` en ambas copias. Los archivos físicos de SQLite cambiaron, por lo que la preservación se verificó sobre el contenido lógico completo; no se afirma identidad binaria de esos archivos. [Verificación de datos](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-logical-data-verification.json).
+
+Al terminar, se abrió la aplicación principal y se verificó `MainActivity` en primer plano, con la pantalla «Vender» visible. El proceso permaneció activo y el registro de cierres no añadió excepciones fatales respecto de las cuatro iniciales durante esta comprobación. [Arranque](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-launch.txt), [comprobación final](/Users/gustavo/Desktop/ProyectoMayda/build/reports/sales-crash-2026-09-22/tablet-startup-verification.json).
+
+La regresión verifica de forma determinista el mecanismo de foco identificado en las trazas; no simula el cierre intermitente exacto. Las pruebas verdes acreditan los recorridos ejecutados en los entornos indicados, sin afirmar ausencia de cualquier otro cierre posible.

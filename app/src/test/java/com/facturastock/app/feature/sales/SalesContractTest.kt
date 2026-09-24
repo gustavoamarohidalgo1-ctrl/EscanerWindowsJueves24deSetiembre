@@ -71,6 +71,8 @@ class SalesContractTest {
     fun `checkout only enables for a persisted valid snapshot`() {
         assertTrue(ready.canCheckout)
         assertTrue(ready.copy(searchFailed = true).canCheckout)
+        assertFalse(ready.copy(isMutating = true).canCheckout)
+        assertFalse(ready.copy(isMutating = true, isProcessingBarcode = true).canCheckout)
         assertFalse(ready.copy(isSavingLineEdits = true).canCheckout)
         assertFalse(ready.copy(hasPendingEdits = true).canCheckout)
         assertFalse(ready.copy(pendingBarcodeCount = 1).canCheckout)
@@ -81,6 +83,7 @@ class SalesContractTest {
             ready.copy(cartLines = listOf(validLine.copy(priceValid = false))).canCheckout,
         )
         assertFalse(ready.copy(cartContentHash = null).canCheckout)
+        assertFalse(ready.copy(discardEditsReview = true).canCheckout)
         assertFalse(ready.copy(catalogLoadFailed = true).canCheckout)
         assertFalse(ready.copy(cartLoadFailed = true).canCheckout)
     }
@@ -157,16 +160,6 @@ class SalesContractTest {
         assertFalse(associating.copy(isSavingLineEdits = true).canRouteScannerInput)
         assertFalse(associating.copy(hasPendingEdits = true).canRouteScannerInput)
         assertFalse(associating.copy(discardEditsReview = true).canRouteScannerInput)
-        assertFalse(
-            associating.copy(
-                checkoutReview = SalesContract.CheckoutReview(
-                    cartId = requireNotNull(ready.cartId),
-                    version = ready.cartVersion,
-                    contentHash = requireNotNull(ready.cartContentHash),
-                    total = total,
-                ),
-            ).canRouteScannerInput,
-        )
         val option = SalesContract.ProductOption(
             productId = validLine.productId,
             productName = validLine.productName,
@@ -192,6 +185,7 @@ class SalesContractTest {
         assertFalse(credit.canCheckout)
         assertTrue(credit.canRouteScannerInput)
         assertTrue(credit.copy(debtorNameInput = "  María   Quispe  ").canCheckout)
+        assertFalse(credit.copy(debtorNameInput = "María Quispe", isMutating = true).canCheckout)
         assertEquals(
             "María Quispe",
             credit.copy(debtorNameInput = "  María   Quispe  ").canonicalDebtorName,

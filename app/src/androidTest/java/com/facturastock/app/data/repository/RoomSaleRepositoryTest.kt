@@ -15,6 +15,7 @@ import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.core.time.AppClock
 import com.facturastock.app.data.local.FacturaStockDatabase
+import com.facturastock.app.data.local.dao.updateCas
 import com.facturastock.app.data.local.entity.AuditEventEntity
 import com.facturastock.app.data.local.entity.BusinessEntity
 import com.facturastock.app.data.local.entity.InventoryBalanceEntity
@@ -43,6 +44,7 @@ import com.facturastock.app.domain.repository.CheckoutSaleResult
 import com.facturastock.app.domain.repository.RecordDebtPaymentCommand
 import com.facturastock.app.domain.repository.RecordDebtPaymentResult
 import com.facturastock.app.domain.repository.SaleCartMutationResult
+import com.facturastock.app.domain.repository.SaleBarcodeRecoveryExpectation
 import com.facturastock.app.domain.repository.SaveSaleCartLineCommand
 import java.math.BigDecimal
 import java.time.Instant
@@ -301,6 +303,120 @@ class RoomSaleRepositoryTest {
         val stored = requireNotNull(database.saleDao().findWithLines(cart.saleId.value))
         assertEquals(1L, stored.sale.version)
         assertEquals(1, stored.lines.size)
+    }
+
+    @Test
+    fun recoveredBarcodeIsValidatedInsideTheWriteAndKeepsTheRegisteredCode() = runBlocking {
+        val command = recoveryCommand()
+        val productBefore = database.productDao().findById(PRODUCT.value)
+
+        val saved = repository.saveLine(BUSINESS, command) as SaleCartMutationResult.Saved
+
+        assertEquals(PRODUCT, saved.cart.lines.single().productId)
+        assertEquals(RECOVERY_STORED, saved.cart.lines.single().barcode)
+        assertEquals(command.expectedVersion + 1L, saved.cart.version)
+        assertEquals(productBefore, database.productDao().findById(PRODUCT.value))
+        assertBalanceUnchanged()
+    }
+
+    @Test
+    fun newCompetingBarcodeWithoutStockInvalidatesAnEarlierRecovery() = runBlocking {
+        val command = recoveryCommand()
+        val competitor = insertRecoveryCompetitor()
+        assertNull(database.inventoryDao().findBalance(BUSINESS.value, competitor.productId, LOCATION.value))
+
+        assertRecoveryRejectedWithoutWrite(command)
+    }
+
+    @Test
+    fun newArchivedCompetingBarcodeAlsoInvalidatesAnEarlierRecovery() = runBlocking {
+        val command = recoveryCommand()
+        insertRecoveryCompetitor(status = CatalogStatus.ARCHIVED)
+
+        assertRecoveryRejectedWithoutWrite(command)
+    }
+
+    @Test
+    fun changedCandidateBarcodeInvalidatesAnEarlierRecovery() = runBlocking {
+        val command = recoveryCommand()
+        val original = requireNotNull(database.productDao().findById(PRODUCT.value))
+        assertEquals(1, database.productDao().updateCas(original.copy(barcode = RECOVERY_COMPETITOR, updatedAt = 3L)))
+
+        assertRecoveryRejectedWithoutWrite(command)
+    }
+
+    @Test
+    fun changedCandidateVersionInvalidatesRecoveryEvenWhenItsBarcodeIsUnchanged() = runBlocking {
+        val command = recoveryCommand()
+        val original = requireNotNull(database.productDao().findById(PRODUCT.value))
+        assertEquals(1, database.productDao().updateCas(original.copy(name = "Producto actualizado", updatedAt = 3L)))
+        assertEquals(RECOVERY_STORED, database.productDao().findById(PRODUCT.value)?.barcode)
+
+        assertRecoveryRejectedWithoutWrite(command)
+    }
+
+    @Test
+    fun newExactBarcodeInvalidatesAnEarlierRecovery() = runBlocking {
+        val command = recoveryCommand()
+        insertRecoveryCompetitor(barcode = RECOVERY_SCANNED)
+
+        assertRecoveryRejectedWithoutWrite(command)
+    }
+
+    @Test
+    fun newExactSkuInvalidatesAnEarlierRecovery() = runBlocking {
+        val command = recoveryCommand()
+        insertRecoveryCompetitor(barcode = null, sku = RECOVERY_SCANNED)
+
+        assertRecoveryRejectedWithoutWrite(command)
+    }
+
+    @Test
+    fun competingBarcodeInAnotherBusinessDoesNotBlockRecovery() = runBlocking {
+        val command = recoveryCommand()
+        val otherBusiness = BusinessId.from(uuid(ids.incrementAndGet()))
+        val otherUnit = uuid(ids.incrementAndGet()).toString()
+        database.businessDao().insert(BusinessEntity(otherBusiness.value, "Otro negocio", 1L, 1L))
+        database.unitDao().insert(UnitEntity(otherUnit, otherBusiness.value, "NIU", "Unidad", 1L, 1L))
+        database.productDao().insert(ProductEntity(
+            productId = uuid(ids.incrementAndGet()).toString(),
+            businessId = otherBusiness.value,
+            unitId = otherUnit,
+            name = "Competidor de otro negocio",
+            barcode = RECOVERY_COMPETITOR,
+            createdAt = 1L,
+            updatedAt = 1L,
+        ))
+
+        val result = repository.saveLine(BUSINESS, command)
+
+        assertTrue(result is SaleCartMutationResult.Saved)
+        assertEquals(PRODUCT, (result as SaleCartMutationResult.Saved).cart.lines.single().productId)
+    }
+
+    @Test
+    fun ordinaryLineSaveDoesNotAcquireBarcodeRecoveryRestrictions() = runBlocking {
+        val command = recoveryCommand().copy(barcodeRecovery = null)
+        insertRecoveryCompetitor()
+
+        val result = repository.saveLine(BUSINESS, command)
+
+        assertTrue(result is SaleCartMutationResult.Saved)
+        assertEquals(PRODUCT, (result as SaleCartMutationResult.Saved).cart.lines.single().productId)
+    }
+
+    @Test
+    fun invalidatedRecoveryCannotReplaceAnExistingLineOrAdvanceItsCartVersion() = runBlocking {
+        val initial = recoveryCommand()
+        val saved = repository.saveLine(BUSINESS, initial) as SaleCartMutationResult.Saved
+        val replacement = initial.copy(
+            expectedVersion = saved.cart.version,
+            saleLineId = saved.cart.lines.single().saleLineId,
+            quantity = Quantity.of("2"),
+        )
+        insertRecoveryCompetitor()
+
+        assertRecoveryRejectedWithoutWrite(replacement)
     }
 
     @Test
@@ -866,6 +982,53 @@ class RoomSaleRepositoryTest {
         assertEquals(SaleStatus.DRAFT.name, database.saleDao().findSale(cart.saleId.value)?.status)
     }
 
+    private suspend fun recoveryCommand(): SaveSaleCartLineCommand {
+        val product = requireNotNull(database.productDao().findById(PRODUCT.value))
+        assertEquals(1, database.productDao().updateCas(product.copy(barcode = RECOVERY_STORED, updatedAt = 2L)))
+        val current = requireNotNull(database.productDao().findById(PRODUCT.value))
+        val cart = repository.createOrResume(BUSINESS, PEN).cart
+        return SaveSaleCartLineCommand(
+            saleId = cart.saleId,
+            expectedVersion = cart.version,
+            productId = PRODUCT,
+            locationId = LOCATION,
+            quantity = Quantity.of("1"),
+            unitPrice = Money.ofMinor(500L, PEN),
+            barcodeRecovery = SaleBarcodeRecoveryExpectation(
+                scannedBarcode = RECOVERY_SCANNED,
+                expectedStoredBarcode = requireNotNull(current.barcode),
+                expectedProductVersion = current.version,
+            ),
+        )
+    }
+
+    private suspend fun insertRecoveryCompetitor(
+        barcode: String? = RECOVERY_COMPETITOR,
+        sku: String? = null,
+        status: CatalogStatus = CatalogStatus.ACTIVE,
+    ): ProductEntity {
+        val competitor = requireNotNull(database.productDao().findById(PRODUCT.value)).copy(
+            productId = uuid(ids.incrementAndGet()).toString(),
+            name = "Competidor",
+            barcode = barcode,
+            sku = sku,
+            status = status.name,
+        )
+        database.productDao().insert(competitor)
+        return competitor
+    }
+
+    private suspend fun assertRecoveryRejectedWithoutWrite(command: SaveSaleCartLineCommand) {
+        val before = requireNotNull(database.saleDao().findWithLines(command.saleId.value))
+
+        assertEquals(SaleCartMutationResult.BarcodeRecoveryChanged, repository.saveLine(BUSINESS, command))
+
+        assertEquals(before, database.saleDao().findWithLines(command.saleId.value))
+        assertBalanceUnchanged()
+        assertTrue(database.inventoryDao().listMovementsForSale(BUSINESS.value, command.saleId.value).isEmpty())
+        assertTrue(database.auditEventDao().listForEntity(BUSINESS.value, "SALE", command.saleId.value).isEmpty())
+    }
+
     private suspend fun seedCatalogAndStock() {
         database.businessDao().insert(
             BusinessEntity(BUSINESS.value, "Negocio", 1L, 1L),
@@ -1004,6 +1167,9 @@ class RoomSaleRepositoryTest {
     }
 
     private companion object {
+        const val RECOVERY_SCANNED = "77512345000"
+        const val RECOVERY_STORED = "7751234500004"
+        const val RECOVERY_COMPETITOR = "7751234500011"
         const val NOW = 10_000L
         const val RESTART_DATABASE_NAME = "room-sale-restart.db"
         const val UNIT_ID = "22222222-2222-4222-8222-222222222222"

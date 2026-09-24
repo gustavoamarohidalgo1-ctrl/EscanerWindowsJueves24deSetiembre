@@ -15,6 +15,7 @@ import com.facturastock.app.data.local.entity.AuditEventEntity
 import com.facturastock.app.data.local.entity.DebtEntity
 import com.facturastock.app.data.local.entity.InventoryBalanceEntity
 import com.facturastock.app.data.local.entity.PendingSaleCheckoutEntity
+import com.facturastock.app.data.local.mapper.toDomain
 import com.facturastock.app.domain.model.PendingSaleCheckout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,6 +66,7 @@ import com.facturastock.app.domain.repository.SaleRepository
 import com.facturastock.app.domain.repository.RemoteSalePostResult
 import com.facturastock.app.domain.repository.RemoteSaleSyncRepository
 import com.facturastock.app.domain.repository.SaveSaleCartLineCommand
+import com.facturastock.app.domain.usecase.findAutomaticBarcodeRecovery
 import java.math.BigDecimal
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
@@ -263,6 +265,22 @@ class RoomSaleRepository @Inject constructor(
             product.status != CatalogStatus.ACTIVE.name
         ) {
             return SaleCartMutationResult.ProductUnavailable
+        }
+        command.barcodeRecovery?.let { expectation ->
+            if (product.barcode != expectation.expectedStoredBarcode ||
+                product.version != expectation.expectedProductVersion
+            ) {
+                return SaleCartMutationResult.BarcodeRecoveryChanged
+            }
+            // Releer sólo el candidato no detecta un nuevo competidor. El catálogo completo se
+            // evalúa bajo la misma transacción que insertará la línea, sin filtrar stock o estado.
+            val catalog = database.productDao().listForBusiness(businessId.value).map { it.toDomain() }
+            val match = findAutomaticBarcodeRecovery(expectation.scannedBarcode, businessId, catalog)
+            if (match == null || match.productId != command.productId ||
+                match.barcode != expectation.expectedStoredBarcode
+            ) {
+                return SaleCartMutationResult.BarcodeRecoveryChanged
+            }
         }
         val unit = database.unitDao().findById(product.unitId)
         if (

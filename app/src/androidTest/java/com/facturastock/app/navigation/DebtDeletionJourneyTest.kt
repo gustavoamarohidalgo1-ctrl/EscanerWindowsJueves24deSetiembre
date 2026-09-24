@@ -5,6 +5,9 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.util.Log
 import android.view.WindowManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
@@ -49,6 +52,7 @@ import com.facturastock.app.domain.repository.SaleRepository
 import com.facturastock.app.domain.repository.SaveSaleCartLineCommand
 import com.facturastock.app.domain.repository.UnitRepository
 import com.facturastock.app.feature.debtors.DebtorsTestTags
+import com.facturastock.app.feature.reports.ReportsTestTags
 import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.testing.TestAppConfigurationState
 import com.facturastock.app.testing.completedGateConfiguration
@@ -119,7 +123,7 @@ class DebtDeletionJourneyTest {
         // Sólo este fixture sintético protegido por el guard de emulador permite evidencia visual.
         // FLAG_SECURE permanece intacto en producción.
         scenario.onActivity { it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         // El inicio de Vender abre su siguiente borrador. Se estabiliza antes de comparar tablas.
         composeRule.waitUntil(15_000L) {
             runBlocking { database.saleDao().findActiveDraft(businessId.value, currency.value) != null }
@@ -249,7 +253,14 @@ class DebtDeletionJourneyTest {
     }
 
     private fun openDebt() {
-        clickTag(SalesTestTags.OPEN_DEBTORS)
+        composeRule
+            .onNode(
+                hasText(context.getString(R.string.navigation_reports)) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab),
+            ).performClick()
+        waitForTag(ReportsTestTags.SCREEN)
+        composeRule.onNodeWithTag(ReportsTestTags.SCREEN).performScrollToNode(hasTestTag(ReportsTestTags.OPEN_DEBTORS))
+        clickTag(ReportsTestTags.OPEN_DEBTORS)
         waitForTag(DebtorsTestTags.LIST_SCREEN)
         val tag = DebtorsTestTags.debt(debtId.value)
         composeRule.onNodeWithTag(DebtorsTestTags.LIST_SCREEN).performScrollToNode(hasTestTag(tag))
@@ -274,8 +285,11 @@ class DebtDeletionJourneyTest {
         )
 
     private fun clickTag(tag: String) {
-        waitForTag(tag)
-        composeRule.onNodeWithTag(tag).assertIsEnabled().performClick()
+        // La pestaña Deudores de Reportes se habilita cuando el reporte identifica el negocio.
+        composeRule.waitUntil(15_000L) {
+            runCatching { composeRule.onNodeWithTag(tag).assertIsDisplayed().assertIsEnabled() }.isSuccess
+        }
+        composeRule.onNodeWithTag(tag).performClick()
     }
 
     private fun waitForTag(tag: String) {

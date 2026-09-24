@@ -1,5 +1,6 @@
 package com.facturastock.app.domain.repository
 
+import com.facturastock.app.domain.model.BarcodeValue
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.Quantity
@@ -15,6 +16,23 @@ import com.facturastock.app.domain.model.id.SaleLineId
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 
+/** La identidad inferida se vuelve a comprobar en la misma transacción que escribe la línea. */
+data class SaleBarcodeRecoveryExpectation(
+    val scannedBarcode: String,
+    val expectedStoredBarcode: String,
+    val expectedProductVersion: Long,
+) {
+    init {
+        require(BarcodeValue.parse(scannedBarcode)?.value == scannedBarcode) {
+            "scannedBarcode debe ser canónico"
+        }
+        require(BarcodeValue.parse(expectedStoredBarcode)?.value == expectedStoredBarcode) {
+            "expectedStoredBarcode debe ser canónico"
+        }
+        require(expectedProductVersion >= 1L) { "expectedProductVersion debe ser positiva" }
+    }
+}
+
 data class SaveSaleCartLineCommand(
     val saleId: SaleId,
     val expectedVersion: Long,
@@ -27,6 +45,8 @@ data class SaveSaleCartLineCommand(
     val unitPrice: Money? = null,
     val discount: Money? = null,
     val tax: Money? = null,
+    /** Presente sólo cuando el escáner infirió la identidad; no autoriza modificar el catálogo. */
+    val barcodeRecovery: SaleBarcodeRecoveryExpectation? = null,
 ) {
     init {
         require(expectedVersion >= 0L) { "expectedVersion no puede ser negativa" }
@@ -87,6 +107,8 @@ sealed interface SaleCartMutationResult {
     data object LineNotFound : SaleCartMutationResult
     data object DuplicateProductLocation : SaleCartMutationResult
     data object ProductUnavailable : SaleCartMutationResult
+    /** La recuperación dejó de identificar el mismo producto; no se escribió ninguna línea. */
+    data object BarcodeRecoveryChanged : SaleCartMutationResult
     data object LocationUnavailable : SaleCartMutationResult
     data object CurrencyMismatch : SaleCartMutationResult
     /** El precio/importe individual era válido, pero sus cálculos exactos no caben o no cuadran. */

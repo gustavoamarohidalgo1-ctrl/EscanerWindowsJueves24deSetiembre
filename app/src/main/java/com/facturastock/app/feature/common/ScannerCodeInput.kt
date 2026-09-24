@@ -8,6 +8,7 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.KeyEvent
+import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -16,6 +17,8 @@ import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.TextAttribute
 import android.widget.EditText
 import androidx.annotation.StringRes
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -194,6 +197,12 @@ internal class ScannerCodeEditText(
     private var connectionGeneration = 0L
     private var changingComposition = false
     private var showingPhysicalPreview = false
+    private var creatingInputConnection = false
+
+    /** Solo tocar el campo abre el teclado; un escaneo nunca lo despliega por su cuenta. */
+    private var keyboardRequestedByUser = false
+    private val inputMethodManager: InputMethodManager?
+        get() = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
 
     init {
         tag = ScannerCodeInputTestTags.FIELD
@@ -208,8 +217,8 @@ internal class ScannerCodeEditText(
         isFocusableInTouchMode = true
         setOnClickListener {
             if (captureAllowed()) {
-                (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
-                    ?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                keyboardRequestedByUser = true
+                inputMethodManager?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
             }
         }
         setOnEditorActionListener { _, action, event ->
@@ -290,6 +299,7 @@ internal class ScannerCodeEditText(
 
     fun updatePhysicalInput(value: String) {
         if (value == lastPhysicalInput) return
+        keepKeyboardClosedUnlessRequested()
         lastPhysicalInput = value
         if (value.isEmpty() && ignorePhysicalClear) {
             ignorePhysicalClear = false
@@ -345,6 +355,9 @@ internal class ScannerCodeEditText(
     // ACTION_MULTIPLE sigue siendo necesario para lectores que envían un bloque de texto virtual.
     @Suppress("DEPRECATION")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_MULTIPLE) {
+            keepKeyboardClosedUnlessRequested()
+        }
         if (event.keyCode in TERMINATOR_KEYS) {
             if ((event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) ||
                 event.action == KeyEvent.ACTION_MULTIPLE
@@ -364,13 +377,23 @@ internal class ScannerCodeEditText(
         return super.dispatchKeyEvent(event)
     }
 
+    override fun focusSearch(direction: Int): View? {
+        // TextView busca vecinos al preparar los flags de navegación del IME. Un restartInput
+        // desde AndroidView.update (setEnabled/setText) puede reentrar en el LazyColumn mientras
+        // Compose todavía aplica cambios. Este campo usa DONE/SEARCH: no necesita esa búsqueda.
+        // La navegación real por foco sigue delegándose fuera de la creación de la conexión.
+        return if (creatingInputConnection) null else super.focusSearch(direction)
+    }
+
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         val physicalPreview = showingPhysicalPreview
         val previousText = text.toString()
         val composingStart = BaseInputConnection.getComposingSpanStart(editableText)
         val composingEnd = BaseInputConnection.getComposingSpanEnd(editableText)
         val wasChangingProgrammatically = changingProgrammatically
+        val wasCreatingInputConnection = creatingInputConnection
         changingProgrammatically = true
+        creatingInputConnection = true
         val connection =
             try {
                 super.onCreateInputConnection(outAttrs)?.also { created ->
@@ -394,6 +417,7 @@ internal class ScannerCodeEditText(
                 }
             } finally {
                 changingProgrammatically = wasChangingProgrammatically
+                creatingInputConnection = wasCreatingInputConnection
             }
         if (connection == null) return null
         if (searchEnabled) {
@@ -481,7 +505,35 @@ internal class ScannerCodeEditText(
         previouslyFocusedRect: Rect?,
     ) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        if (!gainFocus) connectionGeneration += 1L
+        if (!gainFocus) {
+            connectionGeneration += 1L
+            keyboardRequestedByUser = false
+        }
+    }
+
+    override fun onKeyPreIme(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean {
+        // Atrás con el teclado abierto lo cierra: el siguiente escaneo no debe reabrirlo.
+        if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) keyboardRequestedByUser = false
+        return super.onKeyPreIme(keyCode, event)
+    }
+
+    /**
+     * Reescribir el texto reinicia la conexión del IME y algunos teclados se despliegan al hacerlo.
+     * Mientras la persona no haya tocado el campo, cada escaneo o sincronización lo mantiene cerrado.
+     */
+    private fun keepKeyboardClosedUnlessRequested() {
+        val imeVisible = ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        // Si la persona cerró el teclado con su propio botón, deja de contar como solicitado.
+        if (!imeVisible) keyboardRequestedByUser = false
+        if (keyboardRequestedByUser) return
+        post {
+            if (!keyboardRequestedByUser && hasFocus()) {
+                inputMethodManager?.hideSoftInputFromWindow(windowToken, 0)
+            }
+        }
     }
 
     private fun clearPhysicalFrame() {
@@ -502,6 +554,7 @@ internal class ScannerCodeEditText(
             changingProgrammatically = false
         }
         onContentChanged(value)
+        if (!keyboardRequestedByUser && hasFocus()) keepKeyboardClosedUnlessRequested()
     }
 
     private companion object {

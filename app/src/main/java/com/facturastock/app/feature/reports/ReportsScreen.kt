@@ -60,7 +60,6 @@ import com.facturastock.app.domain.model.SalesReport
 import com.facturastock.app.domain.model.SalesReportPeriod
 import com.facturastock.app.domain.model.SalesReportRange
 import com.facturastock.app.domain.model.SalesReportTotals
-import com.facturastock.app.domain.model.ReportPdfKind
 import com.facturastock.app.ui.components.FacturaStockDialog
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.components.LoadingState
@@ -78,11 +77,60 @@ fun ReportsScreen(
     state: ReportsContract.State,
     onAction: (ReportsContract.Action) -> Unit,
     modifier: Modifier = Modifier,
+    showingDebtors: Boolean = false,
+    onShowingDebtorsChange: (Boolean) -> Unit = {},
+    debtorsContent: (@Composable (Modifier) -> Unit)? = null,
 ) {
     val spacing = FacturaStockDesign.spacing
+    val debtorsTabEnabled = state.report?.businessId != null && !state.isVoiding
+    val periodSelector: @Composable () -> Unit = {
+        PeriodSelector(
+            selected = state.selectedPeriod.takeUnless { showingDebtors && debtorsContent != null },
+            enabled = !state.isVoiding,
+            onSelect = {
+                onShowingDebtorsChange(false)
+                onAction(ReportsContract.Action.PeriodSelected(it))
+            },
+            debtorsSelected = showingDebtors && debtorsContent != null,
+            debtorsEnabled = debtorsTabEnabled,
+            onDebtorsSelect = {
+                if (debtorsContent != null) {
+                    onShowingDebtorsChange(true)
+                } else {
+                    onAction(ReportsContract.Action.OpenDebtors)
+                }
+            },
+        )
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val singleColumn = reportsUseSingleColumn(maxWidth)
+        if (showingDebtors && debtorsContent != null) {
+            Column(modifier = Modifier.fillMaxSize().testTag(ReportsTestTags.DEBTORS_CONTENT)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = spacing.lg, top = spacing.lg, end = spacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    ReportsConstrainedSection { periodSelector() }
+                    if (state.hasPdfNotice) {
+                        ReportsConstrainedSection { ReportPdfStatus(state, onAction) }
+                    }
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    debtorsContent(
+                        Modifier
+                            .widthIn(max = spacing.contentWideMaxWidth)
+                            .fillMaxSize(),
+                    )
+                }
+            }
+            return@BoxWithConstraints
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -95,17 +143,13 @@ fun ReportsScreen(
                     ReportsConstrainedSection { DebtPaymentSummary(report) }
                 }
             }
-            item(key = "reports_pdf_actions", contentType = "report_actions") {
-                ReportsConstrainedSection { ReportPdfActions(state, onAction) }
+            if (state.hasPdfNotice) {
+                item(key = "reports_pdf_status", contentType = "report_actions") {
+                    ReportsConstrainedSection { ReportPdfStatus(state, onAction) }
+                }
             }
             item(key = "reports_period", contentType = "period_selector") {
-                ReportsConstrainedSection {
-                    PeriodSelector(
-                        selected = state.selectedPeriod,
-                        enabled = !state.isVoiding,
-                        onSelect = { onAction(ReportsContract.Action.PeriodSelected(it)) },
-                    )
-                }
+                ReportsConstrainedSection { periodSelector() }
             }
 
             when {
@@ -328,36 +372,18 @@ private fun DebtPaymentRow(item: DebtPaymentReportItem, range: SalesReportRange)
     }
 }
 
+/** Avisos de progreso y resultado del PDF; solo ocupa espacio mientras hay algo que informar. */
+private val ReportsContract.State.hasPdfNotice: Boolean
+    get() = pdfStage != ReportsContract.PdfStage.IDLE || pdfFailure != null || pdfSaved || pdfViewerUnavailable
+
 @Composable
-private fun ReportPdfActions(state: ReportsContract.State, onAction: (ReportsContract.Action) -> Unit) {
+private fun ReportPdfStatus(state: ReportsContract.State, onAction: (ReportsContract.Action) -> Unit) {
     val spacing = FacturaStockDesign.spacing
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(spacing.md).testTag(ReportsTestTags.PDF_ACTIONS),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
-            Text(stringResource(R.string.reports_pdf_actions_title), style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.semantics { heading() })
-            FacturaStockSecondaryButton(
-                text = stringResource(R.string.reports_pdf_open_debtors),
-                onClick = { onAction(ReportsContract.Action.OpenDebtors) },
-                enabled = state.report?.businessId != null && !state.isVoiding,
-                modifier = Modifier.fillMaxWidth().testTag(ReportsTestTags.OPEN_DEBTORS),
-            )
-            Text(stringResource(R.string.reports_pdf_daily_help), style = MaterialTheme.typography.bodySmall)
-            FacturaStockSecondaryButton(
-                text = stringResource(R.string.reports_pdf_daily_action),
-                onClick = { onAction(ReportsContract.Action.ExportPdfRequested(ReportPdfKind.DAILY_SALES_WITH_DEBTORS)) },
-                enabled = state.canExportPdf,
-                modifier = Modifier.fillMaxWidth().testTag(ReportsTestTags.PDF_DAILY),
-            )
-            Text(stringResource(R.string.reports_pdf_debtors_help), style = MaterialTheme.typography.bodySmall)
-            FacturaStockSecondaryButton(
-                text = stringResource(R.string.reports_pdf_debtors_action),
-                onClick = { onAction(ReportsContract.Action.ExportPdfRequested(ReportPdfKind.DEBTORS)) },
-                enabled = state.canExportPdf,
-                modifier = Modifier.fillMaxWidth().testTag(ReportsTestTags.PDF_DEBTORS),
-            )
             if (state.pdfStage != ReportsContract.PdfStage.IDLE) {
                 Column(Modifier.testTag(ReportsTestTags.PDF_PROGRESS).semantics { liveRegion = LiveRegionMode.Polite }) {
                     if (state.pdfStage != ReportsContract.PdfStage.CHOOSING_DESTINATION) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -521,9 +547,12 @@ private fun ReportsConstrainedSection(content: @Composable () -> Unit) {
 
 @Composable
 private fun PeriodSelector(
-    selected: SalesReportPeriod,
+    selected: SalesReportPeriod?,
     enabled: Boolean,
     onSelect: (SalesReportPeriod) -> Unit,
+    debtorsSelected: Boolean,
+    debtorsEnabled: Boolean,
+    onDebtorsSelect: () -> Unit,
 ) {
     val spacing = FacturaStockDesign.spacing
     Row(
@@ -534,45 +563,67 @@ private fun PeriodSelector(
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
         SalesReportPeriod.entries.forEach { period ->
-            val isSelected = selected == period
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = spacing.minimumTouchTarget)
-                    .selectable(
-                        selected = isSelected,
-                        enabled = enabled,
-                        role = Role.RadioButton,
-                        onClick = { onSelect(period) },
-                    )
-                    .testTag(period.testTag()),
-                shape = MaterialTheme.shapes.small,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                },
-                contentColor = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = spacing.minimumTouchTarget)
-                        .padding(horizontal = spacing.xs, vertical = spacing.sm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = selectedPeriodLabel(period),
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            ReportsTab(
+                label = selectedPeriodLabel(period),
+                selected = selected == period,
+                enabled = enabled,
+                onClick = { onSelect(period) },
+                modifier = Modifier.weight(1f).testTag(period.testTag()),
+            )
+        }
+        ReportsTab(
+            label = stringResource(R.string.reports_tab_debtors),
+            selected = debtorsSelected,
+            enabled = debtorsEnabled,
+            onClick = onDebtorsSelect,
+            modifier = Modifier.weight(1f).testTag(ReportsTestTags.OPEN_DEBTORS),
+        )
+    }
+}
+
+@Composable
+private fun ReportsTab(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = FacturaStockDesign.spacing
+    Surface(
+        modifier = modifier
+            .heightIn(min = spacing.minimumTouchTarget)
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onClick,
+            ),
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = spacing.minimumTouchTarget)
+                .padding(horizontal = spacing.xs, vertical = spacing.sm),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

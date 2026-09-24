@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="reports_pdf_actions_title">Deudores y reportes PDF</string>
-    <string name="reports_pdf_open_debtors">Ver deudores</string>
+    <string name="reports_tab_debtors">Deudores</string>
     <string name="reports_pdf_daily_action">Guardar PDF de hoy</string>
     <string name="reports_pdf_debtors_action">Guardar PDF de deudores</string>
-    <string name="reports_pdf_daily_help">El PDF de hoy incluye las ventas de hoy y los deudores pendientes de todas las fechas. Siempre corresponde a hoy, aunque abajo consultes semana o mes.</string>
-    <string name="reports_pdf_debtors_help">El PDF de deudores contiene solo las deudas pendientes de todas las fechas. Tú eliges dónde guardar cada archivo.</string>
     <string name="reports_pdf_preparing">Preparando el reporte…</string>
     <string name="reports_pdf_choosing">Elige dónde guardar el PDF.</string>
     <string name="reports_pdf_writing">Guardando el PDF…</string>

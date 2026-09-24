@@ -10,6 +10,7 @@ import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.model.id.ProductId
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 
 enum class ProductDeletionResult {
@@ -163,6 +164,15 @@ interface ProductRepository {
 
     /** Emite los productos del negocio ordenados por nombre ante cada cambio. */
     fun observeForBusiness(businessId: BusinessId): Flow<List<Product>>
+
+    /**
+     * Lee una instantánea completa del catálogo persistido del negocio, incluidos archivados y
+     * productos sin existencias; no aplica paginación ni filtros de disponibilidad. Producción
+     * consulta directamente el almacenamiento sin esperar las emisiones de una proyección de UI.
+     * El default conserva la compatibilidad de adaptadores simples y dobles de prueba.
+     */
+    suspend fun listForBusiness(businessId: BusinessId): List<Product> =
+        observeForBusiness(businessId).first()
 
     /** Archivo lógico sobre la versión vigente; nunca elimina saldos ni historia. */
     suspend fun archive(productId: ProductId): Boolean

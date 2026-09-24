@@ -2,21 +2,25 @@ package com.facturastock.app.navigation
 
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -119,7 +123,7 @@ class NavigationRecreationTest {
         }
         clickNavigation(R.string.navigation_inventory)
         waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
-        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_SPECIAL_PRODUCT).performScrollTo().performClick()
+        composeRule.onNodeWithTag(InventoryTestTags.REGISTER_SPECIAL_PRODUCT).performClick()
         waitUntilTagDisplayed(CatalogsTestTags.PRODUCT_NAME)
         composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_BARCODE).assertDoesNotExist()
         composeRule.onNodeWithTag(ScannerCodeInputTestTags.FIELD).assertDoesNotExist()
@@ -160,27 +164,60 @@ class NavigationRecreationTest {
     }
 
     @Test
-    fun cashUnifiedFlowSurvivesRecreationAndSystemBackReturnsToKindSelection() {
-        waitUntilTagDisplayed(SalesTestTags.ENTRY_KIND_SCREEN)
-        composeRule.onNodeWithTag(SalesTestTags.CASH_ENTRY).performClick()
-        waitUntilTagDisplayed(ScannerCodeInputTestTags.FIELD)
-        composeRule.onAllNodesWithTag(ScannerCodeInputTestTags.FIELD).assertCountEquals(1)
-        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
-        composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
+    fun cashSaleOpensDirectlySurvivesRecreationAndSystemBackLeavesSales() {
+        assertDirectCashSale()
 
         scenario.recreate()
-        waitUntilTagDisplayed(ScannerCodeInputTestTags.FIELD)
-        composeRule.onAllNodesWithTag(ScannerCodeInputTestTags.FIELD).assertCountEquals(1)
-        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
-        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
-        composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
+        // Vender restaurado sigue en la venta al contado, sin volver a un selector.
+        assertDirectCashSale()
 
+        // Sin selector al que regresar, Atrás del sistema sale de Vender (raíz de la pila).
         scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
-        waitUntilTagDisplayed(SalesTestTags.ENTRY_KIND_SCREEN)
-        composeRule.onNodeWithTag(ScannerCodeInputTestTags.FIELD).assertDoesNotExist()
-        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
+        val deadline = SystemClock.uptimeMillis() + 10_000L
+        while (scenario.state != Lifecycle.State.DESTROYED && SystemClock.uptimeMillis() < deadline) {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            SystemClock.sleep(50L)
+        }
+        assertEquals(Lifecycle.State.DESTROYED, scenario.state)
+    }
+
+    @Test
+    fun creditSaleOpensFromSalesTopBarAndBackReturnsToCashSale() {
+        assertDirectCashSale()
+
+        openCreditSaleFromTopBar()
+        scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        assertDirectCashSale()
+
+        // "Volver" dentro de la venta a crédito también regresa a Vender al contado.
+        openCreditSaleFromTopBar()
+        composeRule.onNodeWithTag(SalesTestTags.STEP_BACK).assertIsDisplayed().performClick()
+        assertDirectCashSale()
+
+        // Una venta a crédito restaurada conserva su tipo y Atrás sigue volviendo al contado.
+        openCreditSaleFromTopBar()
+        scenario.recreate()
+        waitUntilTagDisplayed(SalesTestTags.DEBTOR_NAME)
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_CREDIT_SALE).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+        scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        assertDirectCashSale()
+
+        // El icono de venta a crédito pertenece sólo a Vender.
+        clickNavigation(R.string.navigation_inventory)
+        waitUntilTagDisplayed(InventoryTestTags.LIST_SCREEN)
+        waitUntilTagGone(SalesTestTags.OPEN_CREDIT_SALE)
+        clickNavigation(R.string.navigation_reports)
+        waitUntilTagDisplayed(ReportsTestTags.SCREEN)
+        waitUntilTagGone(SalesTestTags.OPEN_CREDIT_SALE)
+        clickNavigation(R.string.navigation_sales)
+        assertDirectCashSale()
     }
 
     @Test
@@ -262,6 +299,40 @@ class NavigationRecreationTest {
         }
         composeRule.onNode(matcher).performClick()
         composeRule.waitForIdle()
+    }
+
+    /** Vender abre directamente la venta al contado con el lector unificado. */
+    private fun assertDirectCashSale() {
+        waitUntilTagDisplayed(SalesTestTags.OPEN_CREDIT_SALE)
+        waitUntilTagDisplayed(ScannerCodeInputTestTags.FIELD)
+        waitUntilTagGone(SalesTestTags.DEBTOR_NAME)
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag(ScannerCodeInputTestTags.FIELD).assertCountEquals(1)
+        composeRule.onNodeWithTag(SalesTestTags.SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.CASH_ENTRY).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.CREDIT_ENTRY).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.STEP_BACK).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.sales_open_credit_sale))
+            .assertIsDisplayed()
+    }
+
+    private fun openCreditSaleFromTopBar() {
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_CREDIT_SALE).assertIsEnabled().performClick()
+        waitUntilTagDisplayed(SalesTestTags.DEBTOR_NAME)
+        waitUntilTagGone(SalesTestTags.OPEN_CREDIT_SALE)
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag(ScannerCodeInputTestTags.FIELD).assertCountEquals(1)
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+    }
+
+    private fun waitUntilTagGone(tag: String, timeoutMillis: Long = 10_000L) {
+        composeRule.waitUntil(timeoutMillis = timeoutMillis) {
+            runCatching { composeRule.onNodeWithTag(tag).assertDoesNotExist() }.isSuccess
+        }
     }
 
     private fun waitUntilTagDisplayed(tag: String, timeoutMillis: Long = 10_000L) {

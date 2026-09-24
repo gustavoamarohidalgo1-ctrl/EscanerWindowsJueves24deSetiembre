@@ -29,6 +29,7 @@ import com.facturastock.app.domain.repository.CheckoutSaleResult
 import com.facturastock.app.domain.repository.CreateSaleCartResult
 import com.facturastock.app.domain.repository.InventoryReadRepository
 import com.facturastock.app.domain.repository.ProductRepository
+import com.facturastock.app.domain.repository.SaleBarcodeRecoveryExpectation
 import com.facturastock.app.domain.repository.SaleCartMutationResult
 import com.facturastock.app.domain.repository.SaveSaleCartLineCommand
 import com.facturastock.app.domain.usecase.CheckoutSaleUseCase
@@ -40,9 +41,14 @@ import com.facturastock.app.domain.usecase.ProductMatchingUseCase
 import com.facturastock.app.domain.usecase.RemoveSaleCartLineUseCase
 import com.facturastock.app.domain.usecase.SaveProductCatalogUseCase
 import com.facturastock.app.domain.usecase.SaveSaleCartLineUseCase
+import com.facturastock.app.domain.usecase.BarcodeSimilarity
+import com.facturastock.app.domain.usecase.findSuspiciousExactBarcodeMatches
+import com.facturastock.app.domain.usecase.requiresSuspiciousExactBarcodeReview
+import com.facturastock.app.domain.usecase.findAutomaticBarcodeRecovery
 import com.facturastock.app.feature.common.UdfViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
@@ -113,13 +119,22 @@ class SalesViewModel
             val generation: Long,
         )
 
+        private data class PendingBarcodeRecovery(
+            val scan: QueuedBarcode,
+            val productId: ProductId,
+            val expectation: SaleBarcodeRecoveryExpectation,
+        )
+
+        private var pendingBarcodeRecovery: PendingBarcodeRecovery? = null
         private val operationMutex = Mutex()
+        private val initialCatalogReady = CompletableDeferred<Unit>()
         private val pendingBarcodes = ArrayDeque<QueuedBarcode>()
         private var activeBarcode: QueuedBarcode? = null
         private val focusedTextInputs = mutableSetOf<String>()
         private var barcodeProcessingJob: Job? = null
         private var barcodeGeneration = 0L
         private var oneShotMutationPending = false
+        private var checkoutRequestPending = false
         private var registrationCompletionJob: Job? = null
         private var backRequested = false
         private val lineEditJobs = mutableMapOf<String, Job>()
@@ -218,15 +233,12 @@ class SalesViewModel
             ) {
                 return
             }
-            if (
-                uiState.value.checkoutReview != null &&
-                action !is SalesContract.Action.CheckoutConfirmed &&
-                action !is SalesContract.Action.CheckoutDismissed &&
+            // El primer toque fija la intención; ni otro toque ni una edición tardía pueden
+            // modificarla mientras se registra, aunque Main todavía no haya ejecutado la mutación.
+            if (checkoutRequestPending &&
                 action !is SalesContract.Action.ScannerAvailabilityChanged &&
                 action !is SalesContract.Action.BackSelected
-            ) {
-                return
-            }
+            ) return
             if (
                 uiState.value.discardEditsReview &&
                 action !is SalesContract.Action.DiscardEditsConfirmed &&
@@ -236,7 +248,6 @@ class SalesViewModel
                 return
             }
             if (uiState.value.isCheckoutPending && action !is SalesContract.Action.CheckoutRequested &&
-                action !is SalesContract.Action.CheckoutConfirmed && action !is SalesContract.Action.CheckoutDismissed &&
                 action !is SalesContract.Action.BackSelected && action !is SalesContract.Action.StepBackSelected &&
                 action !is SalesContract.Action.Retry && action !is SalesContract.Action.ScannerAvailabilityChanged
             ) {
@@ -308,6 +319,7 @@ class SalesViewModel
                                 mode = if (unifiedInput) SalesContract.EntryMode.SCANNER else action.mode,
                                 entryStep = SalesContract.EntryStep.SELL,
                                 pendingLocations = emptyList(),
+                                pendingRecoveredBarcode = null,
                                 failure = null,
                             )
                         }
@@ -403,7 +415,8 @@ class SalesViewModel
 
                 SalesContract.Action.LocationSelectionDismissed -> {
                     executeMain {
-                        updateState { copy(pendingLocations = emptyList()) }
+                        pendingBarcodeRecovery = null
+                        updateState { copy(pendingLocations = emptyList(), pendingRecoveredBarcode = null) }
                     }
                 }
 
@@ -443,48 +456,7 @@ class SalesViewModel
                     removeCartLine(action.lineId)
                 }
 
-                SalesContract.Action.CheckoutRequested -> {
-                    executeMain {
-                        val state = uiState.value
-                        val cart = domainCart
-                        if (
-                            state.canCheckout && cart != null && state.total != null &&
-                            state.cartId == cart.saleId.value && state.cartVersion == cart.version &&
-                            state.cartContentHash == cart.contentHash
-                        ) {
-                            updateState {
-                                copy(
-                                    checkoutReview =
-                                        SalesContract.CheckoutReview(
-                                            cartId = cart.saleId.value,
-                                            version = cart.version,
-                                            contentHash = cart.contentHash,
-                                            total = state.total,
-                                            debtorName =
-                                                if (cart.pendingCheckout != null) {
-                                                    cart.pendingCheckout.debtorName
-                                                } else {
-                                                    state.canonicalDebtorName.takeIf { state.entryKind == SalesContract.EntryKind.CREDIT }
-                                                },
-                                        ),
-                                    failure = null,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                SalesContract.Action.CheckoutConfirmed -> {
-                    confirmCheckout()
-                }
-
-                SalesContract.Action.CheckoutDismissed -> {
-                    executeMain {
-                        if (!uiState.value.isMutating) {
-                            updateState { copy(checkoutReview = null) }
-                        }
-                    }
-                }
+                SalesContract.Action.CheckoutRequested -> checkoutCurrentCart()
 
                 SalesContract.Action.DiscardEditsConfirmed -> {
                     discardPendingEditsAndGoBack()
@@ -530,6 +502,11 @@ class SalesViewModel
                             copy(
                                 unifiedInput = true,
                                 mode = SalesContract.EntryMode.SCANNER,
+                                // Sin selector, la ruta fija el tipo. Un estado restaurado de la versión
+                                // con selector no debe dejar Vender en crédito; un cierre pendiente
+                                // conserva sus términos.
+                                entryKind =
+                                    if (!action.allowEntryKindSelection && !isCheckoutPending) action.kind else entryKind,
                                 entryStep =
                                     if (entryStep == SalesContract.EntryStep.SELECT_MODE ||
                                         (!action.allowEntryKindSelection && entryStep == SalesContract.EntryStep.SELECT_KIND)
@@ -600,11 +577,13 @@ class SalesViewModel
                     isNameSearchRunning = false,
                     searchFailed = false,
                     pendingAssociationBarcode = null,
+                    barcodeSelectionReason = null,
                     barcodeSuggestions = emptyList(),
                     barcodeAssociatedWithoutCartAdd = false,
                     productRegisteredWithoutCartAdd = false,
                     pendingReplacement = null,
                     pendingLocations = emptyList(),
+                    pendingRecoveredBarcode = null,
                 ).withFilteredOptions()
             }
         }
@@ -620,6 +599,7 @@ class SalesViewModel
             updateState {
                 copy(
                     pendingAssociationBarcode = null,
+                    barcodeSelectionReason = null,
                     barcodeSuggestions = emptyList(),
                     pendingReplacement = null,
                     query = "",
@@ -763,6 +743,7 @@ class SalesViewModel
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Throwable) {
+                        if (!initialCatalogReady.isCompleted) stopBarcodeSession()
                         updateState { copy(isLoading = false, catalogLoadFailed = true) }
                     }
                 }
@@ -822,6 +803,7 @@ class SalesViewModel
                             productOptions = emptyList(),
                             availableProducts = emptyList(),
                             pendingAssociationBarcode = null,
+                            barcodeSelectionReason = null,
                             barcodeSuggestions = emptyList(),
                             lastScanAdded = null,
                             productRegisteredWithoutCartAdd = false,
@@ -842,11 +824,13 @@ class SalesViewModel
                             hasPendingEdits = false,
                             total = null,
                             pendingAssociationBarcode = null,
+                            barcodeSelectionReason = null,
                             barcodeSuggestions = emptyList(),
                             lastScanAdded = null,
                             productRegisteredWithoutCartAdd = false,
                             pendingReplacement = null,
                             pendingLocations = emptyList(),
+                            pendingRecoveredBarcode = null,
                             isNameSearchRunning = false,
                             failure = null,
                         )
@@ -875,6 +859,7 @@ class SalesViewModel
                     onlyIfQueryUnchanged = true,
                 )
             }
+            initialCatalogReady.complete(Unit)
         }
 
         private fun detachCart(clearInputs: Boolean) {
@@ -945,6 +930,7 @@ class SalesViewModel
                 updateState {
                     copy(
                         pendingLocations = emptyList(),
+                        pendingRecoveredBarcode = null,
                         lastScanAdded = null,
                         productRegisteredWithoutCartAdd = false,
                         weightSaleEditor = null,
@@ -1010,7 +996,6 @@ class SalesViewModel
                         cartRecovery = null
                         updateState {
                             copy(
-                                checkoutReview = null,
                                 discardEditsReview = true,
                                 failure = failure ?: SalesContract.Failure.STALE_CART,
                             )
@@ -1028,7 +1013,6 @@ class SalesViewModel
                             cartLines = emptyList(),
                             hasPendingEdits = false,
                             total = null,
-                            checkoutReview = null,
                             failure = null,
                         )
                     }
@@ -1196,6 +1180,10 @@ class SalesViewModel
                     try {
                         while (pendingBarcodes.isNotEmpty() && generation == barcodeGeneration) {
                             val scan = pendingBarcodes.first()
+                            // El carrito puede abrirse antes de la primera proyección del catálogo.
+                            // Conserva la lectura aceptada hasta poder validar su negocio y sus opciones.
+                            // Salir, cambiar de carrito o fallar esa primera carga cancela la sesión.
+                            initialCatalogReady.await()
                             // Espera fuera del mutex: resolver un almacén o una edición puede necesitarlo.
                             uiState.first { state ->
                                 !scan.isCurrent() ||
@@ -1236,6 +1224,10 @@ class SalesViewModel
                 } == true
 
         private fun stopBarcodeSession() {
+            if (pendingBarcodeRecovery != null) {
+                updateState { copy(pendingLocations = emptyList(), pendingRecoveredBarcode = null) }
+            }
+            pendingBarcodeRecovery = null
             barcodeGeneration += 1
             pendingBarcodes.clear()
             activeBarcode = null
@@ -1257,42 +1249,28 @@ class SalesViewModel
             // Reescanear reemplaza únicamente la elección pendiente; nunca cambia el código guardado.
             // También permite avanzar a las lecturas ya aceptadas detrás de una desconocida.
             if (uiState.value.isAssociating) clearPendingAssociation()
+            pendingBarcodeRecovery = null
             if (product == null) {
-                // Reutiliza el catálogo local observado: no consulta la red ni recorre Room por cada
-                // candidato. Una sugerencia nunca se convierte en asociación ni en venta automática.
-                val catalog = productsById
-                val available = availableProductOptionsByProduct
-                val matches =
-                    withContext(dispatcherProvider.default) {
-                        findBarcodeSuggestionMatches(scan.value, scan.businessId, catalog.values, available.keys)
-                    }
-                if (!scan.isCurrent()) return
-                val suggestions =
-                    matches.flatMap { match ->
-                        val current = productsById[match.productId]
-                        if (current?.businessId != scan.businessId || current.status != CatalogStatus.ACTIVE ||
-                            current.barcode != match.barcode
-                        ) {
-                            return@flatMap emptyList()
-                        }
-                        availableProductOptionsByProduct[match.productId].orEmpty().map { option ->
-                            SalesContract.BarcodeSuggestion(option, match.missingDigits)
-                        }
-                    }
-                cancelNameSearch()
-                updateState {
-                    copy(
-                        pendingAssociationBarcode = scan.value,
-                        barcodeSuggestions = suggestions,
-                        pendingReplacement = null,
-                        pendingLocations = emptyList(),
-                        query = "",
-                        isNameSearchRunning = false,
-                        searchFailed = false,
-                        failure = null,
-                    ).withFilteredOptions()
-                }
+                // Sin coincidencia exacta solo se intenta la recuperación automática segura. Si
+                // tampoco encaja con un único producto, la lectura se ignora sin abrir sugerencias.
+                tryAutomaticBarcodeRecovery(scan)
                 return
+            }
+            // Un código personalizado exacto puede ser también una lectura truncada de otro GTIN.
+            // Nunca se sustituye por el código largo: ambos requieren una elección explícita.
+            if (requiresSuspiciousExactBarcodeReview(scan.value)) {
+                val catalog = withContext(dispatcherProvider.io) { products.listForBusiness(scan.businessId) }
+                val competitors = withContext(dispatcherProvider.default) {
+                    findSuspiciousExactBarcodeMatches(scan.value, scan.businessId, product.productId, catalog)
+                }
+                if (!scan.isCurrent()) return
+                if (competitors.isNotEmpty()) {
+                    showBarcodeChoices(
+                        scan, catalog, SalesContract.BarcodeSelectionReason.AMBIGUOUS,
+                        listOf(product.productId) + competitors.map { it.productId },
+                    )
+                    return
+                }
             }
             val cart = domainCart ?: return
             if (showExistingScannedProduct(cart, product.productId)) return
@@ -1319,6 +1297,110 @@ class SalesViewModel
                     }
                 }
             }
+        }
+
+        private suspend fun showBarcodeChoices(
+            scan: QueuedBarcode,
+            snapshot: List<Product>? = null,
+            reason: SalesContract.BarcodeSelectionReason? = null,
+            preferredProductIds: List<ProductId> = emptyList(),
+        ) {
+            val catalog = snapshot ?: withContext(dispatcherProvider.io) {
+                products.listForBusiness(scan.businessId)
+            }
+            if (!scan.isCurrent()) return
+            val eligible = catalog.filter { it.businessId == scan.businessId && it.status == CatalogStatus.ACTIVE }
+            val matches = withContext(dispatcherProvider.default) {
+                val canonicalMatch = findAutomaticBarcodeRecovery(scan.value, scan.businessId, catalog)
+                eligible.mapNotNull { product ->
+                    val missing = when {
+                        product.barcode == scan.value || product.sku == scan.value -> 0
+                        canonicalMatch?.productId == product.productId -> canonicalMatch.missingDigits
+                        else -> product.barcode?.let { BarcodeSimilarity.missingDigits(scan.value, it) }
+                    } ?: return@mapNotNull null
+                    product to missing
+                }.sortedWith(
+                    compareBy<Pair<Product, Int>> { if (it.first.productId in preferredProductIds) 0 else 1 }
+                        .thenBy { it.second }.thenBy { it.first.barcode }.thenBy { it.first.productId.value },
+                )
+            }
+            val suggestions = mutableListOf<SalesContract.BarcodeSuggestion>()
+            var sellableProductCount = 0
+            for ((product, missing) in matches) {
+                val options = resolveScannedProductOptions(
+                    scan, product, forceRefresh = productsById[product.productId]?.barcode != product.barcode,
+                ) ?: return
+                if (options.isEmpty()) continue
+                suggestions += options.map { SalesContract.BarcodeSuggestion(it, missing) }
+                sellableProductCount += 1
+                if (sellableProductCount == 5) break
+            }
+            if (!scan.isCurrent()) return
+            val hasMultipleIdentities = withContext(dispatcherProvider.default) {
+                catalog.asSequence().filter { it.businessId == scan.businessId }.filter { product ->
+                    product.barcode?.let { BarcodeSimilarity.missingDigits(scan.value, it) } != null ||
+                        product.barcode == scan.value || product.sku == scan.value
+                }.map { it.productId }.distinct().take(2).count() > 1
+            }
+            if (!scan.isCurrent()) return
+            cancelNameSearch()
+            pendingBarcodeRecovery = null
+            updateState {
+                copy(
+                    pendingAssociationBarcode = scan.value,
+                    barcodeSelectionReason = reason ?: SalesContract.BarcodeSelectionReason.AMBIGUOUS.takeIf { hasMultipleIdentities },
+                    barcodeSuggestions = suggestions,
+                    pendingReplacement = null,
+                    pendingLocations = emptyList(),
+                    pendingRecoveredBarcode = null,
+                    query = "",
+                    isNameSearchRunning = false,
+                    searchFailed = false,
+                    failure = null,
+                ).withFilteredOptions()
+            }
+        }
+
+        private suspend fun tryAutomaticBarcodeRecovery(scan: QueuedBarcode): Boolean {
+            // La consulta fresca también cubre altas/cambios cuya proyección visual aún no emitió.
+            val catalog = withContext(dispatcherProvider.io) { products.listForBusiness(scan.businessId) }
+            val candidate = withContext(dispatcherProvider.default) {
+                findAutomaticBarcodeRecovery(scan.value, scan.businessId, catalog)
+            } ?: return false
+            if (!scan.isCurrent()) return false
+            val product = catalog.first { it.productId == candidate.productId }
+            val options = resolveScannedProductOptions(scan, product, forceRefresh = true) ?: return false
+            val recovery = PendingBarcodeRecovery(
+                scan, product.productId,
+                SaleBarcodeRecoveryExpectation(scan.value, candidate.barcode, product.version),
+            )
+            // Esta segunda lectura protege también el reconocimiento de un artículo ya en carrito.
+            // Una nueva línea vuelve a exigir la misma prueba dentro de la transacción de Room.
+            if (!isBarcodeRecoveryCurrent(recovery)) {
+                if (scan.isCurrent()) showBarcodeChoices(scan, reason = SalesContract.BarcodeSelectionReason.CATALOG_CHANGED)
+                return true
+            }
+            val cart = domainCart ?: return false
+            if (showExistingScannedProduct(cart, product.productId, recoveredFromBarcode = scan.value)) return true
+            when (options.size) {
+                0 -> updateState { copy(failure = SalesContract.Failure.PRODUCT_UNAVAILABLE) }
+                1 -> addOptionToCart(options.single(), recovery = recovery)
+                else -> {
+                    pendingBarcodeRecovery = recovery
+                    updateState { copy(pendingLocations = options, pendingRecoveredBarcode = scan.value, failure = null) }
+                }
+            }
+            return true
+        }
+
+        private suspend fun isBarcodeRecoveryCurrent(recovery: PendingBarcodeRecovery): Boolean {
+            val catalog = withContext(dispatcherProvider.io) { products.listForBusiness(recovery.scan.businessId) }
+            val match = withContext(dispatcherProvider.default) {
+                findAutomaticBarcodeRecovery(recovery.scan.value, recovery.scan.businessId, catalog)
+            }
+            return recovery.scan.isCurrent() && match?.productId == recovery.productId &&
+                match.barcode == recovery.expectation.expectedStoredBarcode &&
+                catalog.firstOrNull { it.productId == recovery.productId }?.version == recovery.expectation.expectedProductVersion
         }
 
         private suspend fun resolveScannedProductOptions(
@@ -1416,7 +1498,7 @@ class SalesViewModel
             if (state.isLoading || state.isMutating || state.isSavingLineEdits || state.hasPendingEdits ||
                 state.pendingBarcodeCount != 0 || state.weightSaleEditor != null || state.isAssociating ||
                 state.pendingLocations.isNotEmpty() || state.pendingReplacement != null ||
-                state.checkoutReview != null || state.discardEditsReview
+                state.discardEditsReview
             ) return
             val cart = domainCart ?: return
             val existing = cart.lines.firstOrNull { it.productId == option.productId }
@@ -1579,7 +1661,7 @@ class SalesViewModel
             val state = uiState.value
             if (state.isLoading || state.isMutating || state.isSavingLineEdits || state.hasPendingEdits ||
                 state.pendingReplacement != null || state.pendingLocations.isNotEmpty() ||
-                state.checkoutReview != null || state.discardEditsReview
+                state.discardEditsReview
             ) {
                 return
             }
@@ -1636,24 +1718,28 @@ class SalesViewModel
             ) {
                 return
             }
+            val recovery = pendingBarcodeRecovery
             launchMutation(oneShot = true) {
-                updateState { copy(pendingLocations = emptyList()) }
-                val option =
-                    availableProductOptionsByProduct[productId]?.firstOrNull {
-                        it.locationId == locationId
-                    } ?: run {
+                pendingBarcodeRecovery = null
+                updateState { copy(pendingLocations = emptyList(), pendingRecoveredBarcode = null) }
+                if (recovery != null && (recovery.productId != productId || !isBarcodeRecoveryCurrent(recovery))) {
+                    if (recovery.scan.isCurrent()) {
+                        showBarcodeChoices(recovery.scan, reason = SalesContract.BarcodeSelectionReason.CATALOG_CHANGED)
+                    }
+                    return@launchMutation
+                }
+                val option = availableProductOptionsByProduct[productId]?.firstOrNull { it.locationId == locationId }
+                    ?: run {
                         updateState { copy(failure = SalesContract.Failure.PRODUCT_UNAVAILABLE) }
                         return@launchMutation
                     }
                 val product = withContext(dispatcherProvider.io) { products.findById(productId) }
-                if (
-                    product == null || product.businessId != domainCart?.businessId ||
-                    product.status != CatalogStatus.ACTIVE
-                ) {
+                if (product == null || product.businessId != domainCart?.businessId || product.status != CatalogStatus.ACTIVE) {
                     updateState { copy(failure = SalesContract.Failure.PRODUCT_UNAVAILABLE) }
                     return@launchMutation
                 }
-                addOptionToCart(option.copy(suggestedSalePrice = product.salePrice))
+                if (recovery != null && !recovery.scan.isCurrent()) return@launchMutation
+                addOptionToCart(option.copy(suggestedSalePrice = product.salePrice), recovery = recovery)
             }
         }
 
@@ -1698,6 +1784,7 @@ class SalesViewModel
                         updateState {
                             copy(
                                 pendingAssociationBarcode = null,
+                                barcodeSelectionReason = null,
                                 pendingReplacement = null,
                                 query = "",
                                 isNameSearchRunning = false,
@@ -1770,7 +1857,9 @@ class SalesViewModel
         private suspend fun addOptionToCart(
             option: SalesContract.ProductOption,
             successMessage: SalesContract.Message? = null,
+            recovery: PendingBarcodeRecovery? = null,
         ): Boolean {
+            val recoveredFromBarcode = recovery?.scan?.value
             val cart =
                 domainCart ?: run {
                     updateState { copy(failure = SalesContract.Failure.LOAD_FAILED) }
@@ -1778,7 +1867,7 @@ class SalesViewModel
                 }
             // La cantidad de un producto ya presente se cambia expresamente en su línea.
             // Esta comprobación corre bajo el mutex también para sugerencias y asociaciones.
-            if (showExistingScannedProduct(cart, option.productId)) {
+            if (showExistingScannedProduct(cart, option.productId, recoveredFromBarcode)) {
                 successMessage?.let { emitEffect(SalesContract.Effect.ShowMessage(it)) }
                 return true
             }
@@ -1803,6 +1892,7 @@ class SalesViewModel
                         cart.businessId,
                         SaveSaleCartLineCommand(
                             saleId = cart.saleId,
+                            barcodeRecovery = recovery?.expectation,
                             expectedVersion = cart.version,
                             saleLineId = existing?.saleLineId,
                             productId = option.productId,
@@ -1824,6 +1914,15 @@ class SalesViewModel
                         ),
                     )
                 }
+            if (result == SaleCartMutationResult.BarcodeRecoveryChanged && recovery != null) {
+                if (recovery.scan.isCurrent()) {
+                    showBarcodeChoices(
+                        recovery.scan, reason = SalesContract.BarcodeSelectionReason.CATALOG_CHANGED,
+                        preferredProductIds = listOf(recovery.productId),
+                    )
+                }
+                return false
+            }
             handleMutationResult(result, successMessage)
             if (result is SaleCartMutationResult.Saved &&
                 uiState.value.entryStep == SalesContract.EntryStep.SELL &&
@@ -1846,6 +1945,7 @@ class SalesViewModel
                                     quantity = savedLine.quantity.value,
                                     unitCode = savedLine.unitCode,
                                     sequence = (lastScanAdded?.sequence ?: 0L) + 1L,
+                                    recoveredFromBarcode = recoveredFromBarcode,
                                 ),
                         )
                     }
@@ -1857,6 +1957,7 @@ class SalesViewModel
         private fun showExistingScannedProduct(
             cart: SaleCart,
             productId: ProductId,
+            recoveredFromBarcode: String? = null,
         ): Boolean {
             if (uiState.value.entryStep != SalesContract.EntryStep.SELL ||
                 uiState.value.mode != SalesContract.EntryMode.SCANNER ||
@@ -1880,6 +1981,7 @@ class SalesViewModel
                             unitCode = existing.unitCode,
                             sequence = (lastScanAdded?.sequence ?: 0L) + 1L,
                             alreadyInCart = true,
+                            recoveredFromBarcode = recoveredFromBarcode,
                         ),
                 )
             }
@@ -2089,31 +2191,57 @@ class SalesViewModel
             }
         }
 
-        private fun confirmCheckout() {
-            if (dataActionsBlocked() && !uiState.value.isCheckoutPending) return
-            launchMutation(oneShot = true) {
-                val review = uiState.value.checkoutReview ?: return@launchMutation
-                updateState { copy(checkoutReview = null) }
-                val cart = domainCart ?: return@launchMutation
-                if (
-                    review.cartId != cart.saleId.value || review.version != cart.version ||
-                    review.contentHash != cart.contentHash
+        private fun checkoutCurrentCart() {
+            val state = uiState.value
+            val cart = domainCart ?: return
+            // Se captura en el propio callback del botón, antes de encolar trabajo en Main.
+            // El usuario registra exactamente el carrito y los términos que estaba viendo.
+            // Si falla el catálogo al iniciar, aún se puede verificar un cobro pendiente;
+            // el caso de uso y Room comprueban el negocio actual antes de registrar.
+            if (checkoutRequestPending || !state.canCheckout || backRequested || deferredContextSnapshot != null ||
+                hasPendingLineEdits() || state.cartId != cart.saleId.value ||
+                state.cartVersion != cart.version || state.cartContentHash != cart.contentHash ||
+                state.total != cart.total || (activeBusinessId != null && activeBusinessId != cart.businessId)
+            ) return
+            val command = try {
+                CheckoutSaleCommand(
+                    saleId = cart.saleId,
+                    expectedVersion = cart.version,
+                    expectedContentHash = cart.contentHash,
+                    debtorName = if (cart.pendingCheckout != null) {
+                        cart.pendingCheckout.debtorName
+                    } else {
+                        state.canonicalDebtorName.takeIf { state.entryKind == SalesContract.EntryKind.CREDIT }
+                    },
+                    debtDueAt = cart.pendingCheckout?.debtDueAt,
+                )
+            } catch (_: IllegalArgumentException) {
+                executeMain {
+                    if (domainCart?.saleId == cart.saleId) {
+                        updateState { copy(failure = SalesContract.Failure.CHECKOUT_FAILED) }
+                    }
+                }
+                return
+            }
+            checkoutRequestPending = true
+            val job = launchMutation(oneShot = true) {
+                val current = domainCart
+                if (backRequested) return@launchMutation
+                if (current == null || current.saleId != cart.saleId || current.businessId != cart.businessId ||
+                    current.version != command.expectedVersion || current.contentHash != command.expectedContentHash ||
+                    (activeBusinessId != null && activeBusinessId != cart.businessId) || deferredContextSnapshot != null
                 ) {
                     updateState { copy(failure = SalesContract.Failure.STALE_CART) }
                     return@launchMutation
                 }
-                val result =
-                    withContext(dispatcherProvider.io) {
-                        checkout(
-                            CheckoutSaleCommand(
-                                saleId = cart.saleId,
-                                expectedVersion = review.version,
-                                expectedContentHash = review.contentHash,
-                                debtorName = review.debtorName,
-                                debtDueAt = cart.pendingCheckout?.debtDueAt,
-                            ),
-                        )
-                    }
+                val currentState = uiState.value
+                if (hasPendingLineEdits() || !currentState.copy(isMutating = false).canCheckout ||
+                    currentState.entryKind != state.entryKind ||
+                    (cart.pendingCheckout == null && currentState.canonicalDebtorName != state.canonicalDebtorName)
+                ) return@launchMutation
+                // Version/hash y la transacción del repositorio siguen protegiendo la venta;
+                // eliminar el diálogo no elimina sus validaciones ni la idempotencia.
+                val result = withContext(dispatcherProvider.io) { checkout(command) }
                 if (result !is CheckoutSaleResult.Posted && result !is CheckoutSaleResult.AlreadyPosted) {
                     // An uncertain attempt may have persisted a pending intent. Refresh its lock,
                     // but never let this secondary read replace the actual checkout result.
@@ -2137,7 +2265,7 @@ class SalesViewModel
                     is CheckoutSaleResult.Posted,
                     is CheckoutSaleResult.AlreadyPosted,
                     -> {
-                        if (review.debtorName != null) {
+                        if (command.debtorName != null) {
                             emitEffect(SalesContract.Effect.CreditSalePosted)
                             return@launchMutation
                         }
@@ -2242,6 +2370,11 @@ class SalesViewModel
                     }
                 }
             }
+            if (job == null) {
+                checkoutRequestPending = false
+            } else {
+                job.invokeOnCompletion { checkoutRequestPending = false }
+            }
         }
 
         private fun launchMutation(
@@ -2336,6 +2469,7 @@ class SalesViewModel
                     }
                 }
 
+                SaleCartMutationResult.BarcodeRecoveryChanged,
                 SaleCartMutationResult.CurrencyMismatch,
                 SaleCartMutationResult.DuplicateProductLocation,
                 SaleCartMutationResult.LineNotFound,

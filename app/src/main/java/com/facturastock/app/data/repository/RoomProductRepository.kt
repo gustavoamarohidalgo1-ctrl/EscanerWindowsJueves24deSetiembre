@@ -495,6 +495,11 @@ class RoomProductRepository @Inject constructor(
             .distinctUntilChanged()
             .flowOn(dispatchers.io)
 
+    override suspend fun listForBusiness(businessId: BusinessId): List<Product> =
+        withContext(dispatchers.io) {
+            storageCatching { productDao.listForBusiness(businessId.value).map(ProductEntity::toDomain) }
+        }
+
     override suspend fun archive(productId: ProductId): Boolean = setStatus(
         productId,
         CatalogStatus.ARCHIVED,

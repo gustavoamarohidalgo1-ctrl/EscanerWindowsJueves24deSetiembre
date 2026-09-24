@@ -1701,6 +1701,328 @@ class CatalogsViewModelTest {
         SavedStateHandle(mapOf(RouteArgumentKeys.EDIT_PRODUCT_ID to productId.value))
 
     @Test
+    fun `manual form validation requires opening values and rejects barcode sku or purchase conversion`() {
+        val valid = Form.ProductForm(
+            isManualRegistration = true,
+            title = "Producto manual",
+            locationId = locationId,
+            quantity = "2,5",
+            purchasePrice = "0",
+            salePrice = "6,50",
+        )
+        val currency = CurrencyCode.of("PEN")
+        assertTrue(valid.hasValidProductFields(currency))
+        listOf(
+            valid.copy(title = ""), valid.copy(quantity = ""), valid.copy(purchasePrice = ""),
+            valid.copy(salePrice = ""), valid.copy(locationId = null), valid.copy(barcode = "123456"),
+            valid.copy(sku = "SKU-001"), valid.copy(purchaseUnitId = unitId), valid.copy(purchaseFactor = "2"),
+        ).forEach { assertFalse(it.hasValidProductFields(currency)) }
+    }
+
+    @Test
+    fun `manual registration opens directly with NIU and atomically saves all four fields once without identifiers`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val kilogram = units.create(unit(UnitId.from(uuid(970)), "KGM", "Kilogramo"))
+            units.create(unit(UnitId.from(uuid(971)), "UND", "Unidad alternativa"))
+            var catalogSubscriptions = 0
+            val repository = object : ProductRepository by products {
+                override fun observeSearch(businessId: BusinessId, search: CatalogSearch): Flow<CatalogPage<Product>> {
+                    catalogSubscriptions += 1
+                    return products.observeSearch(businessId, search)
+                }
+            }
+            val arguments = manualArguments()
+            val viewModel = createViewModel(arguments, repository)
+            settleSearch()
+            val form = viewModel.uiState.value.form as Form.ProductForm
+            assertTrue(form.isManualRegistration)
+            assertFalse(form.isSpecialRegistration)
+            assertFalse(form.isScannedRegistration)
+            assertEquals(unitId, form.unitId)
+            assertEquals(locationId, form.locationId)
+            assertEquals(0, catalogSubscriptions)
+            assertTrue(viewModel.uiState.value.rows.isEmpty())
+            viewModel.onAction(Action.ProductBarcodeChanged("7751234567890"))
+            viewModel.onAction(Action.ProductSkuChanged("SKU-001"))
+            viewModel.onAction(Action.ProductUnitSelected(kilogram.unitId))
+            fillScannedProduct(viewModel)
+            runCurrent()
+
+            viewModel.onAction(Action.SaveForm)
+            viewModel.onAction(Action.SaveForm)
+            settleSearch()
+
+            val write = registrations.single()
+            assertEquals(form.registrationProductId, write.product.productId)
+            assertEquals("Arroz extra", write.product.name)
+            assertNull(write.product.barcode)
+            assertNull(write.product.sku)
+            assertEquals(unitId, write.product.unitId)
+            assertEquals(locationId, write.product.locationId)
+            assertEquals(BigDecimal("2.5"), write.quantity)
+            assertEquals(UnitCost.of("4.25", CurrencyCode.of("PEN")), write.unitCost)
+            assertEquals(Money.fromMajor("6.50", CurrencyCode.of("PEN")), write.product.salePrice)
+            assertTrue(inventory.stockWrites.isEmpty())
+            assertTrue(products.search(businessId, "").isEmpty())
+            assertEquals(0, catalogSubscriptions)
+            viewModel.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+            val restored = createViewModel(recreatedArguments(arguments))
+            settleSearch()
+            assertNull(restored.uiState.value.form)
+            assertEquals(1, registrations.size)
+        }
+
+    @Test
+    fun `manual registration creates missing NIU only after validation and keeps identity through a failed save`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            units = FakeUnitRepository(clock, products)
+            units.create(unit(UnitId.from(uuid(972)), "KGM", "Kilogramo"))
+            val arguments = manualArguments()
+            val viewModel = createViewModel(arguments)
+            settleSearch()
+            assertNull((viewModel.uiState.value.form as Form.ProductForm).unitId)
+            assertNull(units.findByCode(businessId, "NIU"))
+            viewModel.onAction(Action.SaveForm)
+            runCurrent()
+            assertNull(units.findByCode(businessId, "NIU"))
+            assertTrue(registrations.isEmpty())
+
+            fillScannedProduct(viewModel)
+            viewModel.onAction(Action.ProductPurchasePriceChanged("0"))
+            runCurrent()
+            failRegistration = true
+            viewModel.onAction(Action.SaveForm)
+            runCurrent()
+            val normal = requireNotNull(units.findByCode(businessId, "NIU"))
+            assertEquals("Unidad", normal.name)
+            assertEquals("und", normal.symbol)
+            assertEquals(Failure.SAVE_FAILED, viewModel.uiState.value.failure)
+            assertTrue((viewModel.uiState.value.form as Form.ProductForm).isManualRegistration)
+            val restored = createViewModel(recreatedArguments(arguments))
+            settleSearch()
+            failRegistration = false
+            restored.onAction(Action.SaveForm)
+            runCurrent()
+
+            assertEquals(2, registrations.size)
+            assertEquals(registrations.first().product.productId, registrations.last().product.productId)
+            assertTrue(registrations.all { it.product.unitId == normal.unitId && it.unitCost == UnitCost.of("0", CurrencyCode.of("PEN")) })
+            assertNull(units.findByCode(businessId, "UND"))
+            assertTrue(inventory.stockWrites.isEmpty())
+            restored.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+        }
+
+    @Test
+    fun `manual registration can reuse an existing UND alias but never restores archived normal units`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            units.archive(unitId)
+            val alternate = units.create(unit(UnitId.from(uuid(973)), "UND", "Unidad alternativa"))
+            val viewModel = createViewModel(manualArguments())
+            settleSearch()
+            assertEquals(alternate.unitId, (viewModel.uiState.value.form as Form.ProductForm).unitId)
+            units.archive(alternate.unitId)
+            fillScannedProduct(viewModel)
+            runCurrent()
+
+            viewModel.onAction(Action.SaveForm)
+            runCurrent()
+
+            assertEquals(Failure.INVALID_FIELDS, viewModel.uiState.value.failure)
+            assertTrue(registrations.isEmpty())
+            assertEquals(CatalogStatus.ARCHIVED, units.findById(unitId)?.status)
+            assertEquals(CatalogStatus.ARCHIVED, units.findById(alternate.unitId)?.status)
+        }
+
+    @Test
+    fun `manual registration requires name positive quantity purchase cost and positive sale price`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createViewModel(manualArguments())
+            settleSearch()
+            val invalidActions = listOf(
+                Action.ProductNameChanged(" "),
+                Action.ProductQuantityChanged(""),
+                Action.ProductQuantityChanged("0"),
+                Action.ProductQuantityChanged("-2"),
+                Action.ProductPurchasePriceChanged(""),
+                Action.ProductPurchasePriceChanged("-1"),
+                Action.ProductPurchasePriceChanged("1,2.5"),
+                Action.ProductPriceChanged(""),
+                Action.ProductPriceChanged("0"),
+                Action.ProductPriceChanged("6,501"),
+            )
+            invalidActions.forEach { invalid ->
+                fillScannedProduct(viewModel)
+                viewModel.onAction(invalid)
+                runCurrent()
+                viewModel.onAction(Action.SaveForm)
+                runCurrent()
+                assertEquals(invalid.toString(), Failure.INVALID_FIELDS, viewModel.uiState.value.failure)
+                assertTrue((viewModel.uiState.value.form as Form.ProductForm).isManualRegistration)
+            }
+            assertTrue(registrations.isEmpty())
+            assertTrue(inventory.stockWrites.isEmpty())
+        }
+
+    @Test
+    fun `manual partial draft restores exactly and cancellation wins over a queued save`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val arguments = manualArguments()
+            val viewModel = createViewModel(arguments)
+            settleSearch()
+            viewModel.onAction(Action.ProductNameChanged("Producto manual"))
+            viewModel.onAction(Action.ProductQuantityChanged("3,"))
+            viewModel.onAction(Action.ProductPurchasePriceChanged("1,234"))
+            viewModel.onAction(Action.ProductPriceChanged("8,"))
+            runCurrent()
+            val before = viewModel.uiState.value.form as Form.ProductForm
+            val restoredArguments = recreatedArguments(arguments)
+            val restored = createViewModel(restoredArguments)
+            settleSearch()
+            assertEquals(before, restored.uiState.value.form)
+
+            restored.onAction(Action.CloseForm)
+            restored.onAction(Action.SaveForm)
+            runCurrent()
+
+            assertTrue(registrations.isEmpty())
+            assertTrue(inventory.stockWrites.isEmpty())
+            restored.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+            val afterCancel = createViewModel(recreatedArguments(restoredArguments))
+            settleSearch()
+            assertNull(afterCancel.uiState.value.form)
+            assertFalse(afterCancel.uiState.value.isManualEntryPending)
+        }
+
+    @Test
+    fun `manual draft committed before process death never applies its opening stock again`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val arguments = manualArguments()
+            val viewModel = createViewModel(arguments)
+            settleSearch()
+            fillScannedProduct(viewModel)
+            runCurrent()
+            val draft = viewModel.uiState.value.form as Form.ProductForm
+            products.create(product(requireNotNull(draft.registrationProductId), "Ya registrado")
+                .copy(unitId = unitId, barcode = null, sku = null))
+
+            val restored = createViewModel(recreatedArguments(arguments))
+            settleSearch()
+            restored.onAction(Action.SaveForm)
+            runCurrent()
+
+            assertNull(restored.uiState.value.form)
+            assertFalse(restored.uiState.value.isManualEntryPending)
+            assertTrue(registrations.isEmpty())
+            assertTrue(inventory.stockWrites.isEmpty())
+            restored.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+        }
+
+    @Test
+    fun `manual completion survives recreation before the pending back effect is consumed`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            for (save in listOf(true, false)) {
+                val arguments = manualArguments()
+                val viewModel = createViewModel(arguments)
+                settleSearch()
+                fillScannedProduct(viewModel)
+                runCurrent()
+                val writesBefore = registrations.size
+                viewModel.onAction(if (save) Action.SaveForm else Action.CloseForm)
+                runCurrent()
+                assertNull(viewModel.uiState.value.form)
+                val restored = createViewModel(recreatedArguments(arguments))
+                settleSearch()
+
+                restored.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+                restored.onAction(Action.AddSelected)
+                restored.onAction(Action.SaveForm)
+                restored.onAction(Action.CloseForm)
+                runCurrent()
+
+                assertNull(restored.uiState.value.form)
+                assertEquals(writesBefore + if (save) 1 else 0, registrations.size)
+                assertTrue(inventory.stockWrites.isEmpty())
+                restored.effects.test { expectNoEvents() }
+            }
+        }
+
+    @Test
+    fun `manual identity lookup failure stays in registration and cancellation consumes its saved route`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            var catalogSubscriptions = 0
+            val repository = object : ProductRepository by products {
+                override suspend fun findById(productId: ProductId): Product? = error("identity lookup unavailable")
+
+                override fun observeSearch(businessId: BusinessId, search: CatalogSearch): Flow<CatalogPage<Product>> {
+                    catalogSubscriptions += 1
+                    return products.observeSearch(businessId, search)
+                }
+            }
+            val arguments = manualArguments()
+            val viewModel = createViewModel(arguments, repository)
+            settleSearch()
+            assertNull(viewModel.uiState.value.form)
+            assertTrue(viewModel.uiState.value.isManualEntryPending)
+            assertEquals(Failure.LOAD_FAILED, viewModel.uiState.value.manualEntryFailure)
+            assertEquals(0, catalogSubscriptions)
+
+            viewModel.onAction(Action.AddSelected)
+            viewModel.onAction(Action.SaveForm)
+            viewModel.onAction(Action.CloseForm)
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.isManualEntryPending)
+            assertEquals(0, catalogSubscriptions)
+            assertTrue(registrations.isEmpty())
+            viewModel.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+            val restored = createViewModel(recreatedArguments(arguments))
+            settleSearch()
+            assertNull(restored.uiState.value.form)
+        }
+
+    @Test
+    fun `manual registration validates the warehouse before creating NIU`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            units = FakeUnitRepository(clock, products)
+            val viewModel = createViewModel(manualArguments())
+            settleSearch()
+            fillScannedProduct(viewModel)
+            runCurrent()
+            locations.archive(locationId)
+
+            viewModel.onAction(Action.SaveForm)
+            runCurrent()
+
+            assertEquals(Failure.INVALID_FIELDS, viewModel.uiState.value.failure)
+            assertNull(units.findByCode(businessId, "NIU"))
+            assertTrue(registrations.isEmpty())
+        }
+
+    @Test
+    fun `manual draft cannot register into another business after a switch or process recreation`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val arguments = manualArguments()
+            val viewModel = createViewModel(arguments)
+            settleSearch()
+            fillScannedProduct(viewModel)
+            runCurrent()
+            val oldProcess = recreatedArguments(arguments)
+
+            config.completeOnboarding(BusinessId.from(uuid(974)), TaxRate(BigDecimal("18")), CostPolicy.NET)
+            runCurrent()
+            viewModel.onAction(Action.SaveForm)
+            runCurrent()
+            assertNull(viewModel.uiState.value.form)
+            viewModel.effects.test { assertEquals(CatalogsContract.Effect.Back, awaitItem()); expectNoEvents() }
+            val restored = createViewModel(oldProcess)
+            settleSearch()
+
+            assertNull(restored.uiState.value.form)
+            assertTrue(registrations.isEmpty())
+            assertTrue(inventory.stockWrites.isEmpty())
+        }
+
+    @Test
     fun `special registration reuses kilogram and atomically submits barcode free fractional opening stock once`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val kgId = UnitId.from(uuid(980))
@@ -1879,6 +2201,8 @@ class CatalogsViewModelTest {
         }
 
     private fun specialArguments() = SavedStateHandle(mapOf("specialProduct" to "true"))
+
+    private fun manualArguments() = SavedStateHandle(mapOf("manualProduct" to "true"))
 
     private fun recreatedArguments(arguments: SavedStateHandle): SavedStateHandle =
         SavedStateHandle(arguments.keys().associateWith { key -> arguments.get<Any?>(key) })

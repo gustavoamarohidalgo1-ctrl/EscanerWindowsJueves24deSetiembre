@@ -23,7 +23,6 @@ import com.facturastock.app.domain.usecase.UpdateProductSalePriceUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.text.Normalizer
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -54,7 +53,9 @@ class InventoryViewModel @Inject constructor(
     private var barcodeLookup: Job? = null
     private var barcodeLookupGeneration = 0L
     private var lastBarcodeForRetry: String? = null
-    private var inventorySearchTermsByProduct: Map<ProductId, List<String>> = emptyMap()
+    private var inventorySearchIndex = InventorySearchIndex.Empty
+    private val inventorySearchTermsByProduct: Map<ProductId, List<String>>
+        get() = inventorySearchIndex.termsByProduct
     private var profitSearchTermsByProduct: Map<ProductId, List<String>> = emptyMap()
     private var searchJob: Job? = null
     private var searchGeneration = 0L
@@ -460,7 +461,7 @@ class InventoryViewModel @Inject constructor(
                 val state = uiState.value
                 if (state.diagnosticReport !== previousReport) {
                     previousReport = state.diagnosticReport
-                    prepared = prepareInventory(inventory, previousReport)
+                    prepared = prepareInventory(inventory, previousReport, prepared.searchIndex)
                     continue
                 }
                 val query = state.query
@@ -473,7 +474,7 @@ class InventoryViewModel @Inject constructor(
                     uiState.value.diagnosticReport !== previousReport
                 ) continue
                 cancelSearch()
-                inventorySearchTermsByProduct = prepared.terms
+                inventorySearchIndex = prepared.searchIndex
                 updateState {
                     copy(
                         isLoading = false,
@@ -492,25 +493,22 @@ class InventoryViewModel @Inject constructor(
 
     private data class PreparedInventory(
         val items: List<InventoryReadItem>,
-        val terms: Map<ProductId, List<String>>,
+        val searchIndex: InventorySearchIndex,
         val report: InventoryDiagnosticReport?,
-    )
+    ) {
+        val terms: Map<ProductId, List<String>> get() = searchIndex.termsByProduct
+    }
 
     private suspend fun prepareInventory(
         inventory: List<InventoryReadItem>,
         report: InventoryDiagnosticReport?,
+        previousIndex: InventorySearchIndex = inventorySearchIndex,
     ): PreparedInventory = withContext(dispatcherProvider.default) {
-        val context = currentCoroutineContext()
         val currentReport = report?.takeIf { it.matchesSnapshot(inventory) }
         val decorated = inventory.withDiagnosticAlerts(currentReport)
         PreparedInventory(
             items = decorated,
-            terms = buildMap {
-                decorated.forEachIndexed { index, item ->
-                    if (index % 64 == 0) context.ensureActive()
-                    put(item.productId, item.inventorySearchTerms())
-                }
-            },
+            searchIndex = previousIndex.prepare(decorated),
             report = currentReport,
         )
     }
@@ -1085,15 +1083,6 @@ private suspend fun List<InventoryReadItem>.filteredInventory(
 private fun List<InventoryReadItem>.visibleInventory(): List<InventoryReadItem> =
     if (all { InventoryDataAlert.ARCHIVED_PRODUCT !in it.allAlerts }) this
     else filter { InventoryDataAlert.ARCHIVED_PRODUCT !in it.allAlerts }
-
-private fun InventoryReadItem.inventorySearchTerms(): List<String> = listOf(productName.inventorySearchKey())
-
-private val inventorySearchMarks = Regex("\\p{M}+")
-
-private fun String.inventorySearchKey(): String =
-    Normalizer.normalize(trim(), Normalizer.Form.NFD)
-        .replace(inventorySearchMarks, "")
-        .lowercase(Locale.ROOT)
 
 private suspend fun List<ProductProfit>.filteredProfits(
     query: String,

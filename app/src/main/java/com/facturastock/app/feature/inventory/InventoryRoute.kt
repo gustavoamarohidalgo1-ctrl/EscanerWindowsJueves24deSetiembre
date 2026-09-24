@@ -6,8 +6,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -19,6 +22,7 @@ import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.FeatureLoadContent
 import com.facturastock.app.feature.common.ScannerCodeInput
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
+import com.facturastock.app.ui.components.FacturaStockTopBarAction
 import com.facturastock.app.ui.components.RecoverableError
 import com.facturastock.app.ui.theme.FacturaStockDesign
 
@@ -33,6 +37,7 @@ fun InventoryRoute(
     onRegisterProducts: () -> Unit = {},
     onRegisterSpecialProduct: () -> Unit = {},
     onEditProduct: (ProductId) -> Unit = {},
+    onTopBarActionsAvailable: (List<FacturaStockTopBarAction>) -> Unit = {},
     viewModel: InventoryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -47,6 +52,13 @@ fun InventoryRoute(
     }
 
     val scanner = if (state.productId == null) rememberInventoryScannerInput(state, viewModel) else null
+    InventoryTopBarActions(
+        state = state,
+        onRegisterProducts = onRegisterProducts,
+        onRegisterManual = { viewModel.onAction(InventoryContract.Action.RegisterProductManual) },
+        onRegisterSpecialProduct = onRegisterSpecialProduct,
+        onTopBarActionsAvailable = onTopBarActionsAvailable,
+    )
 
     CollectUiEffects(viewModel.effects) { effect ->
         when (effect) {
@@ -123,6 +135,12 @@ fun InventoryRoute(
                                 physicalInput = scanner.physicalInput,
                                 onClearPhysicalInput = scanner.clear,
                                 onCode = scanner.submit,
+                                searchQuery = state.query,
+                                onSearchQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
+                                labelRes = R.string.inventory_unified_input_label,
+                                hintRes = R.string.inventory_unified_input_hint,
+                                supportingTextRes = R.string.inventory_unified_input_help,
+                                submitLabelRes = R.string.inventory_unified_open_code,
                                 modifier = Modifier.padding(FacturaStockDesign.spacing.md),
                             )
                             Text(
@@ -155,6 +173,7 @@ fun InventoryRoute(
                             isDiagnosing = state.isDiagnosing,
                             diagnosticFailed = diagnosticFailed,
                             showDiagnostic = showDiagnostic,
+                            showNameSearch = scanner == null,
                             onQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
                             onSearchFocusChange = { viewModel.onAction(InventoryContract.Action.SearchFocusChanged(it)) },
                             onProductClick = {
@@ -168,6 +187,8 @@ fun InventoryRoute(
                             },
                             onRegisterProducts = onRegisterProducts,
                             onRegisterSpecialProduct = onRegisterSpecialProduct,
+                            // Los tres registros viven como iconos en la barra superior.
+                            showRegisterActions = false,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -184,5 +205,61 @@ fun InventoryRoute(
                     )
                 }
             }
+    }
+}
+
+/**
+ * Publica los registros de productos (escáner, manual y especial por peso) como iconos de la
+ * barra superior mientras se muestra la lista de Inventario.
+ */
+@Composable
+private fun InventoryTopBarActions(
+    state: InventoryContract.State,
+    onRegisterProducts: () -> Unit,
+    onRegisterManual: () -> Unit,
+    onRegisterSpecialProduct: () -> Unit,
+    onTopBarActionsAvailable: (List<FacturaStockTopBarAction>) -> Unit,
+) {
+    val registerProductsLabel = stringResource(R.string.inventory_register_products)
+    val registerManualLabel = stringResource(R.string.inventory_register_manual)
+    val registerSpecialLabel = stringResource(R.string.inventory_register_special_product)
+    val currentOnRegisterProducts by rememberUpdatedState(onRegisterProducts)
+    val currentOnRegisterManual by rememberUpdatedState(onRegisterManual)
+    val currentOnRegisterSpecialProduct by rememberUpdatedState(onRegisterSpecialProduct)
+    val currentOnTopBarActionsAvailable by rememberUpdatedState(onTopBarActionsAvailable)
+    val showActions = state.productId == null
+    val enabled = state.canStartProductAction && !state.isLoading
+    val actions = remember(showActions, enabled, registerProductsLabel, registerManualLabel, registerSpecialLabel) {
+        if (!showActions) {
+            emptyList()
+        } else {
+            listOf(
+                FacturaStockTopBarAction(
+                    iconRes = R.drawable.ic_scanner_gun,
+                    contentDescription = registerProductsLabel,
+                    onClick = { currentOnRegisterProducts() },
+                    enabled = enabled,
+                    testTag = InventoryTestTags.REGISTER_PRODUCTS,
+                ),
+                FacturaStockTopBarAction(
+                    iconRes = R.drawable.ic_hand_writing,
+                    contentDescription = registerManualLabel,
+                    onClick = { currentOnRegisterManual() },
+                    enabled = enabled,
+                    testTag = InventoryTestTags.REGISTER_MANUAL,
+                ),
+                FacturaStockTopBarAction(
+                    iconRes = R.drawable.ic_rice,
+                    contentDescription = registerSpecialLabel,
+                    onClick = { currentOnRegisterSpecialProduct() },
+                    enabled = enabled,
+                    testTag = InventoryTestTags.REGISTER_SPECIAL_PRODUCT,
+                ),
+            )
+        }
+    }
+    LaunchedEffect(actions) { currentOnTopBarActionsAvailable(actions) }
+    DisposableEffect(Unit) {
+        onDispose { currentOnTopBarActionsAvailable(emptyList()) }
     }
 }

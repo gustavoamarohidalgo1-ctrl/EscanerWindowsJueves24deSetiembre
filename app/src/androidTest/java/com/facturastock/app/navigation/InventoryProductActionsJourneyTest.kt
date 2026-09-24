@@ -1,12 +1,14 @@
 package com.facturastock.app.navigation
 
 import android.os.Build
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -40,7 +42,9 @@ import com.facturastock.app.domain.repository.InventoryLocationRepository
 import com.facturastock.app.domain.repository.ProductInventoryRepository
 import com.facturastock.app.domain.repository.ProductRepository
 import com.facturastock.app.domain.repository.UnitRepository
+import com.facturastock.app.feature.catalogs.CatalogsContract
 import com.facturastock.app.feature.catalogs.CatalogsTestTags
+import com.facturastock.app.feature.common.ScannerCodeInputTestTags
 import com.facturastock.app.feature.inventory.InventoryTestTags
 import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.testing.TestAppConfigurationState
@@ -126,7 +130,7 @@ class InventoryProductActionsJourneyTest {
         balancesBefore = snapshot("inventory_balances")
         movementsBefore = snapshot("stock_movements")
         scenario = ActivityScenario.launch(MainActivity::class.java)
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         val tab =
             hasText(context.getString(R.string.navigation_inventory)) and
                 SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
@@ -141,31 +145,130 @@ class InventoryProductActionsJourneyTest {
     }
 
     @Test
+    fun manualRegistrationRestoresTheStandaloneFormAndSavesPricesAndStockOnceWithoutBarcode() {
+        // Kilogramo se ordena antes que Unidad: un producto manual normal debe seguir usando NIU.
+        runBlocking {
+            units.create(
+                UnitOfMeasure(
+                    UnitId.from(UUID.randomUUID()),
+                    businessId,
+                    "KGM",
+                    "Kilogramo",
+                    symbol = "kg",
+                    createdAt = Instant.EPOCH,
+                    updatedAt = Instant.EPOCH,
+                ),
+            )
+        }
+        val before = registrationTables.associateWith(::snapshot)
+        clickTopBarAction(InventoryTestTags.REGISTER_MANUAL)
+        waitForManualForm()
+        assertStandaloneManualForm()
+        fillManualRegistration("Galletas manuales", "4", "3,125", "6,50")
+
+        scenario.recreate()
+        waitForManualForm()
+        assertStandaloneManualForm()
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_NAME).performScrollTo().assertTextContains("Galletas manuales")
+        assertDecimalValue(CatalogsTestTags.PRODUCT_QUANTITY, "4")
+        assertDecimalValue(CatalogsTestTags.PRODUCT_PURCHASE_PRICE, "3.125")
+        assertDecimalValue(CatalogsTestTags.PRODUCT_SALE_PRICE, "6.50")
+        before.forEach { (table, rows) -> assertEquals("El formulario alteró $table antes de guardar", rows, snapshot(table)) }
+
+        val save =
+            requireNotNull(
+                composeRule
+                    .onNodeWithTag(CatalogsTestTags.SAVE_FORM)
+                    .performScrollTo()
+                    .assertIsEnabled()
+                    .fetchSemanticsNode()
+                    .config[SemanticsActions.OnClick]
+                    .action,
+            )
+        composeRule.runOnIdle {
+            assertTrue(save())
+            assertTrue(save())
+        }
+        waitForTag(InventoryTestTags.LIST_SCREEN)
+        composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
+        runBlocking {
+            val registered = database.productDao().listForBusiness(businessId.value)
+            assertEquals(2, registered.size)
+            val saved = registered.single { it.productId != product.productId.value }
+            assertEquals("Galletas manuales", saved.name)
+            assertNull(saved.barcode)
+            assertNull(saved.sku)
+            assertEquals(650L, saved.salePriceMinorUnits)
+            assertEquals("PEN", saved.salePriceCurrencyCode)
+            assertEquals("NIU", database.unitDao().findById(saved.unitId)?.code)
+            assertEquals(product.locationId?.value, saved.locationId)
+            val balance = requireNotNull(database.inventoryDao().findBalance(businessId.value, saved.productId, requireNotNull(saved.locationId)))
+            assertEquals(0, "4".toBigDecimal().compareTo(balance.quantityOnHand.toBigDecimal()))
+            assertEquals(0, "3.125".toBigDecimal().compareTo(balance.averageUnitCost.toBigDecimal()))
+            val movement = requireNotNull(database.inventoryDao().findMovementByIdempotencyKey("product-registration:v1:${saved.productId}"))
+            assertEquals(0, "4".toBigDecimal().compareTo(movement.quantityDelta.toBigDecimal()))
+            assertEquals(0, "3.125".toBigDecimal().compareTo(requireNotNull(movement.unitCost).toBigDecimal()))
+            assertEquals(product, products.findById(product.productId))
+        }
+        assertEquals(before.getValue("stock_movements").size + 1, snapshot("stock_movements").size)
+        assertEquals(before.getValue("outbox_operations").size + 1, snapshot("outbox_operations").size)
+        assertTrue(snapshot("inventory_balances").containsAll(balancesBefore))
+        assertTrue(snapshot("stock_movements").containsAll(movementsBefore))
+    }
+
+    @Test
+    fun cancellingManualRegistrationReturnsToInventoryWithoutPersistingAnything() {
+        val before = registrationTables.associateWith(::snapshot)
+        clickTopBarAction(InventoryTestTags.REGISTER_MANUAL)
+        waitForManualForm()
+        assertStandaloneManualForm()
+        fillManualRegistration("Producto cancelado", "7", "2", "4")
+
+        composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performScrollTo().performClick()
+
+        waitForTag(InventoryTestTags.LIST_SCREEN)
+        composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
+        before.forEach { (table, rows) -> assertEquals("Cancelar alteró $table", rows, snapshot(table)) }
+        runBlocking { assertEquals(product, products.findById(product.productId)) }
+    }
+
+    @Test
     fun nameSearchKeepsKeyboardFocusFiltersProductsAndClearsWithoutChangingStock() {
-        val search = composeRule.onNodeWithTag(InventoryTestTags.SEARCH)
-        search.performClick()
-        search.performTextReplacement("zz")
+        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.inventory_unified_input_label)).assertIsDisplayed()
+        replaceInventoryInput("zz")
         waitForTag(InventoryTestTags.EMPTY)
-        search.assertTextContains("zz").assertIsFocused()
+        assertInventoryInput("zz")
 
-        search.performTextReplacement("AR")
-        search.assertTextContains("AR").assertIsFocused()
+        replaceInventoryInput("AR")
+        scenario.onActivity { activity ->
+            val field = requireNotNull(activity.window.decorView.findViewWithTag<EditText>(ScannerCodeInputTestTags.FIELD))
+            assertTrue(requireNotNull(field.onCreateInputConnection(EditorInfo())).performEditorAction(EditorInfo.IME_ACTION_SEARCH))
+        }
+        assertInventoryInput("AR")
         composeRule
             .onNodeWithTag(InventoryTestTags.LIST_SCREEN)
             .performScrollToNode(hasTestTag(InventoryTestTags.product(product.productId)))
         composeRule.onNodeWithTag(InventoryTestTags.product(product.productId)).assertIsDisplayed()
+        composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
 
-        composeRule
-            .onNodeWithTag(InventoryTestTags.LIST_SCREEN)
-            .performScrollToNode(hasTestTag(InventoryTestTags.SEARCH))
-        search.performTextReplacement("zz")
+        replaceInventoryInput("zz")
         waitForTag(InventoryTestTags.EMPTY)
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH_CLEAR).performClick()
-        search.assertTextContains("")
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.RESET).performClick()
+        assertInventoryInput("")
         composeRule
             .onNodeWithTag(InventoryTestTags.LIST_SCREEN)
             .performScrollToNode(hasTestTag(InventoryTestTags.product(product.productId)))
         composeRule.onNodeWithTag(InventoryTestTags.product(product.productId)).assertIsDisplayed()
+        assertStockPreserved()
+
+        val barcode = "0001234567895"
+        runBlocking { assertTrue(products.update(product.copy(barcode = barcode))) }
+        replaceInventoryInput(barcode)
+        composeRule.onNodeWithTag(ScannerCodeInputTestTags.SUBMIT).assertIsEnabled().performClick()
+        waitForTag(CatalogsTestTags.PRODUCT_NAME)
+        composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_NAME).performScrollTo().assertTextContains(product.name)
+        runBlocking { assertEquals(product.productId, products.findByBarcode(businessId, barcode)?.productId) }
         assertStockPreserved()
     }
 
@@ -321,7 +424,7 @@ class InventoryProductActionsJourneyTest {
         listOf("Restaurar producto", "Ver retirados", "Quitar del catálogo").forEach { label ->
             composeRule.onNodeWithText(label).assertDoesNotExist()
         }
-        composeRule.onNodeWithTag(InventoryTestTags.SEARCH).performScrollTo().performTextReplacement("Arroz")
+        replaceInventoryInput("Arroz")
         waitForTag(InventoryTestTags.EMPTY)
         composeRule.onNodeWithTag(InventoryTestTags.product(product.productId)).assertDoesNotExist()
         runBlocking {
@@ -414,6 +517,74 @@ class InventoryProductActionsJourneyTest {
         assertStockPreserved()
     }
 
+    private val registrationTables = listOf("products", "inventory_balances", "stock_movements", "outbox_operations")
+
+    private fun replaceInventoryInput(value: String) {
+        composeRule.waitUntil(15_000L) {
+            var ready = false
+            scenario.onActivity { activity ->
+                val field = activity.window.decorView.findViewWithTag<EditText>(ScannerCodeInputTestTags.FIELD)
+                ready = field?.isEnabled == true && field.hasFocus()
+            }
+            ready
+        }
+        scenario.onActivity { activity ->
+            val field = requireNotNull(activity.window.decorView.findViewWithTag<EditText>(ScannerCodeInputTestTags.FIELD))
+            field.selectAll()
+            assertTrue(requireNotNull(field.onCreateInputConnection(EditorInfo())).commitText(value, 1))
+        }
+        composeRule.waitForIdle()
+    }
+
+    private fun assertInventoryInput(value: String) {
+        composeRule.runOnIdle {
+            scenario.onActivity { activity ->
+                val field = requireNotNull(activity.window.decorView.findViewWithTag<EditText>(ScannerCodeInputTestTags.FIELD))
+                assertEquals(value, field.text.toString())
+                assertTrue(field.hasFocus())
+            }
+        }
+    }
+
+    private fun waitForManualForm() {
+        waitForTag(CatalogsTestTags.FORM)
+        composeRule.waitUntil(15_000L) {
+            runCatching {
+                composeRule.onNodeWithTag(CatalogsTestTags.PRODUCT_NAME).performScrollTo().assertIsDisplayed()
+            }.isSuccess
+        }
+    }
+
+    private fun assertStandaloneManualForm() {
+        composeRule.onNode(isDialog()).assertDoesNotExist()
+        listOf(
+            CatalogsTestTags.LIST,
+            CatalogsTestTags.SEARCH,
+            CatalogsTestTags.ADD,
+            CatalogsTestTags.PRODUCT_BARCODE,
+            CatalogsTestTags.PRODUCT_SKU,
+        ).forEach { tag -> composeRule.onNodeWithTag(tag).assertDoesNotExist() }
+        CatalogsContract.Section.entries.forEach { section ->
+            composeRule.onNodeWithTag(CatalogsTestTags.tab(section)).assertDoesNotExist()
+        }
+    }
+
+    private fun fillManualRegistration(
+        name: String,
+        quantity: String,
+        purchasePrice: String,
+        salePrice: String,
+    ) {
+        listOf(
+            CatalogsTestTags.PRODUCT_NAME to name,
+            CatalogsTestTags.PRODUCT_QUANTITY to quantity,
+            CatalogsTestTags.PRODUCT_PURCHASE_PRICE to purchasePrice,
+            CatalogsTestTags.PRODUCT_SALE_PRICE to salePrice,
+        ).forEach { (tag, value) ->
+            composeRule.onNodeWithTag(tag).performScrollTo().performTextReplacement(value)
+        }
+    }
+
     private fun assertDecimalValue(
         tag: String,
         expected: String,
@@ -443,6 +614,14 @@ class InventoryProductActionsJourneyTest {
                 while (cursor.moveToNext()) add((0 until cursor.columnCount).map { index -> cursor.getString(index) })
             }
         }
+
+    /** Los registros de productos son iconos fijos de la barra superior, fuera de la lista. */
+    private fun clickTopBarAction(tag: String) {
+        composeRule.waitUntil(15_000L) {
+            runCatching { composeRule.onNodeWithTag(tag).assertIsDisplayed().assertIsEnabled() }.isSuccess
+        }
+        composeRule.onNodeWithTag(tag).performClick()
+    }
 
     private fun clickListAction(tag: String) {
         composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN).performScrollToNode(hasTestTag(tag))

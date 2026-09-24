@@ -129,7 +129,7 @@ class DirectDebtPaymentJourneyTest {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         // Evidencia del fixture sintético tras el guard de emulador; producción conserva FLAG_SECURE.
         scenario.onActivity { it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         composeRule.waitUntil(15_000L) {
             runBlocking { database.saleDao().findActiveDraft(businessId.value, currency.value) != null }
         }
@@ -314,8 +314,11 @@ class DirectDebtPaymentJourneyTest {
     }
 
     private fun clickTag(tag: String) {
-        waitForTag(tag)
-        composeRule.onNodeWithTag(tag).assertIsEnabled().performClick()
+        // La pestaña Deudores de Reportes se habilita cuando el reporte identifica el negocio.
+        composeRule.waitUntil(15_000L) {
+            runCatching { composeRule.onNodeWithTag(tag).assertIsDisplayed().assertIsEnabled() }.isSuccess
+        }
+        composeRule.onNodeWithTag(tag).performClick()
     }
 
     private fun waitForTag(tag: String) {

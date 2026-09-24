@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import com.facturastock.app.FacturaStockApplication
 import com.facturastock.app.R
+import com.facturastock.app.domain.model.ReportPdfKind
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.core.id.RandomUuidGenerator
 import com.facturastock.app.core.id.UuidGenerator
@@ -71,12 +72,15 @@ import com.facturastock.app.feature.purchase.PurchaseFlowScreen
 import com.facturastock.app.feature.purchases.PurchasesRoute
 import com.facturastock.app.feature.purchases.PurchaseSuccessRoute
 import com.facturastock.app.feature.purchases.PurchaseVoidRoute
+import com.facturastock.app.feature.reports.ReportsPdfTopBarAction
 import com.facturastock.app.feature.reports.ReportsRoute
+import com.facturastock.app.feature.reports.ReportsTestTags
 import com.facturastock.app.feature.root.AppGateViewModel
 import com.facturastock.app.feature.root.GateState
 import com.facturastock.app.feature.sales.SalesContract
 import com.facturastock.app.feature.sales.SalesRoute
 import com.facturastock.app.feature.sales.SalesScreen
+import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.feature.settings.SettingsRoute
 import com.facturastock.app.feature.source.SourceRoute
 import com.facturastock.app.feature.summary.PurchaseSummaryRoute
@@ -88,6 +92,7 @@ import com.facturastock.app.ui.components.FacturaStockDialog
 import com.facturastock.app.ui.components.FacturaStockNavigationRail
 import com.facturastock.app.ui.components.FacturaStockScaffold
 import com.facturastock.app.ui.components.FacturaStockTopBar
+import com.facturastock.app.ui.components.FacturaStockTopBarAction
 import com.facturastock.app.ui.components.LoadingState
 import com.facturastock.app.ui.components.RecoverableError
 import com.facturastock.app.ui.components.StatusTone
@@ -236,6 +241,8 @@ private fun FacturaStockContent(
     var handledDeepLinkRequestId by rememberSaveable { mutableStateOf<Long?>(null) }
     var pendingSalesExit by remember { mutableStateOf<PendingNavigation?>(null) }
     var salesExitRequest by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var reportsPdfAction by remember { mutableStateOf<ReportsPdfTopBarAction?>(null) }
+    var inventoryTopBarActions by remember { mutableStateOf<List<FacturaStockTopBarAction>>(emptyList()) }
     val draftFlowState = if (draftFlowViewModel != null) {
         draftFlowViewModel.uiState.collectAsStateWithLifecycle().value
     } else {
@@ -355,7 +362,11 @@ private fun FacturaStockContent(
     }
     val showBackNavigation = currentDefinition?.topLevel == false &&
         currentPattern != AppRoutes.ONBOARDING
-    val currentTitle = if (currentDefinition?.topLevel == true) {
+    val currentTitle = if (currentPattern == AppRoutes.PRODUCTS_PATTERN &&
+        backStackEntry?.arguments?.getString(AppRoutes.MANUAL_PRODUCT) == "true"
+    ) {
+        stringResource(R.string.inventory_register_manual)
+    } else if (currentDefinition?.topLevel == true) {
         stringResource(topLevelDestinations[selectedTopLevelIndex].labelRes)
     } else {
         stringResource(currentDefinition?.titleRes ?: R.string.app_name)
@@ -402,7 +413,46 @@ private fun FacturaStockContent(
                 )
             },
             topBar = {
+                val pdfAction = reportsPdfAction.takeIf { currentPattern == AppRoutes.REPORTS }
+                val pdfDescription = pdfAction?.let {
+                    stringResource(
+                        if (it.kind == ReportPdfKind.DEBTORS) {
+                            R.string.reports_pdf_debtors_action
+                        } else {
+                            R.string.reports_pdf_daily_action
+                        },
+                    )
+                }
+                val creditSaleDescription = stringResource(R.string.sales_open_credit_sale)
+                val extraActions = when {
+                    pdfAction != null && pdfDescription != null -> listOf(
+                        FacturaStockTopBarAction(
+                            iconRes = R.drawable.ic_pdf,
+                            contentDescription = pdfDescription,
+                            onClick = pdfAction.onClick,
+                            enabled = pdfAction.enabled,
+                            testTag = if (pdfAction.kind == ReportPdfKind.DEBTORS) {
+                                ReportsTestTags.PDF_DEBTORS
+                            } else {
+                                ReportsTestTags.PDF_DAILY
+                            },
+                        ),
+                    )
+                    currentPattern == AppRoutes.SALES && useInjectedViewModels -> listOf(
+                        FacturaStockTopBarAction(
+                            iconRes = R.drawable.ic_debtors,
+                            contentDescription = creditSaleDescription,
+                            onClick = {
+                                requestNavigation(PendingNavigation(AppRoutes.NEW_DEBT, topLevel = false))
+                            },
+                            testTag = SalesTestTags.OPEN_CREDIT_SALE,
+                        ),
+                    )
+                    currentPattern == AppRoutes.INVENTORY -> inventoryTopBarActions
+                    else -> emptyList()
+                }
                 FacturaStockTopBar(
+                    extraActions = extraActions,
                     title = currentTitle,
                     contentMaxWidth = scaffoldContentMaxWidth,
                     compact = useCompactChrome,
@@ -492,6 +542,8 @@ private fun FacturaStockContent(
                 onOpenDebtorsFromSales = {
                     requestNavigation(PendingNavigation(AppRoutes.DEBTORS, topLevel = false))
                 },
+                onReportsPdfActionAvailable = { reportsPdfAction = it },
+                onInventoryTopBarActionsAvailable = { inventoryTopBarActions = it },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding),
@@ -552,6 +604,8 @@ private fun FacturaStockNavHost(
     onSalesExitCancelled: () -> Unit,
     onSalesExitRequestAvailable: ((() -> Unit)?) -> Unit,
     onOpenDebtorsFromSales: () -> Unit,
+    onReportsPdfActionAvailable: (ReportsPdfTopBarAction?) -> Unit,
+    onInventoryTopBarActionsAvailable: (List<FacturaStockTopBarAction>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -591,7 +645,11 @@ private fun FacturaStockNavHost(
         composable(AppRoutes.SALES) { entry ->
             if (useInjectedViewModels) {
                 val registrationResult = salesRegistrationResult(entry)
+                // Vender abre directamente la venta al contado; la venta a crédito se abre con el
+                // icono de la barra superior.
                 SalesRoute(
+                    allowEntryKindSelection = false,
+                    showStepBack = false,
                     onBack = onSalesExitConfirmed,
                     onOpenDebtors = onOpenDebtorsFromSales,
                     onCreditSalePosted = {
@@ -656,7 +714,11 @@ private fun FacturaStockNavHost(
                     allowEntryKindSelection = false,
                     onBack = onSalesExitConfirmed,
                     onCreditSalePosted = {
-                        if (!navController.popBackStack(AppRoutes.DEBTORS, inclusive = false)) {
+                        // Vuelve a la lista de deudores desde la que se abrió: la pantalla propia
+                        // o la pestaña Deudores de Reportes.
+                        if (!navController.popBackStack(AppRoutes.DEBTORS, inclusive = false) &&
+                            !navController.popBackStack(AppRoutes.REPORTS, inclusive = false)
+                        ) {
                             navController.navigate(AppRoutes.DEBTORS) { launchSingleTop = true }
                         }
                     },
@@ -761,6 +823,16 @@ private fun FacturaStockNavHost(
                     onOpenDebtors = {
                         navController.navigate(AppRoutes.DEBTORS) { launchSingleTop = true }
                     },
+                    onPdfActionAvailable = onReportsPdfActionAvailable,
+                    debtorsContent = { debtorsModifier ->
+                        DebtorsRoute(
+                            onOpenDebt = { debtId -> navController.navigate(AppRoutes.debtDetail(debtId)) },
+                            onNewDebt = { navController.navigate(AppRoutes.NEW_DEBT) },
+                            onBack = {},
+                            onCloseInvalidRoute = {},
+                            modifier = debtorsModifier,
+                        )
+                    },
                 )
             } else {
                 TopLevelPlaceholderScreen(
@@ -775,11 +847,13 @@ private fun FacturaStockNavHost(
                 optionalStringArgument(AppRoutes.PREFILL_BARCODE),
                 optionalStringArgument(AppRoutes.EDIT_PRODUCT_ID),
                 optionalStringArgument(AppRoutes.SPECIAL_PRODUCT),
+                optionalStringArgument(AppRoutes.MANUAL_PRODUCT),
             ),
-        ) {
+        ) { entry ->
             if (useInjectedViewModels) {
                 CatalogsRoute(
                     onBack = navController::popBackStack,
+                    isManualRegistration = entry.arguments?.getString(AppRoutes.MANUAL_PRODUCT) == "true",
                 )
             } else {
                 TopLevelPlaceholderScreen(
@@ -852,11 +926,17 @@ private fun FacturaStockNavHost(
                     },
                     onRegisterProduct = { barcode ->
                         if (navController.currentDestination?.route == AppRoutes.INVENTORY) {
-                            navController.navigate(AppRoutes.productsWithBarcode(barcode.orEmpty())) {
+                            val route = if (barcode.isNullOrBlank()) {
+                                AppRoutes.manualProductRegistration()
+                            } else {
+                                AppRoutes.productsWithBarcode(barcode)
+                            }
+                            navController.navigate(route) {
                                 launchSingleTop = true
                             }
                         }
                     },
+                    onTopBarActionsAvailable = onInventoryTopBarActionsAvailable,
                     onRegisterProducts = { navController.navigate(AppRoutes.INVENTORY_REGISTER) },
                     onRegisterSpecialProduct = {
                         if (navController.currentDestination?.route == AppRoutes.INVENTORY) {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="inventory_unified_input_label">Buscar producto</string>
+    <string name="inventory_unified_input_hint">Escanea o escribe nombre o código</string>
+    <string name="inventory_unified_input_help">Escribe al menos 2 letras para buscar por nombre.</string>
+    <string name="inventory_unified_open_code">Abrir por código</string>
+</resources>

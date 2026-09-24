@@ -129,9 +129,6 @@ class HiltUdfRuntimeTest {
             listTag = InventoryTestTags.LIST_SCREEN,
             labelRes = R.string.inventory_empty_title,
         )
-        composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN).performScrollToNode(
-            hasText(context.getString(R.string.inventory_register_manual)),
-        )
         clickTag(InventoryTestTags.REGISTER_MANUAL)
         waitUntilTagDisplayed(CatalogsTestTags.FORM)
         composeRule.onNodeWithText(context.getString(R.string.action_cancel))

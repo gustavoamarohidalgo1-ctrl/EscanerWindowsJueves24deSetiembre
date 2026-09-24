@@ -29,6 +29,7 @@ object AppRoutes {
     const val PREFILL_BARCODE = "barcode"
     const val EDIT_PRODUCT_ID = "editProductId"
     const val SPECIAL_PRODUCT = "specialProduct"
+    const val MANUAL_PRODUCT = "manualProduct"
     const val REGISTRATION_REQUEST_ID = "requestId"
     const val REGISTRATION_BUSINESS_ID = "businessId"
 
@@ -44,7 +45,7 @@ object AppRoutes {
     const val PRODUCTS = "products"
 
     /** Destino real del catálogo: acepta el código precargado para el alta del producto. */
-    const val PRODUCTS_PATTERN = "products?barcode={$PREFILL_BARCODE}&editProductId={$EDIT_PRODUCT_ID}&specialProduct={$SPECIAL_PRODUCT}"
+    const val PRODUCTS_PATTERN = "products?barcode={$PREFILL_BARCODE}&editProductId={$EDIT_PRODUCT_ID}&specialProduct={$SPECIAL_PRODUCT}&manualProduct={$MANUAL_PRODUCT}"
     const val PURCHASES = "purchases"
     const val INVENTORY = "inventory"
     const val INVENTORY_REGISTER = "inventory/register"
@@ -94,7 +95,7 @@ object AppRoutes {
         RouteDefinition(REPORTS, titleRes = R.string.navigation_reports, topLevel = true),
         RouteDefinition(
             PRODUCTS_PATTERN,
-            argumentNames = setOf(PREFILL_BARCODE, EDIT_PRODUCT_ID, SPECIAL_PRODUCT),
+            argumentNames = setOf(PREFILL_BARCODE, EDIT_PRODUCT_ID, SPECIAL_PRODUCT, MANUAL_PRODUCT),
             titleRes = R.string.navigation_products,
         ),
         RouteDefinition(PURCHASES, titleRes = R.string.navigation_purchase_history),
@@ -265,6 +266,9 @@ object AppRoutes {
      */
     fun productsWithBarcode(barcode: String): String =
         "products?barcode=" + Uri.encode(barcode)
+
+    /** Alta directa desde Inventario, sin requerir código de barras ni abrir los catálogos. */
+    fun manualProductRegistration(): String = "products?manualProduct=true"
 
     fun salesProductRegistration(barcode: String, requestId: String, businessId: BusinessId): String =
         "sales/register?barcode=${Uri.encode(barcode)}&requestId=${Uri.encode(requestId)}&businessId=${businessId.value}"

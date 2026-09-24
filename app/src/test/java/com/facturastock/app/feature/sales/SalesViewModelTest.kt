@@ -2,6 +2,7 @@ package com.facturastock.app.feature.sales
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.time.AppClock
 import com.facturastock.app.domain.config.TaxRate
 import com.facturastock.app.domain.model.BarcodeValue
@@ -34,6 +35,7 @@ import com.facturastock.app.domain.repository.ProductRepository
 import com.facturastock.app.domain.repository.SaleCartMutationResult
 import com.facturastock.app.domain.repository.SaleRepository
 import com.facturastock.app.domain.repository.SaveSaleCartLineCommand
+import com.facturastock.app.domain.usecase.BarcodeSimilarity
 import com.facturastock.app.domain.usecase.CheckoutSaleUseCase
 import com.facturastock.app.domain.usecase.CreateSaleCartUseCase
 import com.facturastock.app.domain.usecase.ObserveSaleCartUseCase
@@ -50,6 +52,7 @@ import com.facturastock.app.testing.FakeUnitRepository
 import com.facturastock.app.testing.MainDispatcherRule
 import com.facturastock.app.testing.TestDispatcherProvider
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -77,6 +80,7 @@ import org.junit.Test
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
+import kotlin.coroutines.CoroutineContext
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SalesViewModelTest {
@@ -519,6 +523,37 @@ class SalesViewModelTest {
         }
 
     @Test
+    fun `direct cash entry resets restored credit sale to cash sell step`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val saved = SavedStateHandle(
+                mapOf(
+                    "sales.entry.initialized" to true,
+                    "sales.entry.kind" to "CREDIT",
+                    "sales.entry.mode" to "SCANNER",
+                    "sales.entry.step" to "SELL",
+                    "sales.entry.unifiedInput" to true,
+                ),
+            )
+            val viewModel = createReadyViewModel(
+                cart(withLine = true),
+                enterSelling = false,
+                savedStateHandle = saved,
+                entryKind = SalesContract.EntryKind.CASH,
+                allowEntryKindSelection = false,
+                unifiedInput = true,
+            )
+
+            assertFalse(viewModel.uiState.value.isCheckoutPending)
+            assertEquals(SalesContract.EntryKind.CASH, viewModel.uiState.value.entryKind)
+            assertEquals(SalesContract.EntryStep.SELL, viewModel.uiState.value.entryStep)
+            assertEquals(SalesContract.EntryMode.SCANNER, viewModel.uiState.value.mode)
+            assertTrue(viewModel.uiState.value.unifiedInput)
+            assertEquals("CASH", saved.get<String>("sales.entry.kind"))
+            assertEquals("SELL", saved.get<String>("sales.entry.step"))
+            assertTrue(sales.saveLineCalls.isEmpty())
+        }
+
+    @Test
     fun `unified back skips mode selector while keeping invalid cart input`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = true), unifiedInput = true)
@@ -677,7 +712,7 @@ class SalesViewModelTest {
     private suspend fun TestScope.assertPendingCheckoutCanExitAndResume(debtorName: String?) {
         val pending =
             cart(withLine = true).copy(
-                pendingCheckout = PendingSaleCheckout(debtorName, NOW.plusSeconds(86_400)),
+                pendingCheckout = PendingSaleCheckout(debtorName, NOW.plusSeconds(86_400).takeIf { debtorName != null }),
             )
         val viewModel = createReadyViewModel(pending)
         val navigation = backgroundScope.async { viewModel.effects.first() }
@@ -702,13 +737,12 @@ class SalesViewModelTest {
         assertTrue(restored.uiState.value.canCheckout)
         restored.onAction(SalesContract.Action.CheckoutRequested)
         runCurrent()
-        assertEquals(
-            debtorName,
-            restored.uiState.value.checkoutReview
-                ?.debtorName,
-        )
-        assertNotNull(restored.uiState.value.checkoutReview)
-        assertTrue(sales.checkoutCalls.isEmpty())
+        val command = sales.checkoutCalls.single()
+        assertEquals(debtorName, command.debtorName)
+        assertEquals(pending.pendingCheckout?.debtDueAt, command.debtDueAt)
+        assertEquals(pending.saleId, command.saleId)
+        assertEquals(pending.version, command.expectedVersion)
+        assertEquals(pending.contentHash, command.expectedContentHash)
     }
 
     @Test
@@ -742,9 +776,10 @@ class SalesViewModelTest {
     fun `manual entry clears scanner association and previous search to show the full catalog`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = false))
-            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            seedAmbiguousReading(SUSPICIOUS_BARCODE)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(SUSPICIOUS_BARCODE))
             runCurrent()
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(SUSPICIOUS_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
             viewModel.onAction(SalesContract.Action.SearchChanged("Sin coincidencia"))
             runCurrent()
             assertTrue(viewModel.uiState.value.isNameSearchRunning)
@@ -953,6 +988,33 @@ class SalesViewModelTest {
         }
 
     @Test
+    fun `one cash checkout request posts the captured cart and opens an empty successor`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val original = cart(withLine = true)
+            val viewModel = createReadyViewModel(original)
+            sales.prepareCartToOpen(cart(withLine = false, saleId = SALE_ID_2))
+            val posted = backgroundScope.async {
+                viewModel.effects.first { it == SalesContract.Effect.ShowMessage(SalesContract.Message.SALE_POSTED) }
+            }
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            val command = sales.checkoutCalls.single()
+            assertEquals(original.saleId, command.saleId)
+            assertEquals(original.version, command.expectedVersion)
+            assertEquals(original.contentHash, command.expectedContentHash)
+            assertNull(command.debtorName)
+            assertNull(command.debtDueAt)
+            assertEquals(listOf(BUSINESS_ID), sales.checkoutBusinessIds)
+            assertEquals(SalesContract.Effect.ShowMessage(SalesContract.Message.SALE_POSTED), posted.await())
+            assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
+            assertTrue(viewModel.uiState.value.cartLines.isEmpty())
+            assertFalse(viewModel.uiState.value.canCheckout)
+            assertEquals(2, sales.openCalls.size)
+        }
+
+    @Test
     fun `credit checkout sends the normalized debtor and finishes without opening another cart`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = true))
@@ -971,21 +1033,173 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
             runCurrent()
 
-            assertEquals(
-                "María Quispe",
-                viewModel.uiState.value.checkoutReview
-                    ?.debtorName,
-            )
-            viewModel.onAction(SalesContract.Action.CheckoutConfirmed)
-            runCurrent()
-
             assertEquals("María Quispe", sales.checkoutCalls.single().debtorName)
+            assertEquals(SALE_ID, sales.checkoutCalls.single().saleId)
+            assertEquals(cart(withLine = true).contentHash, sales.checkoutCalls.single().expectedContentHash)
+            assertEquals(listOf(BUSINESS_ID), sales.checkoutBusinessIds)
             assertEquals(SalesContract.Effect.CreditSalePosted, completed.await())
             assertEquals(1, sales.openCalls.size)
         }
 
     @Test
-    fun `confirmed credit checkout does not depend on a second cart read`() =
+    fun `rapid duplicate checkout requests issue one command while checkout IO is suspended`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = true))
+            val checkoutGate = CompletableDeferred<CheckoutSaleResult>()
+            sales.checkoutHandler = { checkoutGate.await() }
+            sales.prepareCartToOpen(cart(withLine = false, saleId = SALE_ID_2))
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            assertEquals(1, sales.checkoutCalls.size)
+            assertTrue(viewModel.uiState.value.isMutating)
+            assertFalse(viewModel.uiState.value.canCheckout)
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            viewModel.onAction(SalesContract.Action.QuantityChanged(LINE_ID.value, "8"))
+            runCurrent()
+            assertEquals(1, sales.checkoutCalls.size)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals("1", viewModel.uiState.value.cartLines.single().quantityInput)
+
+            checkoutGate.complete(CheckoutSaleResult.Posted(SALE_ID))
+            runCurrent()
+
+            assertEquals(1, sales.checkoutCalls.size)
+            assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
+            assertTrue(viewModel.uiState.value.cartLines.isEmpty())
+            assertFalse(viewModel.uiState.value.isMutating)
+        }
+
+    @Test
+    fun `direct checkout remains blocked by a pending local edit`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = true))
+            viewModel.onAction(SalesContract.Action.QuantityChanged(LINE_ID.value, ""))
+            runCurrent()
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.hasPendingEdits)
+            assertFalse(viewModel.uiState.value.canCheckout)
+            assertEquals("", viewModel.uiState.value.cartLines.single().quantityInput)
+            assertTrue(sales.checkoutCalls.isEmpty())
+            assertTrue(sales.saveLineCalls.isEmpty())
+        }
+
+    @Test
+    fun `direct checkout never submits while accepted scanner readings are queued`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = true))
+            val lookupGate = CompletableDeferred<Unit>()
+            products.barcodeLookupGate = lookupGate
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertTrue(viewModel.uiState.value.pendingBarcodeCount > 0)
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            assertTrue(sales.checkoutCalls.isEmpty())
+            assertFalse(viewModel.uiState.value.canCheckout)
+            lookupGate.complete(Unit)
+            runCurrent()
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            assertTrue(sales.checkoutCalls.isEmpty())
+            assertTrue(viewModel.uiState.value.canCheckout)
+        }
+
+    @Test
+    fun `a direct retry preserves the original pending credit terms despite attempted edits`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val pending = cart(withLine = true).copy(
+                pendingCheckout = PendingSaleCheckout("Mayda", NOW.plusSeconds(86_400)),
+            )
+            val viewModel = createReadyViewModel(pending)
+            sales.checkoutHandler = {
+                if (sales.checkoutCalls.size == 1) CheckoutSaleResult.OnlineRequired else CheckoutSaleResult.Posted(SALE_ID)
+            }
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+            assertEquals(SalesContract.Failure.ONLINE_REQUIRED, viewModel.uiState.value.failure)
+            assertTrue(viewModel.uiState.value.isCheckoutPending)
+            assertTrue(viewModel.uiState.value.canCheckout)
+            viewModel.onAction(SalesContract.Action.DebtorNameChanged("Otra persona"))
+            viewModel.onAction(SalesContract.Action.EntryKindChanged(SalesContract.EntryKind.CASH))
+            runCurrent()
+            assertEquals("Mayda", viewModel.uiState.value.debtorNameInput)
+
+            val completed = backgroundScope.async { viewModel.effects.first { it == SalesContract.Effect.CreditSalePosted } }
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            assertEquals(2, sales.checkoutCalls.size)
+            assertEquals(sales.checkoutCalls.first(), sales.checkoutCalls.last())
+            assertEquals("Mayda", sales.checkoutCalls.last().debtorName)
+            assertEquals(NOW.plusSeconds(86_400), sales.checkoutCalls.last().debtDueAt)
+            assertEquals(pending.contentHash, sales.checkoutCalls.last().expectedContentHash)
+            assertEquals(SalesContract.Effect.CreditSalePosted, completed.await())
+            assertEquals(1, sales.openCalls.size)
+            assertTrue(sales.saveLineCalls.isEmpty())
+        }
+
+    @Test
+    fun `malformed pending cash terms never submit checkout and leave a visible error`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val pending = cart(withLine = true).copy(
+                pendingCheckout = PendingSaleCheckout(debtorName = null, debtDueAt = NOW.plusSeconds(86_400)),
+            )
+            val viewModel = createReadyViewModel(pending)
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            assertTrue(sales.checkoutCalls.isEmpty())
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(SalesContract.Failure.CHECKOUT_FAILED, viewModel.uiState.value.failure)
+            assertEquals(pending.saleId.value, viewModel.uiState.value.cartId)
+            assertTrue(viewModel.uiState.value.isCheckoutPending)
+            assertEquals("1", viewModel.uiState.value.cartLines.single().quantityInput)
+            assertFalse(viewModel.uiState.value.isMutating)
+        }
+
+    @Test
+    fun `checkout cannot switch to a replacement cart while its captured request waits for execution`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val defaults = TestDispatcherProvider(mainDispatcherRule.dispatcher)
+            val gatedMain = PauseNextDispatcher(defaults.main)
+            val dispatchers = object : DispatcherProvider {
+                override val main = gatedMain
+                override val io = defaults.io
+                override val default = defaults.default
+            }
+            val viewModel = createReadyViewModel(cart(withLine = true), dispatcherProvider = dispatchers)
+            gatedMain.pauseNextDispatch()
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            assertTrue(gatedMain.isPaused)
+            sales.prepareCartToOpen(cart(withLine = true, saleId = SALE_ID_2))
+            sales.emitObserved(SALE_ID, null)
+            runCurrent()
+            assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
+            assertTrue(sales.checkoutCalls.isEmpty())
+
+            gatedMain.resume()
+            runCurrent()
+
+            assertTrue(sales.checkoutCalls.isEmpty())
+            assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
+            assertEquals("1", viewModel.uiState.value.cartLines.single().quantityInput)
+            assertFalse(viewModel.uiState.value.isMutating)
+        }
+
+    @Test
+    fun `direct credit checkout does not depend on a second cart read`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             assertSuccessfulCheckoutSurvivesReadFailure(CheckoutSaleResult.Posted(SALE_ID))
         }
@@ -1011,8 +1225,6 @@ class SalesViewModelTest {
         val completed = backgroundScope.async { viewModel.effects.first() }
         viewModel.onAction(SalesContract.Action.CheckoutRequested)
         runCurrent()
-        viewModel.onAction(SalesContract.Action.CheckoutConfirmed)
-        runCurrent()
 
         assertEquals(SalesContract.Effect.CreditSalePosted, completed.await())
         assertNull(viewModel.uiState.value.failure)
@@ -1021,6 +1233,48 @@ class SalesViewModelTest {
         assertEquals(NOW.plusSeconds(86_400), sales.checkoutCalls.single().debtDueAt)
         assertEquals(1, sales.openCalls.size)
     }
+
+    @Test
+    fun `cold start retries restored credit terms even when inventory fails before its first emission`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val pending = cart(withLine = true).copy(
+                pendingCheckout = PendingSaleCheckout("Mayda", NOW.plusSeconds(86_400)),
+            )
+            var inventorySubscriptions = 0
+            val unavailableInventory = object : InventoryReadRepository by inventory {
+                override fun observeInventory(businessId: BusinessId): Flow<List<InventoryReadItem>> = flow {
+                    inventorySubscriptions += 1
+                    throw IllegalStateException("initial inventory unavailable")
+                }
+            }
+            sales.checkoutHandler = { CheckoutSaleResult.OnlineRequired }
+            val viewModel = createReadyViewModel(pending, inventoryReadRepository = unavailableInventory)
+
+            assertEquals(1, inventorySubscriptions)
+            assertTrue(viewModel.uiState.value.catalogLoadFailed)
+            assertTrue(viewModel.uiState.value.availableProducts.isEmpty())
+            assertTrue(viewModel.uiState.value.isCheckoutPending)
+            assertTrue(viewModel.uiState.value.canCheckout)
+            assertEquals("Mayda", viewModel.uiState.value.debtorNameInput)
+            assertTrue(sales.checkoutCalls.isEmpty())
+
+            viewModel.onAction(SalesContract.Action.CheckoutRequested)
+            runCurrent()
+
+            val command = sales.checkoutCalls.single()
+            assertEquals(pending.saleId, command.saleId)
+            assertEquals(pending.version, command.expectedVersion)
+            assertEquals(pending.contentHash, command.expectedContentHash)
+            assertEquals("Mayda", command.debtorName)
+            assertEquals(NOW.plusSeconds(86_400), command.debtDueAt)
+            assertEquals(listOf(BUSINESS_ID), sales.checkoutBusinessIds)
+            assertEquals(SalesContract.Failure.ONLINE_REQUIRED, viewModel.uiState.value.failure)
+            assertTrue(viewModel.uiState.value.catalogLoadFailed)
+            assertTrue(viewModel.uiState.value.isCheckoutPending)
+            assertTrue(viewModel.uiState.value.canCheckout)
+            assertFalse(viewModel.uiState.value.isMutating)
+            assertTrue(sales.saveLineCalls.isEmpty())
+        }
 
     @Test
     fun `failed refresh preserves pending checkout terms and requires reading before editing`() =
@@ -1035,8 +1289,6 @@ class SalesViewModelTest {
                 CheckoutSaleResult.OnlineRequired
             }
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
-            runCurrent()
-            viewModel.onAction(SalesContract.Action.CheckoutConfirmed)
             runCurrent()
 
             assertTrue(viewModel.uiState.value.isCheckoutPending)
@@ -1055,9 +1307,10 @@ class SalesViewModelTest {
     fun `double association confirmation updates and adds only once`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             createReadyViewModel(cart(withLine = false)).also { viewModel ->
-                viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+                seedAmbiguousReading(SUSPICIOUS_BARCODE)
+                viewModel.onAction(SalesContract.Action.BarcodeScanned(SUSPICIOUS_BARCODE))
                 runCurrent()
-                assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+                assertEquals(SUSPICIOUS_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
 
                 viewModel.onAction(SalesContract.Action.ProductSelected(PRODUCT_ID, LOCATION_ID))
                 runCurrent()
@@ -1092,7 +1345,8 @@ class SalesViewModelTest {
         runTest(context = mainDispatcherRule.dispatcher) {
             val original = cart(withLine = false)
             val viewModel = createReadyViewModel(original)
-            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            seedAmbiguousReading(SUSPICIOUS_BARCODE)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(SUSPICIOUS_BARCODE))
             runCurrent()
             viewModel.onAction(SalesContract.Action.ProductSelected(PRODUCT_ID, LOCATION_ID))
             runCurrent()
@@ -1127,9 +1381,10 @@ class SalesViewModelTest {
                     cart = cart(withLine = false),
                     productBarcode = null,
                 )
-            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            seedAmbiguousReading(SUSPICIOUS_BARCODE)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(SUSPICIOUS_BARCODE))
             runCurrent()
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(SUSPICIOUS_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
             val catalogEmissionGate = CompletableDeferred<Unit>()
             products.catalogEmissionGate = catalogEmissionGate
 
@@ -1141,7 +1396,7 @@ class SalesViewModelTest {
             assertNull(viewModel.uiState.value.pendingReplacement)
             assertNull(viewModel.uiState.value.pendingAssociationBarcode)
             assertEquals(
-                NEW_BARCODE,
+                SUSPICIOUS_BARCODE,
                 viewModel.uiState.value.availableProducts
                     .single()
                     .barcode,
@@ -1149,7 +1404,7 @@ class SalesViewModelTest {
             catalogEmissionGate.complete(Unit)
             runCurrent()
             assertEquals(
-                NEW_BARCODE,
+                SUSPICIOUS_BARCODE,
                 viewModel.uiState.value.availableProducts
                     .single()
                     .barcode,
@@ -1218,8 +1473,6 @@ class SalesViewModelTest {
                     }
                 }
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
-            runCurrent()
-            viewModel.onAction(SalesContract.Action.CheckoutConfirmed)
             runCurrent()
 
             assertEquals(SALE_ID, sales.checkoutCalls.single().saleId)
@@ -1338,7 +1591,10 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
             runCurrent()
 
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            // El SKU ajeno no cuenta como exacto: la lectura se ignora sin ofrecer asociación.
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
             assertTrue(sales.saveLineCalls.isEmpty())
             assertEquals(0, products.updateCalls)
         }
@@ -1386,6 +1642,189 @@ class SalesViewModelTest {
             assertNull(viewModel.uiState.value.failure)
             catalogEmissionGate.complete(Unit)
             runCurrent()
+        }
+
+    @Test
+    fun `first scan waits for the initial catalog snapshot and adds without rescanning`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            sales.saveLineHandler = { command ->
+                SaleCartMutationResult.Saved(cart(withLine = true).withQuantity("1", command.expectedVersion + 1))
+            }
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+
+            assertEquals(1, viewModel.uiState.value.pendingBarcodeCount)
+            assertEquals(0, products.findByBarcodeCalls)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            catalogGate.complete(Unit)
+            runCurrent()
+
+            assertEquals(1, products.findByBarcodeCalls)
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertEquals(PRODUCT_ID, viewModel.uiState.value.lastScanAdded?.productId)
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            assertNull(viewModel.uiState.value.failure)
+        }
+
+    @Test
+    fun `initial catalog wait is cancelled when leaving scanner mode`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(1, viewModel.uiState.value.pendingBarcodeCount)
+
+            viewModel.onAction(SalesContract.Action.ModeChanged(SalesContract.EntryMode.MANUAL))
+            runCurrent()
+            catalogGate.complete(Unit)
+            runCurrent()
+
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            assertEquals(0, products.findByBarcodeCalls)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(SalesContract.EntryMode.MANUAL, viewModel.uiState.value.mode)
+        }
+
+    @Test
+    fun `initial catalog wait preserves distinct scans in order and deduplicates consecutive repeats`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            val second = seedAdditionalProduct(50L, NEW_BARCODE)
+            var saved = cart(withLine = false)
+            sales.saveLineHandler = { command ->
+                val line = cart(withLine = true).lines.single().copy(
+                    saleLineId = SaleLineId.from(uuid(100L + saved.lines.size)),
+                    productId = command.productId,
+                    position = saved.lines.size,
+                )
+                val total = saved.total + requireNotNull(line.lineTotal)
+                saved = saved.copy(
+                    lines = saved.lines + line,
+                    version = command.expectedVersion + 1,
+                    subtotal = total,
+                    total = total,
+                )
+                SaleCartMutationResult.Saved(saved)
+            }
+
+            listOf(EXISTING_BARCODE, EXISTING_BARCODE, NEW_BARCODE, NEW_BARCODE).forEach {
+                viewModel.onAction(SalesContract.Action.BarcodeScanned(it))
+            }
+            runCurrent()
+            assertEquals(2, viewModel.uiState.value.pendingBarcodeCount)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            catalogGate.complete(Unit)
+            runCurrent()
+
+            assertEquals(listOf(EXISTING_BARCODE, NEW_BARCODE), products.barcodeLookups.map { it.second })
+            assertEquals(listOf(PRODUCT_ID, second.productId), sales.saveLineCalls.map { it.productId })
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+        }
+
+    @Test
+    fun `initial catalog failure clears waiting scans and retry never replays them`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(1, viewModel.uiState.value.pendingBarcodeCount)
+
+            products.failCatalogObservation()
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.catalogLoadFailed)
+            assertFalse(viewModel.uiState.value.canRouteScannerInput)
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            viewModel.onAction(SalesContract.Action.RetryCatalog)
+            catalogGate.complete(Unit)
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.catalogLoadFailed)
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(0, products.findByBarcodeCalls)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+        }
+
+    @Test
+    fun `initial catalog without an active business discards waiting scans permanently`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(1, viewModel.uiState.value.pendingBarcodeCount)
+
+            configuration.exitDemoMode()
+            runCurrent()
+
+            assertEquals(SalesContract.Failure.NO_ACTIVE_BUSINESS, viewModel.uiState.value.failure)
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            catalogGate.complete(Unit)
+            configuration.enterDemoMode(BUSINESS_ID)
+            runCurrent()
+
+            assertEquals(0, products.findByBarcodeCalls)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
+        }
+
+    @Test
+    fun `initial catalog for a different business never receives the old waiting scan`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(1, viewModel.uiState.value.pendingBarcodeCount)
+
+            val otherBusiness = BusinessId.from(uuid(90L))
+            sales.prepareCartToOpen(cart(withLine = false, saleId = SALE_ID_2).copy(businessId = otherBusiness))
+            configuration.enterDemoMode(otherBusiness)
+            catalogGate.complete(Unit)
+            runCurrent()
+
+            assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            assertEquals(0, products.findByBarcodeCalls)
+            assertTrue(sales.saveLineCalls.isEmpty())
+        }
+
+    @Test
+    fun `initial catalog wait cannot transfer its scan to a replacement cart`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val catalogGate = CompletableDeferred<Unit>()
+            products.catalogEmissionGate = catalogGate
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(1, viewModel.uiState.value.pendingBarcodeCount)
+
+            sales.prepareCartToOpen(cart(withLine = false, saleId = SALE_ID_2))
+            sales.emitObserved(SALE_ID, null)
+            runCurrent()
+            catalogGate.complete(Unit)
+            runCurrent()
+
+            assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+            assertEquals(0, products.findByBarcodeCalls)
+            assertTrue(sales.saveLineCalls.isEmpty())
         }
 
     @Test
@@ -1656,7 +2095,9 @@ class SalesViewModelTest {
             val viewModel = createReadyViewModel(original)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
             runCurrent()
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            // Sin exacto ni recuperación segura la lectura se ignora: no abre sugerencias.
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
             assertTrue(viewModel.uiState.value.canRouteScannerInput)
 
             viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
@@ -1678,16 +2119,61 @@ class SalesViewModelTest {
         }
 
     @Test
+    fun `unknown barcode without safe recovery is ignored without suggestions`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val original = cart(withLine = false)
+            val viewModel = createReadyViewModel(original)
+            val registration = async { viewModel.effects.first { it is SalesContract.Effect.RegisterProduct } }
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            runCurrent()
+
+            // Se intentó la recuperación automática con el catálogo fresco, pero no encajó.
+            assertEquals(listOf(NEW_BARCODE), products.barcodeLookups.map { it.second })
+            assertEquals(1, products.listForBusinessCalls)
+            val state = viewModel.uiState.value
+            assertNull(state.pendingAssociationBarcode)
+            assertNull(state.barcodeSelectionReason)
+            assertTrue(state.barcodeSuggestions.isEmpty())
+            assertNull(state.pendingReplacement)
+            assertTrue(state.pendingLocations.isEmpty())
+            assertNull(state.productRegistration)
+            assertFalse(state.canRegisterProduct)
+            assertNull(state.failure)
+            assertNull(state.lastScanAdded)
+            assertEquals(0, state.pendingBarcodeCount)
+            assertTrue(state.canRouteScannerInput)
+            assertTrue(state.cartLines.isEmpty())
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(0, products.updateCalls)
+
+            // No hay registro que ofrecer para una lectura ignorada.
+            viewModel.onAction(SalesContract.Action.RegisterProductRequested(NEW_BARCODE))
+            runCurrent()
+            assertFalse(registration.isCompleted)
+            assertNull(viewModel.uiState.value.productRegistration)
+
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertEquals(PRODUCT_ID, viewModel.uiState.value.lastScanAdded?.productId)
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            registration.cancel()
+        }
+
+    @Test
     fun `association search focus still rejects incoming scans until the editor releases focus`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = false))
-            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            seedAmbiguousReading(SUSPICIOUS_BARCODE)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(SUSPICIOUS_BARCODE))
             runCurrent()
             viewModel.onAction(SalesContract.Action.TextInputFocusChanged("search", true))
             viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
             runCurrent()
 
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(SUSPICIOUS_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
             assertEquals(1, products.findByBarcodeCalls)
             assertTrue(sales.saveLineCalls.isEmpty())
             assertFalse(viewModel.uiState.value.canRouteScannerInput)
@@ -2229,8 +2715,10 @@ class SalesViewModelTest {
     fun `dismissing barcode association cancels its pending hidden name search`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = false))
-            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            seedAmbiguousReading(SUSPICIOUS_BARCODE)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(SUSPICIOUS_BARCODE))
             runCurrent()
+            assertEquals(SUSPICIOUS_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
             viewModel.onAction(SalesContract.Action.SearchChanged("Producto"))
             runCurrent()
             assertTrue(viewModel.uiState.value.isNameSearchRunning)
@@ -2507,7 +2995,7 @@ class SalesViewModelTest {
                     .single()
                     .quantityInput,
             )
-            assertNull(viewModel.uiState.value.checkoutReview)
+            assertTrue(sales.checkoutCalls.isEmpty())
 
             firstSave.complete(SaleCartMutationResult.Saved(savedTwo))
             runCurrent()
@@ -2641,20 +3129,452 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `incomplete scans suggest one to three missing digits without changing product or cart`() =
+    fun `unique incomplete scan is recovered once with saved price and explicit feedback`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val complete = "7753176004930"
+            val full = "7753176004930"
+            val scanned = "753176004930"
+            val price = Money.fromMajor("7.50", CURRENCY)
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = full, productSalePrice = price)
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(), emptyList()))
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+            val original = products.findById(PRODUCT_ID)
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertEquals(price, sales.saveLineCalls.single().unitPrice)
+            val proof = requireNotNull(sales.saveLineCalls.single().barcodeRecovery)
+            assertEquals(scanned, proof.scannedBarcode)
+            assertEquals(full, proof.expectedStoredBarcode)
+            assertEquals(original?.version, proof.expectedProductVersion)
+            assertEquals(scanned, viewModel.uiState.value.lastScanAdded?.recoveredFromBarcode)
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+            assertEquals(original, products.findById(PRODUCT_ID))
+            assertEquals(0, products.updateCalls)
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+            assertEquals(1, sales.saveLineCalls.size)
+            assertTrue(requireNotNull(viewModel.uiState.value.lastScanAdded).alreadyInCart)
+            assertEquals(scanned, viewModel.uiState.value.lastScanAdded?.recoveredFromBarcode)
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(full))
+            runCurrent()
+            assertEquals(1, sales.saveLineCalls.size)
+            assertNull(viewModel.uiState.value.lastScanAdded?.recoveredFromBarcode)
+        }
+
+    @Test
+    fun `complete scan recovers a unique stored code with two omitted digits without rewriting it`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val stored = "53176004930"
+            val full = "7753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = stored)
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(), emptyList()))
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(full))
+            runCurrent()
+
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertEquals(full, viewModel.uiState.value.lastScanAdded?.recoveredFromBarcode)
+            assertEquals(stored, products.findById(PRODUCT_ID)?.barcode)
+            assertEquals(0, products.updateCalls)
+        }
+
+    @Test
+    fun `out of stock competitor prevents automatic recovery and the reading is ignored`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val scanned = "77512345000"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7751234500004")
+            seedAdditionalProduct(50L, "7751234500011", availableQuantity = BigDecimal.ZERO)
+            runCurrent()
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+
+            // Dos candidatos impiden recuperar; sin exacto, la lectura se ignora sin sugerencias.
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+            assertNull(viewModel.uiState.value.barcodeSelectionReason)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertEquals(0, products.updateCalls)
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
+        }
+
+    @Test
+    fun `new competing code while recovery reads stock prevents automatic addition`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val detailGate = CompletableDeferred<Unit>()
+            val slowInventory = object : InventoryReadRepository by inventory {
+                override fun observeProductItem(businessId: BusinessId, productId: ProductId): Flow<InventoryReadItem?> = flow {
+                    detailGate.await()
+                    emit(inventoryItem())
+                }
+            }
+            val scanned = "77512345000"
+            val viewModel = createReadyViewModel(
+                cart(withLine = false), productBarcode = "7751234500004", inventoryReadRepository = slowInventory,
+            )
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertTrue(viewModel.uiState.value.isProcessingBarcode)
+
+            seedAdditionalProduct(50L, "7751234500011", availableQuantity = BigDecimal.ZERO)
+            runCurrent()
+            detailGate.complete(Unit)
+            runCurrent()
+
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+        }
+
+    @Test
+    fun `leaving scanner during automatic recovery never adds its result`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val detailGate = CompletableDeferred<Unit>()
+            val slowInventory = object : InventoryReadRepository by inventory {
+                override fun observeProductItem(businessId: BusinessId, productId: ProductId): Flow<InventoryReadItem?> = flow {
+                    detailGate.await()
+                    emit(inventoryItem())
+                }
+            }
+            val viewModel = createReadyViewModel(
+                cart(withLine = false), productBarcode = "7753176004930", inventoryReadRepository = slowInventory,
+            )
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
+            runCurrent()
+            viewModel.onAction(SalesContract.Action.StepBackSelected)
+            runCurrent()
+            detailGate.complete(Unit)
+            runCurrent()
+
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertEquals(0, viewModel.uiState.value.pendingBarcodeCount)
+        }
+
+    @Test
+    fun `failed automatic recovery save never reports success or changes the product code`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val full = "7753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = full)
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(), emptyList()))
+            sales.saveLineHandler = { SaleCartMutationResult.Stale }
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
+            runCurrent()
+
+            assertEquals(1, sales.saveLineCalls.size)
+            assertEquals(SalesContract.Failure.STALE_CART, viewModel.uiState.value.failure)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertEquals(full, products.findById(PRODUCT_ID)?.barcode)
+            assertEquals(0, products.updateCalls)
+        }
+
+    @Test
+    fun `equivalent gtin with multiple locations asks for the warehouse instead of guessing`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val stored = "96385074"
+            val padded = "00000096385074"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = stored)
+            val item = inventoryItem().let { original ->
+                original.copy(positions = original.positions + original.positions.single().copy(locationId = LocationId.from(uuid(90L))))
+            }
+            inventory.replaceInventory(BUSINESS_ID, listOf(item))
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(item, emptyList()))
+            runCurrent()
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(padded))
+            runCurrent()
+
+            assertEquals(2, viewModel.uiState.value.pendingLocations.size)
+            assertTrue(viewModel.uiState.value.pendingLocations.all { it.productId == PRODUCT_ID })
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(stored, products.findById(PRODUCT_ID)?.barcode)
+        }
+
+    @Test
+    fun `recovery warehouse confirmation keeps atomic proof and recovered feedback`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val scanned = "00000096385074"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "96385074")
+            setTwoLocationRecoveryInventory()
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+            assertEquals(scanned, viewModel.uiState.value.pendingRecoveredBarcode)
+
+            viewModel.onAction(SalesContract.Action.LocationSelected(PRODUCT_ID, LOCATION_ID))
+            runCurrent()
+
+            assertEquals(scanned, sales.saveLineCalls.single().barcodeRecovery?.scannedBarcode)
+            assertEquals(scanned, viewModel.uiState.value.lastScanAdded?.recoveredFromBarcode)
+            assertTrue(viewModel.uiState.value.pendingLocations.isEmpty())
+            assertNull(viewModel.uiState.value.pendingRecoveredBarcode)
+        }
+
+    @Test
+    fun `new competitor while choosing warehouse returns to product confirmation without adding`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val scanned = "77512345000"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7751234500004")
+            setTwoLocationRecoveryInventory()
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+            assertEquals(2, viewModel.uiState.value.pendingLocations.size)
+            seedAdditionalProduct(50L, "7751234500011", availableQuantity = BigDecimal.ZERO)
+
+            viewModel.onAction(SalesContract.Action.LocationSelected(PRODUCT_ID, LOCATION_ID))
+            runCurrent()
+
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(SalesContract.BarcodeSelectionReason.CATALOG_CHANGED, viewModel.uiState.value.barcodeSelectionReason)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertNull(viewModel.uiState.value.pendingRecoveredBarcode)
+        }
+
+    @Test
+    fun `changed product code while choosing recovery warehouse cannot add the old identity`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
+            setTwoLocationRecoveryInventory()
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+            productDelegate.update(requireNotNull(products.findById(PRODUCT_ID)).copy(barcode = "9999999999999"))
+            runCurrent()
+            viewModel.onAction(SalesContract.Action.LocationSelected(PRODUCT_ID, LOCATION_ID))
+            runCurrent()
+
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+        }
+
+    @Test
+    fun `atomic recovery rejection preserves scan for manual choice and never reports added`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(), emptyList()))
+            sales.saveLineHandler = { SaleCartMutationResult.BarcodeRecoveryChanged }
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+
+            assertNotNull(sales.saveLineCalls.single().barcodeRecovery)
+            assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(SalesContract.BarcodeSelectionReason.CATALOG_CHANGED, viewModel.uiState.value.barcodeSelectionReason)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertNull(viewModel.uiState.value.failure)
+            assertTrue(viewModel.uiState.value.cartLines.isEmpty())
+            assertEquals(PRODUCT_ID, viewModel.uiState.value.barcodeSuggestions.single().product.productId)
+        }
+
+    @Test
+    fun `exact valid gtin scans skip full catalog reads without changing add or repeat behavior`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val barcode = "7753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = barcode)
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+            val unrelatedReadFailure = IllegalStateException("full catalog unavailable")
+            products.nextCatalogReadFailure = unrelatedReadFailure
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(barcode))
+            runCurrent()
+
+            assertEquals(0, products.listForBusinessCalls)
+            assertSame(unrelatedReadFailure, products.nextCatalogReadFailure)
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertNull(sales.saveLineCalls.single().barcodeRecovery)
+            assertNull(viewModel.uiState.value.failure)
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(barcode))
+            runCurrent()
+
+            assertEquals(0, products.listForBusinessCalls)
+            assertEquals(1, sales.saveLineCalls.size)
+            assertEquals(true, viewModel.uiState.value.lastScanAdded?.alreadyInCart)
+            assertEquals(barcode, products.findById(PRODUCT_ID)?.barcode)
+        }
+
+    @Test
+    fun `incomplete scan still fails without adding when its fresh catalog read is unavailable`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
+            products.nextCatalogReadFailure = IllegalStateException("fresh catalog unavailable")
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
+            runCurrent()
+
+            assertEquals(1, products.listForBusinessCalls)
+            assertNull(products.nextCatalogReadFailure)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(SalesContract.Failure.SAVE_FAILED, viewModel.uiState.value.failure)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+        }
+
+    @Test
+    fun `exact incomplete custom code asks between exact and longer product instead of silently selling`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = scanned)
+            val competitor = seedAdditionalProduct(50L, "7753176004930")
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+
+            assertEquals(1, products.listForBusinessCalls)
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(SalesContract.BarcodeSelectionReason.AMBIGUOUS, viewModel.uiState.value.barcodeSelectionReason)
+            assertEquals(setOf(PRODUCT_ID, competitor.productId), viewModel.uiState.value.barcodeSuggestions.map { it.product.productId }.toSet())
+            assertEquals(0, viewModel.uiState.value.barcodeSuggestions.first().missingDigits)
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+            viewModel.onAction(SalesContract.Action.BarcodeSuggestionSelected(PRODUCT_ID, LOCATION_ID, scanned))
+            runCurrent()
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertNull(sales.saveLineCalls.single().barcodeRecovery)
+            assertNull(viewModel.uiState.value.barcodeSelectionReason)
+            assertEquals(scanned, products.findById(PRODUCT_ID)?.barcode)
+        }
+
+    @Test
+    fun `fresh persisted catalog recovers first scan even while its visual projection is delayed`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "9999999999999")
+            val gate = CompletableDeferred<Unit>()
+            products.primaryObservationEmissionGate = gate
+            productDelegate.update(requireNotNull(products.findById(PRODUCT_ID)).copy(barcode = "7753176004930"))
+            runCurrent()
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(), emptyList()))
+            sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
+            runCurrent()
+
+            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
+            assertEquals("753176004930", viewModel.uiState.value.lastScanAdded?.recoveredFromBarcode)
+            gate.complete(Unit)
+            runCurrent()
+        }
+
+    @Test
+    fun `pausing scanner closes recovered warehouse options so resume cannot bypass its proof`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7751234500004")
+            setTwoLocationRecoveryInventory()
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("77512345000"))
+            runCurrent()
+            assertEquals(2, viewModel.uiState.value.pendingLocations.size)
+            viewModel.onAction(SalesContract.Action.ScannerSessionStopped)
+            runCurrent()
+            seedAdditionalProduct(50L, "7751234500011")
+            viewModel.onAction(SalesContract.Action.LocationSelected(PRODUCT_ID, LOCATION_ID))
+            runCurrent()
+            assertTrue(viewModel.uiState.value.pendingLocations.isEmpty())
+            assertNull(viewModel.uiState.value.pendingRecoveredBarcode)
+            assertTrue(sales.saveLineCalls.isEmpty())
+        }
+
+    @Test
+    fun `atomic rejection after candidate barcode changed never labels the unrelated code as exact`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
+            inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(), emptyList()))
+            sales.saveLineHandler = {
+                productDelegate.update(requireNotNull(products.findById(PRODUCT_ID)).copy(barcode = "9999999999999"))
+                SaleCartMutationResult.BarcodeRecoveryChanged
+            }
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
+            runCurrent()
+            assertEquals(1, sales.saveLineCalls.size)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertEquals("753176004930", viewModel.uiState.value.pendingAssociationBarcode)
+        }
+
+    @Test
+    fun `five exhausted matches do not hide the next sellable product suggestion`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004931")
+            for (digit in 0..4) seedAdditionalProduct(50L + digit, "7${digit}53176004931", BigDecimal.ZERO)
+            seedAmbiguousReading("753176004931")
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004931"))
+            runCurrent()
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(PRODUCT_ID, viewModel.uiState.value.barcodeSuggestions.single().product.productId)
+            assertEquals(SalesContract.BarcodeSelectionReason.AMBIGUOUS, viewModel.uiState.value.barcodeSelectionReason)
+        }
+
+    @Test
+    fun `exact product appearing while reading recovery stock remains available for manual confirmation`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val slowInventory = object : InventoryReadRepository by inventory {
+                override fun observeProductItem(businessId: BusinessId, productId: ProductId): Flow<InventoryReadItem?> = flow {
+                    gate.await()
+                    emit(inventoryItem())
+                }
+            }
+            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(
+                cart(withLine = false), productBarcode = "7753176004930", inventoryReadRepository = slowInventory,
+            )
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
+            runCurrent()
+            val exact = seedAdditionalProduct(50L, scanned)
+            gate.complete(Unit)
+            runCurrent()
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(exact.productId, viewModel.uiState.value.barcodeSuggestions.first().product.productId)
+            assertEquals(0, viewModel.uiState.value.barcodeSuggestions.first().missingDigits)
+        }
+
+    private suspend fun TestScope.setTwoLocationRecoveryInventory() {
+        val item = inventoryItem().let { original ->
+            original.copy(positions = original.positions + original.positions.single().copy(locationId = LocationId.from(uuid(90L))))
+        }
+        inventory.replaceInventory(BUSINESS_ID, listOf(item))
+        inventory.setProductDetail(BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(item, emptyList()))
+        runCurrent()
+    }
+
+    @Test
+    fun `unique recoverable code without stock never substitutes a different product`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
+            inventory.setProductDetail(
+                BUSINESS_ID, PRODUCT_ID, InventoryProductDetail(inventoryItem(BigDecimal.ZERO), emptyList()),
+            )
+
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
+            runCurrent()
+
+            assertTrue(sales.saveLineCalls.isEmpty())
+            assertEquals(SalesContract.Failure.PRODUCT_UNAVAILABLE, viewModel.uiState.value.failure)
+            assertNull(viewModel.uiState.value.lastScanAdded)
+            assertEquals(0, products.updateCalls)
+        }
+
+    @Test
+    fun `unverified codes with one to three missing digits are ignored without suggestions`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val complete = "7753176004931"
             val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = complete)
             val original = products.findById(PRODUCT_ID)
-            listOf("753176004930", "53176004930", "3176004930").forEachIndexed { index, scanned ->
+            listOf("753176004931", "53176004931", "3176004931").forEachIndexed { index, scanned ->
                 viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
                 runCurrent()
-                val suggestion =
-                    viewModel.uiState.value.barcodeSuggestions
-                        .single()
-                assertEquals(index + 1, suggestion.missingDigits)
-                assertEquals(complete, suggestion.product.barcode)
-                assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
+                // Sin checksum válido no hay recuperación segura: la lectura se ignora.
+                assertEquals(index + 1, BarcodeSimilarity.missingDigits(scanned, complete))
+                assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+                assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+                assertNull(viewModel.uiState.value.barcodeSelectionReason)
                 assertTrue(viewModel.uiState.value.canRouteScannerInput)
             }
             assertTrue(sales.saveLineCalls.isEmpty())
@@ -2663,26 +3583,24 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `complete scan can suggest a product whose stored barcode is missing digits`() =
+    fun `complete scan is ignored when the stored barcode misses three digits`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "3176004930")
-            viewModel.onAction(SalesContract.Action.BarcodeScanned("7753176004930"))
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "3176004931")
+            viewModel.onAction(SalesContract.Action.BarcodeScanned("7753176004931"))
             runCurrent()
-            assertEquals(
-                3,
-                viewModel.uiState.value.barcodeSuggestions
-                    .single()
-                    .missingDigits,
-            )
+            // Tres cifras omitidas nunca se recuperan; sin exacto, la lectura se ignora.
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
             assertTrue(sales.saveLineCalls.isEmpty())
-            assertEquals("3176004930", products.findById(PRODUCT_ID)?.barcode)
+            assertEquals("3176004931", products.findById(PRODUCT_ID)?.barcode)
         }
 
     @Test
     fun `confirming a similar code adds the selected product with its saved price without associating it`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val stored = "7753176004930"
-            val scanned = "753176004930"
+            val stored = "7753176004931"
+            val scanned = "753176004931"
             val price = Money.fromMajor("7.50", CURRENCY)
             val viewModel =
                 createReadyViewModel(
@@ -2691,6 +3609,7 @@ class SalesViewModelTest {
                     productSalePrice = price,
                 )
             val original = products.findById(PRODUCT_ID)
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
@@ -2727,9 +3646,10 @@ class SalesViewModelTest {
     @Test
     fun `rescanning the exact code clears suggestions and adds once`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val stored = "7753176004930"
-            val scanned = "753176004930"
+            val stored = "7753176004931"
+            val scanned = "753176004931"
             val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = stored)
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             assertEquals(1, viewModel.uiState.value.barcodeSuggestions.size)
@@ -2749,9 +3669,11 @@ class SalesViewModelTest {
     @Test
     fun `an old suggestion cannot select a product for a different scan or after cancellation`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
-            val first = "753176004930"
-            val second = "53176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004931")
+            val first = "753176004931"
+            val second = "53176004931"
+            seedAmbiguousReading(first)
+            seedAmbiguousReading(second, firstId = 62L)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(first))
             runCurrent()
             viewModel.onAction(SalesContract.Action.BarcodeScanned(second))
@@ -2774,8 +3696,9 @@ class SalesViewModelTest {
     @Test
     fun `suggestion is removed when stock disappears or its barcode changes`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
-            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004931")
+            val scanned = "753176004931"
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             inventory.replaceInventory(BUSINESS_ID, listOf(inventoryItem(BigDecimal.ZERO)))
@@ -2807,8 +3730,9 @@ class SalesViewModelTest {
     @Test
     fun `failed cart save preserves the suggestion without replacing the stored code`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
-            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004931")
+            val scanned = "753176004931"
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             sales.saveLineHandler = { SaleCartMutationResult.Stale }
@@ -2818,16 +3742,18 @@ class SalesViewModelTest {
             assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
             assertEquals(1, viewModel.uiState.value.barcodeSuggestions.size)
             assertEquals(0, products.updateCalls)
-            assertEquals("7753176004930", products.findById(PRODUCT_ID)?.barcode)
+            assertEquals("7753176004931", products.findById(PRODUCT_ID)?.barcode)
         }
 
     @Test
     fun `similar selection rechecks context after lookup and ignores double taps`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
-            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004931")
+            val scanned = "753176004931"
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
+            assertEquals(1, viewModel.uiState.value.barcodeSuggestions.size)
             val gate = CompletableDeferred<Unit>()
             products.idLookupGate = gate
             val action = SalesContract.Action.BarcodeSuggestionSelected(PRODUCT_ID, LOCATION_ID, scanned)
@@ -2849,8 +3775,9 @@ class SalesViewModelTest {
     @Test
     fun `double tapping a suggestion adds exactly one unit`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004930")
-            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7753176004931")
+            val scanned = "753176004931"
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             val gate = CompletableDeferred<Unit>()
@@ -2877,15 +3804,15 @@ class SalesViewModelTest {
     @Test
     fun `checkout waits for a pending suggestion to be resolved before starting the next cart`() =
         runTest(context = mainDispatcherRule.dispatcher) {
-            val viewModel = createReadyViewModel(cart(withLine = true), productBarcode = "7753176004930")
-            val scanned = "753176004930"
+            val viewModel = createReadyViewModel(cart(withLine = true), productBarcode = "7753176004931")
+            val scanned = "753176004931"
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             assertEquals(1, viewModel.uiState.value.barcodeSuggestions.size)
             assertFalse(viewModel.uiState.value.canCheckout)
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
             runCurrent()
-            assertNull(viewModel.uiState.value.checkoutReview)
             assertTrue(sales.checkoutCalls.isEmpty())
             assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
             viewModel.onAction(SalesContract.Action.AssociationDismissed)
@@ -2899,8 +3826,6 @@ class SalesViewModelTest {
                     }
                 }
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
-            runCurrent()
-            viewModel.onAction(SalesContract.Action.CheckoutConfirmed)
             runCurrent()
             posted.await()
             assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
@@ -3310,8 +4235,9 @@ class SalesViewModelTest {
     fun `confirming a similar code for an existing cart product only identifies its saved quantity`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val stored = "7753176004930"
-            val scanned = "753176004930"
+            val scanned = "3176004930"
             val viewModel = createReadyViewModel(cart(withLine = true).withQuantity("4", version = 2L), productBarcode = stored)
+            seedAmbiguousReading(scanned)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
             assertEquals(1, viewModel.uiState.value.barcodeSuggestions.size)
@@ -3387,8 +4313,6 @@ class SalesViewModelTest {
 
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
             runCurrent()
-            viewModel.onAction(SalesContract.Action.CheckoutConfirmed)
-            runCurrent()
             posted.await()
 
             assertEquals(SALE_ID_2.value, viewModel.uiState.value.cartId)
@@ -3409,7 +4333,6 @@ class SalesViewModelTest {
             assertTrue(viewModel.uiState.value.canRouteScannerInput)
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
             runCurrent()
-            assertNull(viewModel.uiState.value.checkoutReview)
             assertTrue(sales.checkoutCalls.isEmpty())
 
             viewModel.onAction(SalesContract.Action.ScannerReadReset)
@@ -3417,21 +4340,17 @@ class SalesViewModelTest {
             assertTrue(viewModel.uiState.value.canCheckout)
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
             runCurrent()
-            assertEquals(
-                SALE_ID.value,
-                viewModel.uiState.value.checkoutReview
-                    ?.cartId,
-            )
-            assertTrue(sales.checkoutCalls.isEmpty())
+            assertEquals(SALE_ID, sales.checkoutCalls.single().saleId)
+            assertEquals(cart(withLine = true).contentHash, sales.checkoutCalls.single().expectedContentHash)
         }
 
     @Test
-    fun `registering an unknown reading opens its correlated form and blocks competing scans`() =
+    fun `registering a suspicious reading opens its correlated form and blocks competing scans`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = true))
             val request = beginProductRegistration(viewModel)
 
-            assertEquals(NEW_BARCODE, request.barcode)
+            assertEquals(SUSPICIOUS_BARCODE, request.barcode)
             assertEquals(BUSINESS_ID, request.businessId)
             assertEquals(SALE_ID, request.saleId)
             assertFalse(viewModel.uiState.value.canRouteScannerInput)
@@ -3439,14 +4358,14 @@ class SalesViewModelTest {
             assertFalse(viewModel.uiState.value.canRegisterProduct)
             val lookupsBefore = products.findByBarcodeCalls
             viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
-            viewModel.onAction(SalesContract.Action.RegisterProductRequested(NEW_BARCODE))
+            viewModel.onAction(SalesContract.Action.RegisterProductRequested(request.barcode))
             viewModel.onAction(SalesContract.Action.CheckoutRequested)
             runCurrent()
 
             assertEquals(request, viewModel.uiState.value.productRegistration)
             assertEquals(lookupsBefore, products.findByBarcodeCalls)
             assertTrue(sales.saveLineCalls.isEmpty())
-            assertNull(viewModel.uiState.value.checkoutReview)
+            assertTrue(sales.checkoutCalls.isEmpty())
         }
 
     @Test
@@ -3496,7 +4415,7 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `canceling registration keeps the unknown reading and does not add or alter a product`() =
+    fun `canceling registration keeps the pending reading and does not add or alter a product`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = false))
             val request = beginProductRegistration(viewModel)
@@ -3508,7 +4427,7 @@ class SalesViewModelTest {
             runCurrent()
 
             assertNull(viewModel.uiState.value.productRegistration)
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(request.barcode, viewModel.uiState.value.pendingAssociationBarcode)
             assertTrue(viewModel.uiState.value.canRouteScannerInput)
             assertTrue(viewModel.uiState.value.canRegisterProduct)
             assertTrue(sales.saveLineCalls.isEmpty())
@@ -3536,7 +4455,7 @@ class SalesViewModelTest {
 
             assertNull(viewModel.uiState.value.productRegistration)
             assertTrue(sales.saveLineCalls.isEmpty())
-            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(request.barcode, viewModel.uiState.value.pendingAssociationBarcode)
             assertEquals(0, products.updateCalls)
         }
 
@@ -3712,10 +4631,16 @@ class SalesViewModelTest {
             assertTrue(viewModel.uiState.value.cartLines.isEmpty())
         }
 
+    /**
+     * Una lectura sin coincidencia exacta ni recuperación segura se ignora; el registro solo se
+     * ofrece desde una elección pendiente. Aquí se alcanza por la vía AMBIGUOUS, con productos
+     * sugeridos que tienen stock para resolverse desde la proyección ya cargada.
+     */
     private suspend fun TestScope.beginProductRegistration(
         viewModel: SalesViewModel,
-        barcode: String = NEW_BARCODE,
+        barcode: String = SUSPICIOUS_BARCODE,
     ): SalesContract.ProductRegistrationRequest {
+        seedAmbiguousReading(barcode, availableQuantity = BigDecimal.TEN)
         viewModel.onAction(SalesContract.Action.BarcodeScanned(barcode))
         runCurrent()
         val navigation = async { viewModel.effects.first { it is SalesContract.Effect.RegisterProduct } }
@@ -3726,24 +4651,56 @@ class SalesViewModelTest {
         return request
     }
 
+    /**
+     * Ventas solo muestra elecciones para una lectura con coincidencia exacta sospechosa: aquí el
+     * SKU de un producto coincide con [reading] y otro guarda un GTIN válido del que la lectura
+     * podría ser un truncado. Sin stock por defecto, ninguno aparece como sugerencia vendible, de
+     * modo que las pruebas conservan las sugerencias de similitud del producto principal.
+     */
+    private suspend fun TestScope.seedAmbiguousReading(
+        reading: String,
+        firstId: Long = 60L,
+        availableQuantity: BigDecimal = BigDecimal.ZERO,
+    ): Pair<Product, Product> {
+        val exact = seedAdditionalProduct(firstId, barcode = null, availableQuantity = availableQuantity, sku = reading)
+        val competitor = seedAdditionalProduct(firstId + 1, validGtinContaining(reading), availableQuantity)
+        return exact to competitor
+    }
+
+    /** GTIN válido que contiene la lectura con una o dos cifras iniciales omitidas. */
+    private fun validGtinContaining(reading: String): String {
+        val length = listOf(8, 12, 13, 14).first { it - reading.length in 1..2 }
+        val padding = "1".repeat(length - reading.length - 1)
+        return (0..9).map { "$it$padding$reading" }.first { candidate ->
+            candidate.reversed().withIndex().sumOf { (index, digit) ->
+                (digit - '0') * if (index % 2 == 0) 1 else 3
+            } % 10 == 0
+        }
+    }
+
     private fun setRegisteredProductDetail(product: Product) {
         val detail = inventoryItem().copy(productId = product.productId, productName = product.name)
         inventory.setProductDetail(BUSINESS_ID, product.productId, InventoryProductDetail(detail, emptyList()))
     }
 
-    private suspend fun TestScope.seedAdditionalProduct(id: Long, barcode: String): Product {
+    private suspend fun TestScope.seedAdditionalProduct(
+        id: Long,
+        barcode: String?,
+        availableQuantity: BigDecimal = BigDecimal.TEN,
+        sku: String? = null,
+    ): Product {
         val product = products.create(
             requireNotNull(products.findById(PRODUCT_ID)).copy(
                 productId = ProductId.from(uuid(id)),
                 name = "Producto $id",
                 barcode = barcode,
-                sku = null,
+                sku = sku,
             ),
         )
         val items = inventory.observeInventory(BUSINESS_ID).first()
         inventory.replaceInventory(
             BUSINESS_ID,
-            items + inventoryItem().copy(productId = product.productId, productName = product.name),
+            items + inventoryItem(availableQuantity).copy(productId = product.productId, productName = product.name),
         )
         runCurrent()
         return product
@@ -3762,6 +4719,7 @@ class SalesViewModelTest {
         unifiedInput: Boolean = false,
         inventoryReadRepository: InventoryReadRepository = inventory,
         unitCode: String = "NIU",
+        dispatcherProvider: DispatcherProvider = TestDispatcherProvider(mainDispatcherRule.dispatcher),
     ): SalesViewModel {
         configuration.enterDemoMode(BUSINESS_ID)
         units.create(
@@ -3802,7 +4760,7 @@ class SalesViewModelTest {
             listOf(inventoryItem(availableQuantity)),
         )
         sales.replaceCart(cart)
-        val viewModel = newViewModel(savedStateHandle, inventoryReadRepository)
+        val viewModel = newViewModel(savedStateHandle, inventoryReadRepository, dispatcherProvider)
         viewModel.onAction(SalesContract.Action.InitializeEntry(entryKind, allowEntryKindSelection, unifiedInput))
         if (enterSelling) {
             viewModel.onAction(SalesContract.Action.EntryKindChanged(entryKind))
@@ -3820,6 +4778,7 @@ class SalesViewModelTest {
     private fun newViewModel(
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
         inventoryReadRepository: InventoryReadRepository = inventory,
+        dispatcherProvider: DispatcherProvider = TestDispatcherProvider(mainDispatcherRule.dispatcher),
     ) = SalesViewModel(
         configuration = configuration,
         products = products,
@@ -3831,7 +4790,7 @@ class SalesViewModelTest {
         checkout = CheckoutSaleUseCase(configuration, sales),
         saveProduct = SaveProductCatalogUseCase(products, units, locations),
         productMatching = ProductMatchingUseCase(products, aliases),
-        dispatcherProvider = TestDispatcherProvider(mainDispatcherRule.dispatcher),
+        dispatcherProvider = dispatcherProvider,
         savedStateHandle = savedStateHandle,
     )
 
@@ -3940,13 +4899,17 @@ class SalesViewModelTest {
         val barcodeLookups = mutableListOf<Pair<BusinessId, String>>()
         var observeForBusinessCalls: Int = 0
             private set
+        var listForBusinessCalls: Int = 0
+            private set
         var nameSearchCalls: Int = 0
             private set
         var updateGate: CompletableDeferred<Unit>? = null
         var catalogEmissionGate: CompletableDeferred<Unit>? = null
+        var primaryObservationEmissionGate: CompletableDeferred<Unit>? = null
         var barcodeLookupGate: CompletableDeferred<Unit>? = null
         var idLookupGate: CompletableDeferred<Unit>? = null
         var nextNameSearchFailure: Throwable? = null
+        var nextCatalogReadFailure: Throwable? = null
 
         fun failCatalogObservation() {
             check(catalogObservationFailures.tryEmit(Unit))
@@ -3957,8 +4920,18 @@ class SalesViewModelTest {
             return delegate.findById(productId)
         }
 
+        override suspend fun listForBusiness(businessId: BusinessId): List<Product> {
+            listForBusinessCalls += 1
+            nextCatalogReadFailure?.let { failure ->
+                nextCatalogReadFailure = null
+                throw failure
+            }
+            return delegate.listForBusiness(businessId)
+        }
+
         override fun observeForBusiness(businessId: BusinessId): Flow<List<Product>> {
             observeForBusinessCalls += 1
+            val isPrimaryObservation = observeForBusinessCalls == 1
             val failures =
                 flow<List<Product>> {
                     catalogObservationFailures.collect {
@@ -3968,6 +4941,7 @@ class SalesViewModelTest {
             return merge(
                 delegate.observeForBusiness(businessId).map { rows ->
                     catalogEmissionGate?.await()
+                    if (isPrimaryObservation) primaryObservationEmissionGate?.await()
                     rows
                 },
                 failures,
@@ -4003,6 +4977,33 @@ class SalesViewModelTest {
         }
     }
 
+    private class PauseNextDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+        private var shouldPause = false
+        private var paused: Pair<CoroutineContext, Runnable>? = null
+
+        val isPaused: Boolean get() = paused != null
+
+        fun pauseNextDispatch() {
+            check(!shouldPause && paused == null)
+            shouldPause = true
+        }
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            if (shouldPause) {
+                shouldPause = false
+                paused = context to block
+            } else {
+                delegate.dispatch(context, block)
+            }
+        }
+
+        fun resume() {
+            val (context, block) = requireNotNull(paused)
+            paused = null
+            delegate.dispatch(context, block)
+        }
+    }
+
     private class RecordingSaleRepository : SaleRepository {
         private val carts = mutableMapOf<SaleId, MutableStateFlow<SaleCart?>>()
         private val cartObservationFailures =
@@ -4012,6 +5013,7 @@ class SalesViewModelTest {
         val saveLineBusinessIds = mutableListOf<BusinessId>()
         val openCalls = mutableListOf<Pair<BusinessId, CurrencyCode>>()
         val checkoutCalls = mutableListOf<CheckoutSaleCommand>()
+        val checkoutBusinessIds = mutableListOf<BusinessId>()
         var observeCartCalls: Int = 0
             private set
         var failNewObservations = false
@@ -4110,6 +5112,7 @@ class SalesViewModelTest {
             businessId: BusinessId,
             command: CheckoutSaleCommand,
         ): CheckoutSaleResult {
+            checkoutBusinessIds += businessId
             checkoutCalls += command
             return checkoutHandler(command)
         }
@@ -4128,6 +5131,9 @@ class SalesViewModelTest {
         val SALE_ID_3: SaleId = SaleId.from(uuid(8L))
         const val NEW_BARCODE = "7751234567890"
         const val EXISTING_BARCODE = "7751111111111"
+
+        /** Código personalizado corto: nunca es GTIN válido, por eso un exacto requiere revisión. */
+        const val SUSPICIOUS_BARCODE = "753176004930"
         const val NAME_SEARCH_DEBOUNCE_MILLIS = 250L
 
         fun uuid(value: Long): UUID = UUID(0L, value)

@@ -45,7 +45,8 @@
       "Bash(./gradlew :app:ksp*)",
       "Bash(./gradlew :app:assemble*)",
       "Bash(./gradlew --no-daemon *)",
-      "Bash(/usr/libexec/java_home)"
+      "Bash(/usr/libexec/java_home)",
+      "Bash(cat ~/.claude/settings.json 2>/dev/null || echo \"__NO_FILE__\")"
     ]
   }
 }

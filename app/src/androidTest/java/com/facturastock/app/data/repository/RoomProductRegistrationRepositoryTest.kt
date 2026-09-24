@@ -106,6 +106,28 @@ class RoomProductRegistrationRepositoryTest {
         }
 
     @Test
+    fun manualProductWithoutBarcodeStoresBothPricesAndRetryDoesNotDuplicateOpeningStock() =
+        runBlocking {
+            val candidate = product().copy(barcode = null)
+            val saved = registration.register(candidate, BigDecimal("4"), UnitCost.of("2.125", PEN))
+
+            assertTrue(saved is CatalogMutationResult.Saved)
+            val stored = requireNotNull(products.findById(PRODUCT))
+            assertNull(stored.barcode)
+            assertEquals(Money.ofMinor(350L, PEN), stored.salePrice)
+            assertEquals(CatalogMutationResult.Stale, registration.register(candidate, BigDecimal("9"), UnitCost.of("7", PEN)))
+            val balance = requireNotNull(database.inventoryDao().findBalance(BUSINESS.value, PRODUCT.value, LOCATION.value))
+            assertEquals(0, BigDecimal("4").compareTo(BigDecimal(balance.quantityOnHand)))
+            assertEquals(0, BigDecimal("2.125").compareTo(BigDecimal(balance.averageUnitCost)))
+            val movement = requireNotNull(database.inventoryDao().findMovementByIdempotencyKey("product-registration:v1:${PRODUCT.value}"))
+            assertEquals("4", movement.quantityDelta)
+            assertEquals("2.125", movement.unitCost)
+            assertEquals(1L, rowCount("products"))
+            assertEquals(1L, rowCount("outbox_operations"))
+            assertEquals(1L, rowCount("stock_movements"))
+        }
+
+    @Test
     fun stockFailureRollsBackProductOutboxBalanceAndMovement() =
         runBlocking {
             database.openHelper.writableDatabase.execSQL(

@@ -10,6 +10,7 @@ object SalesTestTags {
     const val CASH_ENTRY = "sales_cash_entry"
     const val CREDIT_ENTRY = "sales_credit_entry"
     const val OPEN_DEBTORS = "sales_open_debtors"
+    const val OPEN_CREDIT_SALE = "sales_open_credit_sale"
     const val DEBTOR_NAME = "sales_debtor_name"
     const val SCANNER_MODE = "sales_scanner_mode"
     const val MANUAL_MODE = "sales_manual_mode"

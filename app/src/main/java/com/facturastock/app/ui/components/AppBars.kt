@@ -56,6 +56,7 @@ fun FacturaStockTopBar(
     @DrawableRes actionIconRes: Int? = null,
     actionContentDescription: String? = null,
     onActionClick: (() -> Unit)? = null,
+    extraActions: List<FacturaStockTopBarAction> = emptyList(),
 ) {
     val spacing = FacturaStockDesign.spacing
     val resolvedContentMaxWidth = contentMaxWidth ?: spacing.contentMaxWidth
@@ -129,6 +130,31 @@ fun FacturaStockTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
 
+                extraActions.forEach { action ->
+                    Spacer(modifier = Modifier.width(spacing.xs))
+                    IconButton(
+                        onClick = action.onClick,
+                        enabled = action.enabled,
+                        modifier = Modifier
+                            .sizeIn(
+                                minWidth = spacing.minimumTouchTarget,
+                                minHeight = spacing.minimumTouchTarget,
+                            )
+                            .then(
+                                if (action.testTag != null) {
+                                    Modifier.testTag(action.testTag)
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
+                        Icon(
+                            painter = painterResource(action.iconRes),
+                            contentDescription = action.contentDescription,
+                        )
+                    }
+                }
+
                 if (
                     actionIconRes != null &&
                     actionContentDescription != null &&
@@ -152,6 +178,16 @@ fun FacturaStockTopBar(
         }
     }
 }
+
+/** Icono adicional que una pantalla principal muestra en la barra superior, antes de ajustes. */
+@Immutable
+data class FacturaStockTopBarAction(
+    @param:DrawableRes val iconRes: Int,
+    val contentDescription: String,
+    val onClick: () -> Unit,
+    val enabled: Boolean = true,
+    val testTag: String? = null,
+)
 
 @Immutable
 data class FacturaStockBottomItem(

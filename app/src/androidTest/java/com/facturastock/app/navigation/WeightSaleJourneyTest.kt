@@ -41,6 +41,7 @@ import com.facturastock.app.domain.repository.InventoryLocationRepository
 import com.facturastock.app.domain.repository.ProductRegistrationRepository
 import com.facturastock.app.domain.repository.UnitRepository
 import com.facturastock.app.feature.common.ScannerCodeInputTestTags
+import com.facturastock.app.feature.debtors.DebtorsTestTags
 import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.feature.sales.WeightSaleTestTags
 import com.facturastock.app.testing.TestAppConfigurationState
@@ -151,7 +152,19 @@ class WeightSaleJourneyTest {
     }
 
     private fun completeWeightSale(credit: Boolean) {
-        clickTag(if (credit) SalesTestTags.CREDIT_ENTRY else SalesTestTags.CASH_ENTRY)
+        // Vender abre directamente la venta al contado; la venta a crédito se abre desde su
+        // icono de la barra superior.
+        waitForTag(SalesTestTags.OPEN_CREDIT_SALE)
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.STEP_BACK).assertDoesNotExist()
+        if (credit) {
+            clickTag(SalesTestTags.OPEN_CREDIT_SALE)
+            waitForTag(SalesTestTags.DEBTOR_NAME)
+            composeRule.waitUntil(15_000L) {
+                runCatching { composeRule.onNodeWithTag(SalesTestTags.OPEN_CREDIT_SALE).assertDoesNotExist() }.isSuccess
+            }
+            composeRule.waitForIdle()
+        }
         waitForReader()
         composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
@@ -197,17 +210,12 @@ class WeightSaleJourneyTest {
         }
 
         scrollTo(SalesTestTags.CHECKOUT)
-        clickTag(SalesTestTags.CHECKOUT)
-        waitForTag(SalesTestTags.CHECKOUT_DIALOG)
-        // Abrir la confirmación tampoco descuenta stock ni crea una deuda.
+        // Preparar la venta conserva existencias y deuda hasta el único toque que la registra.
         assertStock("10")
         assertEquals(stockBefore, snapshot("stock_movements"))
         runBlocking { assertNull(database.debtDao().findDebtForSale(originalLine.saleId)) }
-        composeRule
-            .onNodeWithText(
-                context.getString(if (credit) R.string.debt_entry_confirm_action else R.string.sales_confirm_action),
-            ).assertIsEnabled()
-            .performClick()
+        clickTag(SalesTestTags.CHECKOUT)
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
         composeRule.waitUntil(15_000L) {
             runBlocking {
                 database
@@ -218,6 +226,12 @@ class WeightSaleJourneyTest {
             }
         }
         assertPostedSale(originalLine, credit)
+        if (credit) {
+            // Abierta desde Vender, la venta a crédito registrada termina en la lista de deudores.
+            waitForTag(DebtorsTestTags.LIST_SCREEN)
+        } else {
+            waitForTag(SalesTestTags.OPEN_CREDIT_SALE)
+        }
     }
 
     private fun searchAndOpenWeightProduct() {

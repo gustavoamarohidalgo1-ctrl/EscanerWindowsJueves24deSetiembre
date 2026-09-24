@@ -9,6 +9,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.EditText
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -155,36 +156,41 @@ class ScannerSaleJourneyTest {
     }
 
     @Test
-    fun debtorsShortcutAndBackPreserveTheExistingCartAndInventory() {
+    fun debtorsFromReportsAndReturnPreserveTheExistingCartAndInventory() {
         val code = "0099512300775"
         createStockedProduct("Producto acceso deudores", barcode = code, unitCost = "2")
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         scanFromInputConnection(code, KeyEvent.KEYCODE_ENTER)
         waitForCartQuantity(code, "1")
         val tables = listOf("sales", "sale_lines", "stock_movements", "inventory_balances", "debts", "audit_events")
         val before = tables.associateWith(::snapshot)
 
-        scrollToSalesControl(SalesTestTags.STEP_BACK)
-        clickTag(SalesTestTags.STEP_BACK)
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        clickTag(SalesTestTags.OPEN_DEBTORS)
+        // Vender no tiene selector previo: se sale directamente desde la venta abierta.
+        navigate(R.string.navigation_reports)
+        waitForTag(ReportsTestTags.SCREEN)
+        composeRule.onNodeWithTag(ReportsTestTags.SCREEN).performScrollToNode(hasTestTag(ReportsTestTags.OPEN_DEBTORS))
+        clickTag(ReportsTestTags.OPEN_DEBTORS)
+        waitForTag(ReportsTestTags.DEBTORS_CONTENT)
         waitForTag(DebtorsTestTags.LIST_SCREEN)
         tables.forEach { table -> assertEquals("Abrir deudores alteró $table", before.getValue(table), snapshot(table)) }
 
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        clickTag(SalesTestTags.CASH_ENTRY)
+        // Deudores es una pestaña de Reportes: no hay flecha de regreso, se vuelve con el periodo.
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).assertDoesNotExist()
+        clickTag(ReportsTestTags.PERIOD_DAY)
+        waitForTag(ReportsTestTags.SCREEN)
+        navigate(R.string.navigation_sales)
+        expectDirectCashSale()
         waitForSalesReader()
         waitForCartQuantity(code, "1")
         tables.forEach { table -> assertEquals("Volver de deudores alteró $table", before.getValue(table), snapshot(table)) }
     }
 
     @Test
-    fun debtorsShortcutRequiresConfirmationForInvalidEditsAndCancelPreservesInput() {
+    fun leavingSalesForReportsRequiresConfirmationForInvalidEditsAndCancelPreservesInput() {
         val code = "0099512300881"
         createStockedProduct("Producto resguardo deudores", barcode = code, unitCost = "2")
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         scanFromInputConnection(code, KeyEvent.KEYCODE_ENTER)
         waitForCartQuantity(code, "1")
@@ -197,20 +203,18 @@ class ScannerSaleJourneyTest {
         val quantityTag = SalesTestTags.quantity(lineId)
         scrollToSalesControl(quantityTag)
         composeRule.onNodeWithTag(quantityTag).performClick().performTextReplacement("")
-        scrollToSalesControl(SalesTestTags.STEP_BACK)
-        clickTag(SalesTestTags.STEP_BACK)
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
 
-        clickTag(SalesTestTags.OPEN_DEBTORS)
+        // Sin selector ni "Volver" en Vender, la salida se pide directamente desde la venta.
+        navigate(R.string.navigation_reports)
         waitForTag(SalesTestTags.DISCARD_EDITS_DIALOG)
-        composeRule.onNodeWithTag(DebtorsTestTags.LIST_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(ReportsTestTags.SCREEN).assertDoesNotExist()
         composeRule
             .onNode(
                 hasText(context.getString(R.string.action_cancel)) and hasAnyAncestor(hasTestTag(SalesTestTags.DISCARD_EDITS_DIALOG)),
             ).performClick()
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        composeRule.onNodeWithTag(SalesTestTags.DISCARD_EDITS_DIALOG).assertDoesNotExist()
-        clickTag(SalesTestTags.CASH_ENTRY)
+        waitForTagGone(SalesTestTags.DISCARD_EDITS_DIALOG)
+        composeRule.onNodeWithTag(ReportsTestTags.SCREEN).assertDoesNotExist()
+        expectDirectCashSale()
         scrollToSalesControl(quantityTag)
         composeRule.onNodeWithTag(quantityTag).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")),
@@ -219,11 +223,61 @@ class ScannerSaleJourneyTest {
     }
 
     @Test
+    fun directCheckoutIgnoresRapidRepeatedTapsAndDeductsStockOnlyOnce() {
+        val code = "0099512300447"
+        val product = createStockedProduct("Producto cierre directo", barcode = code, priceMinorUnits = 850L, unitCost = "2")
+        expectDirectCashSale()
+        waitForSalesReader()
+        scan(code, KeyEvent.KEYCODE_ENTER)
+        waitForCartQuantity(code, "1")
+        scrollToSalesControl(SalesTestTags.CHECKOUT)
+        val checkout =
+            requireNotNull(
+                composeRule
+                    .onNodeWithTag(SalesTestTags.CHECKOUT)
+                    .assertIsEnabled()
+                    .fetchSemanticsNode()
+                    .config[SemanticsActions.OnClick]
+                    .action,
+            )
+        // Entregar ambos toques en la misma vuelta de UI evita que un waitForIdle esconda la carrera.
+        composeRule.runOnIdle {
+            assertTrue(checkout())
+            assertTrue(checkout())
+        }
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
+        composeRule.waitUntil(15_000L) {
+            runBlocking {
+                val posted = database.saleDao().observeRecentPosted(businessId.value, 10).first()
+                val next = database.saleDao().findActiveDraft(businessId.value, "PEN")
+                posted.size == 1 && next != null && next.sale.saleId != posted.single().saleId && next.lines.isEmpty()
+            }
+        }
+        runBlocking {
+            val sale =
+                database
+                    .saleDao()
+                    .observeRecentPosted(businessId.value, 10)
+                    .first()
+                    .single()
+            assertEquals(850L, sale.totalMinorUnits)
+            assertEquals(1, sale.lineCount)
+            val lines = requireNotNull(database.saleDao().findWithLines(sale.saleId)).lines
+            assertEquals(product.productId.value, lines.single().productId)
+            assertEquals(0, "1".toBigDecimal().compareTo(lines.single().quantity.toBigDecimal()))
+            assertEquals(1, database.inventoryDao().listMovementsForSale(businessId.value, sale.saleId).count { it.type == "SALE" })
+            val balance = database.inventoryDao().listDiagnosticBalances(businessId.value).single()
+            assertEquals(0, "9".toBigDecimal().compareTo(balance.quantityOnHand.toBigDecimal()))
+            assertNull(database.debtDao().findDebtForSale(sale.saleId))
+        }
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
+    }
+
+    @Test
     fun reportVoidCancelsOnlyAfterConfirmationReturnsStockAndSurvivesRecreation() {
         val code = "0099512300447"
         val product = createStockedProduct("Producto para anular venta", barcode = code, unitCost = "2")
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForSalesReader()
@@ -232,8 +286,7 @@ class ScannerSaleJourneyTest {
         setCartQuantityManually(code, "2")
         scrollToSalesControl(SalesTestTags.CHECKOUT)
         clickTag(SalesTestTags.CHECKOUT)
-        waitForTag(SalesTestTags.CHECKOUT_DIALOG)
-        composeRule.onNodeWithText(context.getString(R.string.sales_confirm_action)).performClick()
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
         composeRule.waitUntil(15_000L) {
             runBlocking {
                 database
@@ -339,12 +392,9 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun twoRegistrationsReturnToReaderAndRepeatedScanKeepsQuantityUntilManuallyChangedAndSold() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         navigate(R.string.navigation_inventory)
         waitForTag(InventoryTestTags.LIST_SCREEN)
-        composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN).performScrollToNode(
-            hasText(context.getString(R.string.inventory_register_products)),
-        )
         clickTag(InventoryTestTags.REGISTER_PRODUCTS)
         waitForReader()
 
@@ -375,8 +425,7 @@ class ScannerSaleJourneyTest {
             .performClick()
         waitForTag(InventoryTestTags.LIST_SCREEN)
         navigate(R.string.navigation_sales)
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(SalesTestTags.SCANNER_FEEDBACK)
@@ -397,8 +446,7 @@ class ScannerSaleJourneyTest {
             .onNodeWithTag(SalesTestTags.CHECKOUT)
             .assertIsEnabled()
             .performClick()
-        waitForTag(SalesTestTags.CHECKOUT_DIALOG)
-        composeRule.onNodeWithText(context.getString(R.string.sales_confirm_action)).performClick()
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
         composeRule.waitUntil(15_000L) {
             runBlocking {
                 database
@@ -450,12 +498,9 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun cashSaleAcceptsImeFramesAndUnterminatedUsbThenPersistsTheCorrectStockAndTotal() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         navigate(R.string.navigation_inventory)
         waitForTag(InventoryTestTags.LIST_SCREEN)
-        composeRule.onNodeWithTag(InventoryTestTags.LIST_SCREEN).performScrollToNode(
-            hasText(context.getString(R.string.inventory_register_products)),
-        )
         clickTag(InventoryTestTags.REGISTER_PRODUCTS)
         waitForReader()
         registerProduct("00112233", "Arroz lector", "8.50", KeyEvent.KEYCODE_ENTER)
@@ -463,8 +508,7 @@ class ScannerSaleJourneyTest {
         composeRule.onNodeWithText(context.getString(R.string.action_return_inventory)).performScrollTo().performClick()
         waitForTag(InventoryTestTags.LIST_SCREEN)
         navigate(R.string.navigation_sales)
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
@@ -539,8 +583,7 @@ class ScannerSaleJourneyTest {
 
         composeRule.onNodeWithTag(SalesTestTags.SCREEN).performScrollToNode(hasTestTag(SalesTestTags.CHECKOUT))
         composeRule.onNodeWithTag(SalesTestTags.CHECKOUT).assertIsEnabled().performClick()
-        waitForTag(SalesTestTags.CHECKOUT_DIALOG)
-        composeRule.onNodeWithText(context.getString(R.string.sales_confirm_action)).performClick()
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
         composeRule.waitUntil(15_000L) {
             runBlocking {
                 database
@@ -576,12 +619,16 @@ class ScannerSaleJourneyTest {
     }
 
     @Test
-    fun unknownSaleCodeRegistersInventoryReturnsToTheSameCartAndCancelCreatesNothing() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        val barcode = "7756198305241"
-        val cancelledBarcode = "0099887766554"
+    fun suspiciousSaleCodeRegistersInventoryReturnsToTheSameCartAndCancelCreatesNothing() {
+        waitForTag(SalesTestTags.SCREEN)
+        // Una lectura sin exacto ni recuperación segura se ignora. El registro desde Ventas sigue
+        // disponible cuando la lectura exige elegir: coincide con un SKU y truncaría otro GTIN.
+        val barcode = "775619830524"
+        val cancelledBarcode = "009988776654"
+        val unknownBarcode = "5901234123457"
+        val fixtures = createAmbiguousReadingFixtures(barcode) + createAmbiguousReadingFixtures(cancelledBarcode)
         val name = "Galleta registrada desde venta"
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForSalesReader()
@@ -626,19 +673,24 @@ class ScannerSaleJourneyTest {
         assertEquals(360L, firstLine.lineTotalMinorUnits)
         val stockAfterRegistration = snapshot("stock_movements")
 
+        // El código registrado sigue siendo un truncado sospechoso: vuelve a pedir una elección
+        // explícita y nunca suma otra unidad ni reescribe el producto.
         scan(barcode, KeyEvent.KEYCODE_TAB)
+        waitForTag(SalesTestTags.BARCODE_SUGGESTIONS)
         waitForCartQuantity(barcode, "1")
-        waitForScanFeedback(name, "1")
         runBlocking {
             val draft = requireNotNull(database.saleDao().findActiveDraft(businessId.value, "PEN"))
             assertEquals(originalSaleId, draft.sale.saleId)
             assertEquals(firstLine, draft.lines.single())
-            assertEquals(1, database.productDao().listForBusiness(businessId.value).size)
+            assertEquals(fixtures.size + 1, database.productDao().listForBusiness(businessId.value).size)
             val stored = requireNotNull(products.findById(registered.productId))
             assertEquals(registered.version, stored.version)
             assertEquals(barcode, stored.barcode)
             assertEquals(360L, stored.salePrice?.minorUnits)
-            val balance = database.inventoryDao().listDiagnosticBalances(businessId.value).single()
+            val balance =
+                database.inventoryDao().listDiagnosticBalances(businessId.value).single {
+                    it.productId == registered.productId.value
+                }
             assertEquals(0, "12".toBigDecimal().compareTo(balance.quantityOnHand.toBigDecimal()))
             assertEquals(0, "1.80".toBigDecimal().compareTo(balance.averageUnitCost.toBigDecimal()))
         }
@@ -655,26 +707,41 @@ class ScannerSaleJourneyTest {
         composeRule.onNodeWithTag(CatalogsTestTags.FORM).assertDoesNotExist()
         runBlocking {
             assertNull(products.findByBarcode(businessId, cancelledBarcode))
-            assertEquals(1, database.productDao().listForBusiness(businessId.value).size)
+            assertEquals(fixtures.size + 1, database.productDao().listForBusiness(businessId.value).size)
             val draft = requireNotNull(database.saleDao().findActiveDraft(businessId.value, "PEN"))
             assertEquals(originalSaleId, draft.sale.saleId)
             assertEquals(firstLine, draft.lines.single())
         }
         assertEquals(stockAfterRegistration, snapshot("stock_movements"))
-        scan(barcode, KeyEvent.KEYCODE_ENTER)
-        waitForScanFeedback(name, "1")
-        waitForCartQuantity(barcode, "1")
-        composeRule.onNodeWithTag(SalesTestTags.ASSOCIATION_CANCEL).assertDoesNotExist()
+
+        // Un código realmente desconocido descarta la elección pendiente y no ofrece registrarlo.
+        scan(unknownBarcode, KeyEvent.KEYCODE_ENTER)
+        composeRule.waitUntil(15_000L) {
+            runCatching {
+                composeRule.onNodeWithTag(SalesTestTags.REGISTER_PRODUCT).assertDoesNotExist()
+                composeRule.onNodeWithTag(SalesTestTags.ASSOCIATION_CANCEL).assertDoesNotExist()
+                composeRule.onNodeWithTag(SalesTestTags.BARCODE_SUGGESTIONS).assertDoesNotExist()
+            }.isSuccess
+        }
+        waitForSalesReader()
+        runBlocking {
+            assertNull(products.findByBarcode(businessId, unknownBarcode))
+            assertEquals(fixtures.size + 1, database.productDao().listForBusiness(businessId.value).size)
+            val draft = requireNotNull(database.saleDao().findActiveDraft(businessId.value, "PEN"))
+            assertEquals(originalSaleId, draft.sale.saleId)
+            assertEquals(firstLine, draft.lines.single())
+        }
+        assertEquals(stockAfterRegistration, snapshot("stock_movements"))
     }
 
     @Test
     fun importedProductSkuScansTwiceWithoutAssociationOrBarcodeMutationAndBarcodeProductStillWorks() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         val sku = "00776655"
         val barcode = "00998877"
         val imported = createStockedProduct("Arroz importado por SKU", sku = sku, priceMinorUnits = 850L)
         createStockedProduct("Azúcar con código de barras", barcode = barcode)
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
@@ -733,14 +800,109 @@ class ScannerSaleJourneyTest {
     }
 
     @Test
-    fun incompleteScansRequireChoosingASuggestionAndCheckoutPreservesCodesWithCorrectStock() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        val firstCode = "7753176004930"
+    fun uniqueValidBarcodeRecoversTwoMissingDigitsShowsItsOriginAndChecksOutWithoutDuplicates() {
+        waitForTag(SalesTestTags.SCREEN)
+        val barcode = "7753176004930"
+        val incomplete = barcode.removeRange(4, 6)
+        val product = createStockedProduct("Arroz de recuperación automática", barcode = barcode, priceMinorUnits = 850L, unitCost = "2")
+        val recoveryNotice = context.getString(R.string.sales_scanner_feedback_recovered_code, incomplete)
+        val movementsBefore = snapshot("stock_movements")
+        expectDirectCashSale()
+        waitForSalesReader()
+
+        // Una única lectura física omite dos dígitos centrales, conservando el orden restante.
+        scan(incomplete, KeyEvent.KEYCODE_ENTER)
+        waitForCartQuantity(barcode, "1")
+        waitForScanFeedback(product.name, "1")
+        composeRule
+            .onNodeWithTag(SalesTestTags.SCANNER_FEEDBACK)
+            .assertTextContains(context.getString(R.string.sales_scanner_feedback_recovered, product.name))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, recoveryNotice))
+        composeRule.onNodeWithTag(SalesTestTags.BARCODE_SUGGESTIONS).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.REPLACEMENT_DIALOG).assertDoesNotExist()
+        val recoveredCartVersion =
+            runBlocking {
+                val draft = requireNotNull(database.saleDao().findActiveDraft(businessId.value, "PEN"))
+                assertEquals(1, draft.lines.size)
+                assertEquals(product.productId.value, draft.lines.single().productId)
+                assertEquals(850L, draft.lines.single().lineTotalMinorUnits)
+                assertEquals(product, products.findById(product.productId))
+                assertNull(products.findByBarcode(businessId, incomplete))
+                draft.sale.version
+            }
+
+        // El código exacto vuelve a identificar la misma línea sin sumar ni reescribir el producto.
+        scanFromInputConnection(barcode, KeyEvent.KEYCODE_TAB)
+        composeRule.waitUntil(15_000L) {
+            runCatching {
+                composeRule.onNodeWithTag(SalesTestTags.SCANNER_FEEDBACK).assertTextContains(
+                    context.getString(R.string.sales_scanner_feedback_already_present, product.name),
+                )
+            }.isSuccess
+        }
+        composeRule
+            .onNodeWithTag(SalesTestTags.SCANNER_FEEDBACK)
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+        runBlocking {
+            val draft = requireNotNull(database.saleDao().findActiveDraft(businessId.value, "PEN"))
+            assertEquals(recoveredCartVersion, draft.sale.version)
+            assertEquals(1, draft.lines.size)
+            assertEquals(
+                0,
+                "1".toBigDecimal().compareTo(
+                    draft.lines
+                        .single()
+                        .quantity
+                        .toBigDecimal(),
+                ),
+            )
+            assertEquals(product, products.findById(product.productId))
+        }
+        assertEquals(movementsBefore, snapshot("stock_movements"))
+
+        scrollToSalesControl(SalesTestTags.CHECKOUT)
+        clickTag(SalesTestTags.CHECKOUT)
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
+        composeRule.waitUntil(15_000L) {
+            runBlocking {
+                database
+                    .saleDao()
+                    .observeRecentPosted(businessId.value, 10)
+                    .first()
+                    .size == 1
+            }
+        }
+        runBlocking {
+            val sale =
+                database
+                    .saleDao()
+                    .observeRecentPosted(businessId.value, 10)
+                    .first()
+                    .single()
+            assertEquals(850L, sale.totalMinorUnits)
+            assertEquals(1, sale.lineCount)
+            val balance = database.inventoryDao().listDiagnosticBalances(businessId.value).single()
+            assertEquals(0, "9".toBigDecimal().compareTo(balance.quantityOnHand.toBigDecimal()))
+            assertEquals(0, "2".toBigDecimal().compareTo(balance.averageUnitCost.toBigDecimal()))
+            assertEquals(1, database.inventoryDao().listMovementsForSale(businessId.value, sale.saleId).count { it.type == "SALE" })
+            assertEquals(product, products.findById(product.productId))
+            assertNull(products.findByBarcode(businessId, incomplete))
+        }
+    }
+
+    @Test
+    fun suspiciousExactScansRequireChoosingASuggestionAndCheckoutPreservesCodesWithCorrectStock() {
+        waitForTag(SalesTestTags.SCREEN)
+        val firstCode = "7753176004931"
         val secondCode = "7753176004916"
         val first = createStockedProduct("Arroz con código parecido", barcode = firstCode, priceMinorUnits = 850L, unitCost = "2")
         val second = createStockedProduct("Azúcar con código parecido", barcode = secondCode, priceMinorUnits = 500L, unitCost = "1")
         val oneDigitMissing = firstCode.dropLast(1)
         val threeDigitsMissing = firstCode.dropLast(3)
+        // Sin exacto ni recuperación segura una lectura se ignora; estas lecturas coinciden con un
+        // SKU y podrían truncar otro GTIN, por eso el cajero debe elegir entre las sugerencias.
+        val ambiguityFixtures =
+            createAmbiguousReadingFixtures(oneDigitMissing) + createAmbiguousReadingFixtures(threeDigitsMissing)
         val firstSuggestion = SalesTestTags.barcodeSuggestionAdd(first.productId.value, requireNotNull(first.locationId).value)
         val secondSuggestion = SalesTestTags.barcodeSuggestionAdd(second.productId.value, requireNotNull(second.locationId).value)
 
@@ -752,7 +914,7 @@ class ScannerSaleJourneyTest {
                     assertEquals(original.sku, stored.sku)
                     assertEquals(original.version, stored.version)
                 }
-                assertEquals(2, database.productDao().listForBusiness(businessId.value).size)
+                assertEquals(2 + ambiguityFixtures.size, database.productDao().listForBusiness(businessId.value).size)
                 assertNull(products.findByBarcode(businessId, oneDigitMissing))
                 assertNull(products.findByBarcode(businessId, threeDigitsMissing))
             }
@@ -770,12 +932,12 @@ class ScannerSaleJourneyTest {
             }
         }
 
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
 
-        // Un lector físico entrega una trama válida, pero omite el último dígito del producto.
+        // La lectura exacta es sospechosa: la omisión frente al código guardado requiere confirmación.
         scan(oneDigitMissing, KeyEvent.KEYCODE_ENTER)
         scrollToSuggestion(firstSuggestion)
         composeRule
@@ -789,7 +951,7 @@ class ScannerSaleJourneyTest {
         composeRule.onNodeWithTag(SalesTestTags.SEARCH).assertDoesNotExist()
         composeRule.onNodeWithTag(SalesTestTags.REPLACEMENT_DIALOG).assertDoesNotExist()
         runBlocking {
-            // Encontrar incluso una única sugerencia nunca autoriza agregarla por sí sola.
+            // Nada se agrega hasta que el cajero elige una sugerencia.
             assertTrue(requireNotNull(database.saleDao().findActiveDraft(businessId.value, "PEN")).lines.isEmpty())
         }
         assertProductCodesUnchanged()
@@ -831,8 +993,7 @@ class ScannerSaleJourneyTest {
 
         composeRule.onNodeWithTag(SalesTestTags.SCREEN).performScrollToNode(hasTestTag(SalesTestTags.CHECKOUT))
         composeRule.onNodeWithTag(SalesTestTags.CHECKOUT).assertIsEnabled().performClick()
-        waitForTag(SalesTestTags.CHECKOUT_DIALOG)
-        composeRule.onNodeWithText(context.getString(R.string.sales_confirm_action)).performClick()
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
         composeRule.waitUntil(15_000L) {
             runBlocking {
                 database
@@ -865,10 +1026,11 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun suggestionRescanAndCancelKeepUnifiedImeReadyDuringNameSearch() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         val barcode = "7753176004930"
-        val partialCode = barcode.dropLast(1)
+        val partialCode = barcode.dropLast(3)
         val product = createStockedProduct("Arroz para reescanear", barcode = barcode, unitCost = "2")
+        createAmbiguousReadingFixtures(partialCode)
 
         fun scrollToSaleControl(tag: String) {
             composeRule.waitUntil(15_000L) {
@@ -883,12 +1045,13 @@ class ScannerSaleJourneyTest {
             }
         }
 
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
 
-        // Reescanear y cancelar deben conservar el receptor IME, incluso sin una mutación del carrito.
+        // La lectura parcial coincide con un SKU y es sospechosa: exige elegir manualmente y
+        // reescanear/cancelar deben mantener el IME.
         listOf(SalesTestTags.BARCODE_SUGGESTIONS_RESCAN, SalesTestTags.ASSOCIATION_CANCEL)
             .forEach { dismissalTag ->
                 scanFromInputConnection(partialCode, KeyEvent.KEYCODE_ENTER)
@@ -939,13 +1102,13 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun fullLeading77BarcodesAddThreeProductsAndRepeatedImeScanPreservesTheSameLine() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         val codes = listOf("77529305", "7753176004930", "7753176004916")
         val fixtures =
             codes.mapIndexed { index, code ->
                 createStockedProduct("Producto ${index + 1}", barcode = code)
             }
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
@@ -986,7 +1149,7 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun rapidPhysicalFramesContinueAfterUnknownCodeAndKeepAllKnownQuantities() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         val codes = listOf("77529305", "7753176004930", "7753176004916")
         val fixtures =
             codes.mapIndexed { index, code ->
@@ -1008,7 +1171,7 @@ class ScannerSaleJourneyTest {
                 codes[0],
                 codes[2],
             )
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
@@ -1090,7 +1253,7 @@ class ScannerSaleJourneyTest {
         val code = "00778899"
         val product = createStockedProduct("Arroz existente", barcode = code, unitCost = "2")
         val historyBefore = snapshot("stock_movements")
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         navigate(R.string.navigation_inventory)
         waitForTag(ScannerCodeInputTestTags.FIELD)
         scan(code, KeyEvent.KEYCODE_ENTER)
@@ -1127,9 +1290,6 @@ class ScannerSaleJourneyTest {
         assertTrue(historyAfter.containsAll(historyBefore))
         assertTrue(historyAfter.size > historyBefore.size)
 
-        composeRule
-            .onNodeWithTag(InventoryTestTags.LIST_SCREEN)
-            .performScrollToNode(hasTestTag(InventoryTestTags.REGISTER_PRODUCTS))
         clickTag(InventoryTestTags.REGISTER_PRODUCTS)
         waitForReader()
         scan(code, KeyEvent.KEYCODE_TAB)
@@ -1146,7 +1306,7 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun inventoryListReceivesUsbWithoutOpeningAnotherPageAndAllowsConfirmationWithoutEnter() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         navigate(R.string.navigation_inventory)
         waitForTag(InventoryTestTags.LIST_SCREEN)
         waitForTag(ScannerCodeInputTestTags.FIELD)
@@ -1173,7 +1333,7 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun rejectedUsbFrameWithoutEnterShowsErrorAndReaderCanBeRestarted() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         navigate(R.string.navigation_inventory)
         waitForTag(ScannerCodeInputTestTags.FIELD)
         composeRule.waitForIdle()
@@ -1189,7 +1349,7 @@ class ScannerSaleJourneyTest {
 
     @Test
     fun thirtyTwoRapidScansKeepOneUnitAndConfirmationVisibleWhileCartScrolls() {
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
+        waitForTag(SalesTestTags.SCREEN)
         val barcode = "7753176004930"
         val product = createStockedProduct("Producto de ráfaga", barcode = barcode, unitCost = "2")
         runBlocking {
@@ -1201,7 +1361,7 @@ class ScannerSaleJourneyTest {
                 currency = CurrencyCode.of("PEN"),
             )
         }
-        clickTag(SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         waitForTag(ScannerCodeInputTestTags.FIELD)
@@ -1276,8 +1436,8 @@ class ScannerSaleJourneyTest {
         val scannedCode = requireNotNull(scanned.barcode)
         val optionTag = SalesTestTags.option(named.productId.value, requireNotNull(named.locationId).value)
         val movementsBefore = snapshot("stock_movements")
-        waitForTag(SalesTestTags.ENTRY_KIND_SCREEN)
-        clickTag(if (credit) SalesTestTags.CREDIT_ENTRY else SalesTestTags.CASH_ENTRY)
+        expectDirectCashSale()
+        if (credit) openCreditSale()
         waitForSalesReader()
         composeRule.onNodeWithTag(SalesTestTags.ENTRY_MODE_SCREEN).assertDoesNotExist()
         composeRule.onNodeWithTag(SalesTestTags.SCANNER_MODE).assertDoesNotExist()
@@ -1355,9 +1515,7 @@ class ScannerSaleJourneyTest {
         assertEquals(movementsBefore, snapshot("stock_movements"))
         scrollToSalesControl(SalesTestTags.CHECKOUT)
         clickTag(SalesTestTags.CHECKOUT)
-        waitForTag(SalesTestTags.CHECKOUT_DIALOG)
-        val confirmLabel = if (credit) R.string.debt_entry_confirm_action else R.string.sales_confirm_action
-        composeRule.onNodeWithText(context.getString(confirmLabel)).performClick()
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertDoesNotExist()
         composeRule.waitUntil(15_000L) {
             runBlocking {
                 database
@@ -1387,6 +1545,46 @@ class ScannerSaleJourneyTest {
             database.inventoryDao().listDiagnosticBalances(businessId.value).forEach { balance ->
                 assertEquals(0, "9".toBigDecimal().compareTo(balance.quantityOnHand.toBigDecimal()))
             }
+        }
+        if (credit) {
+            // Abierta desde Vender, la venta a crédito registrada termina en la lista de deudores.
+            val debtId =
+                runBlocking {
+                    val sale = database.saleDao().observeRecentPosted(businessId.value, 10).first().single()
+                    requireNotNull(database.debtDao().findDebtForSale(sale.saleId)).debtId
+                }
+            waitForTag(DebtorsTestTags.LIST_SCREEN)
+            waitForTagGone(SalesTestTags.DEBTOR_NAME)
+            composeRule.onNodeWithTag(ReportsTestTags.DEBTORS_CONTENT).assertDoesNotExist()
+            composeRule.onNodeWithTag(DebtorsTestTags.LIST_SCREEN).performScrollToNode(hasTestTag(DebtorsTestTags.debt(debtId)))
+            composeRule.onNodeWithTag(DebtorsTestTags.debt(debtId)).assertIsDisplayed()
+        } else {
+            expectDirectCashSale()
+        }
+    }
+
+    /** Vender abre directamente la venta al contado, sin selector de tipo ni "Volver". */
+    private fun expectDirectCashSale() {
+        waitForTag(SalesTestTags.SCREEN)
+        waitForTag(SalesTestTags.OPEN_CREDIT_SALE)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.STEP_BACK).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.DEBTOR_NAME).assertDoesNotExist()
+    }
+
+    /** La venta a crédito se abre desde el icono de la barra superior de Vender. */
+    private fun openCreditSale() {
+        clickTag(SalesTestTags.OPEN_CREDIT_SALE)
+        waitForTag(SalesTestTags.DEBTOR_NAME)
+        waitForTagGone(SalesTestTags.OPEN_CREDIT_SALE)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertDoesNotExist()
+    }
+
+    private fun waitForTagGone(tag: String) {
+        composeRule.waitUntil(15_000L) {
+            runCatching { composeRule.onNodeWithTag(tag).assertDoesNotExist() }.isSuccess
         }
     }
 
@@ -1459,6 +1657,7 @@ class ScannerSaleJourneyTest {
         barcode: String? = null,
         priceMinorUnits: Long = 500L,
         unitCost: String? = null,
+        stocked: Boolean = true,
     ): Product =
         runBlocking {
             val unitId =
@@ -1489,6 +1688,7 @@ class ScannerSaleJourneyTest {
                         updatedAt = Instant.EPOCH,
                     ),
                 )
+            if (!stocked) return@runBlocking product
             if (unitCost == null) {
                 productInventory.setStock(
                     businessId = businessId,
@@ -1509,6 +1709,29 @@ class ScannerSaleJourneyTest {
             }
             product
         }
+
+    /**
+     * Ventas ignora una lectura sin coincidencia exacta ni recuperación automática segura. Las
+     * elecciones manuales, incluido el registro desde Ventas, solo aparecen si la lectura coincide
+     * exacto (aquí con un SKU) y otro producto guarda un GTIN válido del que podría ser un truncado.
+     * Ninguno tiene stock, de modo que no aparecen como sugerencias vendibles.
+     */
+    private fun createAmbiguousReadingFixtures(reading: String): List<Product> =
+        listOf(
+            createStockedProduct("Código interno $reading", sku = reading, stocked = false),
+            createStockedProduct("GTIN completo de $reading", barcode = validGtinContaining(reading), stocked = false),
+        )
+
+    /** GTIN válido que contiene la lectura con una o dos cifras iniciales omitidas. */
+    private fun validGtinContaining(reading: String): String {
+        val length = listOf(8, 12, 13, 14).first { it - reading.length in 1..2 }
+        val padding = "1".repeat(length - reading.length - 1)
+        return (0..9).map { "$it$padding$reading" }.first { candidate ->
+            candidate.reversed().withIndex().sumOf { (index, digit) ->
+                (digit - '0') * if (index % 2 == 0) 1 else 3
+            } % 10 == 0
+        }
+    }
 
     private fun assertEditorDecimal(
         tag: String,

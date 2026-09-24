@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick as semanticsOnClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import com.facturastock.app.R
@@ -75,6 +76,7 @@ fun SalesScreen(
     modifier: Modifier = Modifier,
     allowEntryKindSelection: Boolean = true,
     showScannerStatus: Boolean = true,
+    showStepBack: Boolean = true,
 ) {
     val spacing = FacturaStockDesign.spacing
     val focusManager = LocalFocusManager.current
@@ -86,7 +88,7 @@ fun SalesScreen(
     val showProductSearch = (state.unifiedInput || state.mode == EntryMode.MANUAL || state.isAssociating) &&
         (!hasBarcodeSuggestions || manualAssociationExpanded || (state.unifiedInput && hasSearchPrefix))
     val barcodeSuggestionEnabled = !state.isCheckoutPending && !state.isMutating &&
-        !state.isSavingLineEdits && !state.hasPendingEdits && state.checkoutReview == null &&
+        !state.isSavingLineEdits && !state.hasPendingEdits &&
         state.pendingReplacement == null && !state.discardEditsReview &&
         !state.catalogLoadFailed && !state.cartLoadFailed
     LaunchedEffect(state.entryStep, state.mode) {
@@ -134,24 +136,18 @@ fun SalesScreen(
                         onClick = { onAction(SalesContract.Action.EntryKindChanged(EntryKind.CREDIT)) },
                         modifier = Modifier.testTag(SalesTestTags.CREDIT_ENTRY),
                     )
-                    FacturaStockSecondaryButton(
-                        text = stringResource(R.string.debtor_shortcut_open),
-                        onClick = { onAction(SalesContract.Action.OpenDebtorsSelected) },
-                        enabled = !state.isMutating,
-                        modifier = Modifier.fillMaxWidth().testTag(SalesTestTags.OPEN_DEBTORS),
-                    )
                 }
             }
         }
 
-        if (state.entryStep != SalesContract.EntryStep.SELECT_KIND) {
+        if (showStepBack && state.entryStep != SalesContract.EntryStep.SELECT_KIND) {
             item(key = "step_back", contentType = "step_navigation") {
                 TextButton(
                     onClick = {
                         focusManager.clearFocus(force = true)
                         onAction(SalesContract.Action.StepBackSelected)
                     },
-                    enabled = !state.isCheckoutPending && !state.isMutating && state.checkoutReview == null,
+                    enabled = !state.isCheckoutPending && !state.isMutating,
                     modifier = Modifier.testTag(SalesTestTags.STEP_BACK),
                 ) {
                     Icon(painterResource(R.drawable.ic_back), contentDescription = null)
@@ -380,6 +376,7 @@ fun SalesScreen(
                         item(key = "barcode_suggestions_header", contentType = "section_header") {
                             BarcodeSuggestionsHeader(
                                 scannedBarcode = requireNotNull(scannedBarcode),
+                                selectionReason = state.barcodeSelectionReason,
                                 enabled = barcodeSuggestionEnabled,
                                 onDismiss = {
                                     // Conservar el foco del receptor Android cuando ya está activo.
@@ -456,7 +453,6 @@ fun SalesScreen(
                             PendingLocationSelection(
                                 options = state.pendingLocations,
                                 enabled = !state.isCheckoutPending && !state.isMutating && !state.isSavingLineEdits &&
-                                    state.checkoutReview == null &&
                                     !state.catalogLoadFailed && !state.cartLoadFailed,
                                 onAction = onAction,
                             )
@@ -529,7 +525,6 @@ fun SalesScreen(
                                             option = option,
                                             associationMode = state.isAssociating,
                                             enabled = !state.isCheckoutPending && !state.isMutating && !state.isSavingLineEdits &&
-                                                state.checkoutReview == null &&
                                                 !state.catalogLoadFailed && !state.cartLoadFailed,
                                             onClick = {
                                                 onAction(
@@ -560,7 +555,6 @@ fun SalesScreen(
                                         option = option,
                                         associationMode = state.isAssociating,
                                         enabled = !state.isCheckoutPending && !state.isMutating && !state.isSavingLineEdits &&
-                                            state.checkoutReview == null &&
                                             !state.catalogLoadFailed && !state.cartLoadFailed,
                                         onClick = {
                                             onAction(
@@ -670,7 +664,7 @@ fun SalesScreen(
                                         if (state.isCheckoutPending) {
                                             R.string.sales_verify_pending_checkout
                                         } else if (state.entryKind == EntryKind.CREDIT) {
-                                            R.string.debt_entry_review
+                                            R.string.debt_entry_confirm_action
                                         } else {
                                             R.string.sales_checkout
                                         },
@@ -703,45 +697,6 @@ fun SalesScreen(
             replacement,
             state.isMutating || state.isSavingLineEdits,
             onAction,
-        )
-    }
-    if (state.showCheckoutConfirmation) {
-        val review = requireNotNull(state.checkoutReview)
-        FacturaStockDialog(
-            title = stringResource(
-                if (state.entryKind == EntryKind.CREDIT) {
-                    R.string.debt_entry_confirm_title
-                } else {
-                    R.string.sales_confirm_title
-                },
-            ),
-            message = if (state.entryKind == EntryKind.CREDIT) {
-                stringResource(
-                    R.string.debt_entry_confirm_message,
-                    review.debtorName.orEmpty(),
-                    review.total.formatForDisplay(),
-                )
-            } else {
-                stringResource(
-                    R.string.sales_confirm_message,
-                    review.total.formatForDisplay(),
-                )
-            },
-            confirmLabel = stringResource(
-                if (state.entryKind == EntryKind.CREDIT) {
-                    R.string.debt_entry_confirm_action
-                } else {
-                    R.string.sales_confirm_action
-                },
-            ),
-            dismissLabel = stringResource(R.string.action_cancel),
-            onConfirm = { onAction(SalesContract.Action.CheckoutConfirmed) },
-            onDismiss = {
-                if (!state.isMutating) onAction(SalesContract.Action.CheckoutDismissed)
-            },
-            confirmEnabled = !state.isMutating,
-            dismissEnabled = !state.isMutating,
-            modifier = Modifier.testTag(SalesTestTags.CHECKOUT_DIALOG),
         )
     }
     if (state.discardEditsReview) {
@@ -783,7 +738,7 @@ private fun DebtorNameEntry(
             )
         },
         singleLine = true,
-        enabled = !state.isCheckoutPending && !state.isMutating && state.checkoutReview == null,
+        enabled = !state.isCheckoutPending && !state.isMutating,
         isError = isInvalid,
         modifier = Modifier
             .fillMaxWidth()
@@ -914,33 +869,52 @@ internal fun SalesScannerFeedback(
     val lastAdded = state.lastScanAdded
     val hasFailure = state.scannerFailure != null || state.failure != null ||
         state.catalogLoadFailed || state.cartLoadFailed
-    val isPaused = state.isTextInputFocused || state.isSavingLineEdits || state.hasPendingEdits
+    val isSaving = state.isSavingLineEdits || (state.isMutating && !state.isProcessingBarcode)
+    val isPaused = state.isTextInputFocused || isSaving || state.hasPendingEdits
     val needsSelection = state.productRegistration != null || state.isAssociating || state.pendingLocations.isNotEmpty() ||
         state.pendingReplacement != null
-    val confirmingSale = state.isCheckoutPending || state.checkoutReview != null || state.discardEditsReview
+    val needsReview = state.isCheckoutPending || state.discardEditsReview
     val hasPendingReads = state.pendingBarcodeCount > 0 || state.isProcessingBarcode
+    val pendingRecoveredProduct = state.pendingLocations.firstOrNull()
+        ?.takeIf { state.pendingRecoveredBarcode != null }
+    val showPendingRecovery = pendingRecoveredProduct != null && !hasFailure && !isPaused && state.productRegistration == null
     val showSuccess = lastAdded != null && !hasFailure && !isPaused && !needsSelection &&
-        !confirmingSale && !hasPendingReads
+        !needsReview && !hasPendingReads
     val title = when {
         hasFailure -> stringResource(R.string.sales_scanner_feedback_attention)
         state.productRegistration != null -> stringResource(R.string.sales_scanner_feedback_registration)
+        isSaving -> stringResource(R.string.sales_scanner_feedback_saving)
         state.isTextInputFocused -> stringResource(R.string.sales_scanner_feedback_paused)
-        state.isSavingLineEdits -> stringResource(R.string.sales_scanner_feedback_saving)
         state.hasPendingEdits -> stringResource(R.string.sales_scanner_feedback_review_edits)
+        pendingRecoveredProduct != null -> stringResource(
+            R.string.sales_scanner_feedback_recovered,
+            pendingRecoveredProduct.productName,
+        )
         state.pendingLocations.isNotEmpty() -> stringResource(R.string.sales_scanner_feedback_location)
         state.isAssociating -> stringResource(
-            if (state.barcodeSuggestions.isNotEmpty()) R.string.sales_scanner_feedback_choose_product
-            else R.string.sales_scanner_feedback_unknown,
+            when (state.barcodeSelectionReason) {
+                SalesContract.BarcodeSelectionReason.AMBIGUOUS -> R.string.sales_scanner_feedback_ambiguous
+                SalesContract.BarcodeSelectionReason.CATALOG_CHANGED -> R.string.sales_scanner_feedback_catalog_changed
+                null -> if (state.barcodeSuggestions.isNotEmpty()) {
+                    R.string.sales_scanner_feedback_choose_product
+                } else {
+                    R.string.sales_scanner_feedback_unknown
+                }
+            },
         )
         state.pendingReplacement != null -> stringResource(R.string.sales_scanner_feedback_replacement)
-        confirmingSale -> stringResource(R.string.sales_scanner_feedback_checkout)
+        needsReview -> stringResource(R.string.sales_scanner_feedback_checkout)
         hasPendingReads -> stringResource(
             R.string.sales_scanner_feedback_processing,
             state.pendingBarcodeCount.coerceAtLeast(1),
         )
         lastAdded != null -> stringResource(
-            if (lastAdded.alreadyInCart) R.string.sales_scanner_feedback_already_present
-            else R.string.sales_scanner_feedback_added,
+            when {
+                lastAdded.recoveredFromBarcode != null && lastAdded.alreadyInCart -> R.string.sales_scanner_feedback_recovered_present
+                lastAdded.recoveredFromBarcode != null -> R.string.sales_scanner_feedback_recovered
+                lastAdded.alreadyInCart -> R.string.sales_scanner_feedback_already_present
+                else -> R.string.sales_scanner_feedback_added
+            },
             lastAdded.productName,
         )
         state.scannerActive -> stringResource(R.string.sales_scanner_feedback_ready)
@@ -957,11 +931,16 @@ internal fun SalesScannerFeedback(
         )
         hasFailure -> stringResource(R.string.sales_scanner_feedback_error_help)
         state.productRegistration != null -> stringResource(R.string.sales_scanner_feedback_registration_help)
+        isSaving -> stringResource(R.string.sales_scanner_feedback_saving_help)
         state.isTextInputFocused -> stringResource(R.string.sales_scanner_feedback_paused_help)
-        state.isSavingLineEdits -> stringResource(R.string.sales_scanner_feedback_saving_help)
         state.hasPendingEdits -> stringResource(R.string.sales_scanner_feedback_review_edits_help)
+        pendingRecoveredProduct != null -> stringResource(R.string.sales_scanner_feedback_recovered_location_help)
+        state.isAssociating && state.barcodeSelectionReason == SalesContract.BarcodeSelectionReason.AMBIGUOUS ->
+            stringResource(R.string.sales_scanner_feedback_ambiguous_help)
+        state.isAssociating && state.barcodeSelectionReason == SalesContract.BarcodeSelectionReason.CATALOG_CHANGED ->
+            stringResource(R.string.sales_scanner_feedback_catalog_changed_help)
         needsSelection -> stringResource(R.string.sales_scanner_feedback_selection_help)
-        confirmingSale -> stringResource(R.string.sales_scanner_feedback_checkout_help)
+        needsReview -> stringResource(R.string.sales_scanner_feedback_checkout_help)
         hasPendingReads -> stringResource(R.string.sales_scanner_feedback_processing_help)
         lastAdded != null -> stringResource(
             R.string.sales_scanner_feedback_quantity,
@@ -971,6 +950,14 @@ internal fun SalesScannerFeedback(
         )
         state.scannerActive -> stringResource(R.string.sales_scanner_feedback_ready_help)
         else -> stringResource(R.string.sales_scanner_feedback_inactive_help)
+    }
+    val recoveryBarcode = when {
+        showPendingRecovery -> state.pendingRecoveredBarcode
+        showSuccess -> lastAdded?.recoveredFromBarcode
+        else -> null
+    }
+    val recoveryDescription = recoveryBarcode?.let { barcode ->
+        stringResource(R.string.sales_scanner_feedback_recovered_code, barcode)
     }
     val containerColor = when {
         hasFailure || needsSelection -> semanticColors.warningContainer
@@ -985,7 +972,10 @@ internal fun SalesScannerFeedback(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
+            .semantics(mergeDescendants = true) {
+                liveRegion = LiveRegionMode.Polite
+                recoveryDescription?.let { stateDescription = it }
+            }
             .testTag(SalesTestTags.SCANNER_FEEDBACK),
         shape = MaterialTheme.shapes.small,
         color = containerColor,
@@ -1012,7 +1002,7 @@ internal fun SalesScannerFeedback(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (state.isTextInputFocused && !state.isAssociating) {
+            if (state.isTextInputFocused && !state.isAssociating && !isSaving) {
                 TextButton(
                     onClick = { focusManager.clearFocus(force = true) },
                     modifier = Modifier.testTag(SalesTestTags.SCANNER_RESUME),
@@ -1144,6 +1134,13 @@ private fun ProductSearchHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
             )
+            if (!hasBarcodeSuggestions && state.barcodeSelectionReason != null) {
+                Text(
+                    text = barcodeSelectionHelp(state.barcodeSelectionReason),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             Text(
                 text = stringResource(
                     if (hasBarcodeSuggestions) R.string.sales_barcode_suggestions_manual_notice
@@ -1182,6 +1179,7 @@ private fun ProductSearchHeader(
 @Composable
 private fun BarcodeSuggestionsHeader(
     scannedBarcode: String,
+    selectionReason: SalesContract.BarcodeSelectionReason?,
     enabled: Boolean,
     onDismiss: () -> Unit,
 ) {
@@ -1203,7 +1201,7 @@ private fun BarcodeSuggestionsHeader(
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            text = stringResource(R.string.sales_barcode_suggestions_help),
+            text = barcodeSelectionHelp(selectionReason),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1217,6 +1215,16 @@ private fun BarcodeSuggestionsHeader(
         )
     }
 }
+
+@Composable
+private fun barcodeSelectionHelp(reason: SalesContract.BarcodeSelectionReason?): String =
+    stringResource(
+        when (reason) {
+            SalesContract.BarcodeSelectionReason.AMBIGUOUS -> R.string.sales_barcode_suggestions_ambiguous_help
+            SalesContract.BarcodeSelectionReason.CATALOG_CHANGED -> R.string.sales_barcode_suggestions_catalog_changed_help
+            null -> R.string.sales_barcode_suggestions_help
+        },
+    )
 
 @Composable
 private fun BarcodeSuggestionCard(
@@ -1251,11 +1259,15 @@ private fun BarcodeSuggestionCard(
                 style = MaterialTheme.typography.bodyLarge,
             )
             Text(
-                text = pluralStringResource(
-                    R.plurals.sales_barcode_suggestions_missing_digits,
-                    suggestion.missingDigits,
-                    suggestion.missingDigits,
-                ),
+                text = if (suggestion.missingDigits == 0) {
+                    stringResource(R.string.sales_barcode_suggestions_exact_code)
+                } else {
+                    pluralStringResource(
+                        R.plurals.sales_barcode_suggestions_missing_digits,
+                        suggestion.missingDigits,
+                        suggestion.missingDigits,
+                    )
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1392,6 +1404,19 @@ private fun PendingLocationSelection(
         announcementMode = LiveRegionMode.Polite,
     )
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        options.firstOrNull()?.let { product ->
+            Text(
+                text = product.productName,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
+            product.barcode?.let { barcode ->
+                Text(
+                    text = stringResource(R.string.sales_barcode_suggestions_saved_code, barcode),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
         options.forEach { option ->
             FacturaStockSecondaryButton(
                 text = stringResource(

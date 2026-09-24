@@ -40,6 +40,7 @@ fun SalesRoute(
     modifier: Modifier = Modifier,
     entryKind: SalesContract.EntryKind = SalesContract.EntryKind.CASH,
     allowEntryKindSelection: Boolean = true,
+    showStepBack: Boolean = true,
     onCreditSalePosted: () -> Unit = {},
     onOpenDebtors: () -> Unit = {},
     onExitCancelled: () -> Unit = {},
@@ -109,10 +110,6 @@ fun SalesRoute(
             state.discardEditsReview -> {
                 onExitCancelled()
                 viewModel.onAction(SalesContract.Action.DiscardEditsDismissed)
-            }
-
-            state.checkoutReview != null -> {
-                viewModel.onAction(SalesContract.Action.CheckoutDismissed)
             }
 
             state.weightSaleEditor != null -> {
@@ -252,6 +249,7 @@ fun SalesRoute(
                 modifier = Modifier.weight(1f),
                 allowEntryKindSelection = allowEntryKindSelection,
                 showScannerStatus = false,
+                showStepBack = showStepBack,
             )
         }
         SnackbarHost(

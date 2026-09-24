@@ -112,6 +112,8 @@ fun InventoryListScreen(
     onEditProduct: (ProductId) -> Unit = {},
     onDeleteProduct: (ProductId) -> Unit = {},
     onSearchFocusChange: (Boolean) -> Unit = {},
+    showNameSearch: Boolean = true,
+    showRegisterActions: Boolean = true,
 ) {
     val spacing = FacturaStockDesign.spacing
     LazyColumn(
@@ -121,7 +123,7 @@ fun InventoryListScreen(
         contentPadding = PaddingValues(spacing.lg),
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
-        if (section == InventoryContract.ListSection.STOCK) {
+        if (section == InventoryContract.ListSection.STOCK && showNameSearch) {
             item(key = "name_search", contentType = "search") {
                 InventorySearchField(
                     query = query,
@@ -131,7 +133,7 @@ fun InventoryListScreen(
                 )
             }
         }
-        item(key = "register_products", contentType = "register_products") {
+        if (showRegisterActions) item(key = "register_products", contentType = "register_products") {
             FacturaStockPrimaryButton(
                 text = stringResource(R.string.inventory_register_products),
                 onClick = onRegisterProducts,
@@ -141,7 +143,7 @@ fun InventoryListScreen(
             )
         }
         if (section == InventoryContract.ListSection.STOCK) {
-            item(key = "register_product", contentType = "register_product") {
+            if (showRegisterActions) item(key = "register_product", contentType = "register_product") {
                 InventoryRegisterActions(
                     onManualClicked = onRegisterManual,
                     onSpecialClicked = onRegisterSpecialProduct,

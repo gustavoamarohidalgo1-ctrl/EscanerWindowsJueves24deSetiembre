@@ -44,6 +44,7 @@
     <string name="sales_entry_kind_title">Tipo de venta</string>
     <string name="sales_entry_cash">Contado</string>
     <string name="sales_entry_credit">A crédito</string>
+    <string name="sales_open_credit_sale">Venta a crédito</string>
     <string name="sales_entry_kind_help">Elige cómo se pagará la venta.</string>
     <string name="sales_entry_cash_help">El cliente paga al momento.</string>
     <string name="sales_entry_credit_help">Registra lo que el cliente pagará después.</string>
@@ -116,9 +117,6 @@
     <string name="sales_total">Total: %1$s</string>
     <string name="sales_total_pending">precio pendiente</string>
     <string name="sales_checkout">Concluir venta</string>
-    <string name="sales_confirm_title">Concluir venta</string>
-    <string name="sales_confirm_message">¿Deseas concluir la venta por un total de %1$s? Se descontará el stock del almacén.</string>
-    <string name="sales_confirm_action">Confirmar y concluir venta</string>
     <string name="sales_replace_barcode_title">¿Reemplazar el código guardado?</string>
     <string name="sales_replace_barcode_message">%1$s ya usa %2$s. Solo confirma si deseas sustituirlo por %3$s.</string>
     <string name="sales_replace_barcode_action">Reemplazar y agregar</string>
@@ -159,9 +157,6 @@
     <string name="debt_entry_debtor_name_help">Obligatorio para registrar la deuda.</string>
     <string name="debt_entry_debtor_name_error">Escribe un nombre válido de 2 a 120 caracteres.</string>
     <string name="debt_entry_products_title">Productos por pagar</string>
-    <string name="debt_entry_review">Revisar deuda</string>
-    <string name="debt_entry_confirm_title">Revisar deuda</string>
-    <string name="debt_entry_confirm_message">%1$s deberá %2$s. Al confirmar se descontará el stock.</string>
     <string name="debt_entry_confirm_action">Registrar deuda</string>
     <string name="debt_entry_error_invalid_terms">El nombre o los datos de la deuda no son válidos.</string>
     <string name="home_shortcut_debtors">Deudores</string>
@@ -451,7 +446,7 @@
     <string name="purchases_card_total">Total: %1$s</string>
     <string name="action_register_purchase">Registrar factura de compra</string>
     <string name="inventory_empty_title">Inventario por preparar</string>
-    <string name="inventory_empty_message">Pulsa Registrar productos y escanea un código de barras. Completa el nombre, la cantidad y los precios para guardar tu primer producto.</string>
+    <string name="inventory_empty_message">Pulsa el icono del escáner, arriba a la derecha, y escanea un código de barras. Completa el nombre, la cantidad y los precios para guardar tu primer producto.</string>
     <string name="settings_empty_title">Ajustes de la aplicación</string>
     <string name="settings_empty_message">Aquí podrás configurar moneda, región y preferencias de captura.</string>
 

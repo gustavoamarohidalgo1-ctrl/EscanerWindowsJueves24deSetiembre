@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="manual_product_title">Registrar producto</string>
+    <string name="manual_product_name">Nombre del producto</string>
+    <string name="manual_product_quantity">Cantidad</string>
+    <string name="manual_product_purchase_price">Precio de compra por unidad</string>
+    <string name="manual_product_sale_price">Precio de venta por unidad</string>
+    <string name="manual_product_loading">Preparando el formulario…</string>
+</resources>

@@ -23,6 +23,8 @@ object SalesContract {
 
     enum class NameMatchKind { EXACT, SIMILAR }
 
+    enum class BarcodeSelectionReason { AMBIGUOUS, CATALOG_CHANGED }
+
     enum class WeightEntryMode { AMOUNT, QUANTITY }
 
     enum class WeightSaleFailure { PRODUCT_CHANGED, PRODUCT_UNAVAILABLE, STALE_CART, SAVE_FAILED }
@@ -127,6 +129,8 @@ object SalesContract {
         val unitCode: String,
         val sequence: Long,
         val alreadyInCart: Boolean = false,
+        /** Lectura original cuando el producto se recuperó sin coincidencia exacta. */
+        val recoveredFromBarcode: String? = null,
     )
 
     @Immutable
@@ -151,21 +155,10 @@ object SalesContract {
         val newBarcode: String,
     )
 
-    /** Snapshot exacto mostrado en la segunda confirmación. */
-    @Immutable
-    data class CheckoutReview(
-        val cartId: String,
-        val version: Long,
-        val contentHash: String,
-        val total: Money,
-        /** Nombre canónico capturado junto al carrito para una venta a crédito. */
-        val debtorName: String? = null,
-    )
-
     @Immutable
     data class State(
         val isLoading: Boolean = true,
-        /** Operación exclusiva: alta, retiro, asociación o confirmación de venta. */
+        /** Operación exclusiva: alta, retiro, asociación o registro de venta. */
         val isMutating: Boolean = false,
         val isCheckoutPending: Boolean = false,
         /** Mantiene el lector registrado mientras se guarda la lectura anterior. */
@@ -200,9 +193,13 @@ object SalesContract {
         val productRegistration: ProductRegistrationRequest? = null,
         val productRegisteredWithoutCartAdd: Boolean = false,
         val barcodeSuggestions: List<BarcodeSuggestion> = emptyList(),
+        /** Motivo por el que la lectura necesita confirmar el producto, incluso con una sola opción vendible. */
+        val barcodeSelectionReason: BarcodeSelectionReason? = null,
         /** La asociación se guardó, pero el alta posterior de la línea no se completó. */
         val barcodeAssociatedWithoutCartAdd: Boolean = false,
         val pendingLocations: List<ProductOption> = emptyList(),
+        /** Lectura recuperada cuya identidad se conserva mientras se elige el almacén. */
+        val pendingRecoveredBarcode: String? = null,
         val pendingReplacement: BarcodeReplacement? = null,
         /** El catálogo/stock visible puede estar desactualizado hasta una nueva emisión sana. */
         val catalogLoadFailed: Boolean = false,
@@ -210,7 +207,6 @@ object SalesContract {
         val cartLoadFailed: Boolean = false,
         /** La consulta visible falló; no invalida ni bloquea el carrito ya guardado. */
         val searchFailed: Boolean = false,
-        val checkoutReview: CheckoutReview? = null,
         /** Confirmación explícita; jamás se descartan inputs inválidos solo por pulsar Back. */
         val discardEditsReview: Boolean = false,
         val failure: Failure? = null,
@@ -225,7 +221,7 @@ object SalesContract {
                 pendingBarcodeCount == 0 && !isCheckoutPending &&
                 !catalogLoadFailed && !cartLoadFailed && cartId != null &&
                 pendingLocations.isEmpty() && pendingReplacement == null &&
-                checkoutReview == null && !discardEditsReview
+                !discardEditsReview
 
         val canonicalDebtorName: String?
             get() = runCatching { normalizeDebtorName(debtorNameInput) }.getOrNull()
@@ -233,13 +229,10 @@ object SalesContract {
         val isDebtorNameValid: Boolean
             get() = entryKind == EntryKind.CASH || canonicalDebtorName != null
 
-        val showCheckoutConfirmation: Boolean
-            get() = checkoutReview != null
-
         val canCheckout: Boolean
             get() = weightSaleEditor == null && ((isCheckoutPending && entryStep == EntryStep.SELL && !isLoading &&
                 !isMutating && !isSavingLineEdits && productRegistration == null && !cartLoadFailed && cartId != null &&
-                cartContentHash != null && total != null && checkoutReview == null) ||
+                cartContentHash != null && total != null) ||
                 entryStep == EntryStep.SELL &&
                 !isLoading && !isMutating && !isSavingLineEdits && !hasPendingEdits &&
                 pendingBarcodeCount == 0 &&
@@ -252,7 +245,7 @@ object SalesContract {
                 cartId != null && cartContentHash != null && cartVersion >= 0L && failure == null &&
                 isDebtorNameValid &&
                 !catalogLoadFailed && !cartLoadFailed &&
-                checkoutReview == null && !discardEditsReview)
+                !discardEditsReview)
 
         val canRouteScannerInput: Boolean
             get() = weightSaleEditor == null && entryStep == EntryStep.SELL && mode == EntryMode.SCANNER && !isLoading &&
@@ -263,7 +256,7 @@ object SalesContract {
                 !isSavingLineEdits && !hasPendingEdits &&
                 cartId != null && cartContentHash != null &&
                 !catalogLoadFailed && !cartLoadFailed &&
-                pendingLocations.isEmpty() && pendingReplacement == null && checkoutReview == null &&
+                pendingLocations.isEmpty() && pendingReplacement == null &&
                 !discardEditsReview && when (failure) {
                     null,
                     Failure.INVALID_BARCODE,
@@ -342,8 +335,6 @@ object SalesContract {
         data class QuantityDecremented(val lineId: String) : Action
         data class LineRemoved(val lineId: String) : Action
         data object CheckoutRequested : Action
-        data object CheckoutConfirmed : Action
-        data object CheckoutDismissed : Action
         data object DiscardEditsConfirmed : Action
         data object DiscardEditsDismissed : Action
         data object OpenDebtorsSelected : Action

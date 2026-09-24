@@ -40,8 +40,12 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import javax.inject.Inject
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -55,10 +59,16 @@ class RoomInventoryReadRepository @Inject constructor(
     private val costingService = InventoryCostingService()
 
     override fun observeInventory(businessId: BusinessId): Flow<List<InventoryReadItem>> =
-        database.inventoryDao().observeReadPositions(businessId.value)
-            // Filas idénticas no necesitan repetir conversiones decimales ni agregaciones.
-            .distinctUntilChanged()
-            .map(::mapInventoryItems)
+        flow {
+            // Cada colector mantiene su propia instantánea; nunca se comparte entre pantallas
+            // ni negocios, aunque se recolecte dos veces la misma instancia del Flow.
+            val materializer = InventoryItemsMaterializer()
+            emitAll(
+                database.inventoryDao().observeReadPositions(businessId.value)
+                    .distinctUntilChanged()
+                    .map { rows -> materializer.materialize(rows) },
+            )
+        }
             // Una mutacion de inventario ajena al negocio invalida la tabla completa en Room;
             // suprimir snapshots iguales reduce recomposiciones y trabajo de proyeccion.
             .distinctUntilChanged()
@@ -121,6 +131,56 @@ class RoomInventoryReadRepository @Inject constructor(
         }
 }
 
+private data class MaterializedInventoryItem(
+    val rows: List<InventoryListReadRow>,
+    val item: InventoryReadItem,
+)
+
+/** Reutiliza sólo grupos completamente iguales, incluidos orden, metadatos y decimales crudos. */
+private class InventoryItemsMaterializer {
+    private var previous = emptyMap<String, MaterializedInventoryItem>()
+
+    suspend fun materialize(rows: List<InventoryListReadRow>): List<InventoryReadItem> {
+        val context = currentCoroutineContext()
+        val next = LinkedHashMap<String, MaterializedInventoryItem>(previous.size)
+        val result = ArrayList<InventoryReadItem>(previous.size)
+        var start = 0
+        // observeReadPositions ordena por producto antes de ordenar sus almacenes, por lo que
+        // sus filas son contiguas. No se construye un groupBy adicional para todo el inventario.
+        while (start < rows.size) {
+            context.ensureActive()
+            val productId = rows[start].product.productId
+            var end = start + 1
+            while (end < rows.size && rows[end].product.productId == productId) end++
+            val cached = previous[productId]
+            val unchanged = cached != null && cached.rows.size == end - start &&
+                cached.rows.indices.all { offset -> cached.rows[offset] == rows[start + offset] }
+            val materialized = if (unchanged) {
+                requireNotNull(cached)
+            } else {
+                val positions = ArrayList<InventoryReadPosition>(end - start)
+                val productRows = ArrayList<InventoryListReadRow>(end - start)
+                for (index in start until end) {
+                    val row = rows[index]
+                    productRows += row
+                    row.position?.let { positions += it.toPosition() }
+                }
+                // Se copian únicamente las referencias del grupo cambiado. Guardar subList
+                // retendría la lista completa de emisiones anteriores por un solo producto.
+                MaterializedInventoryItem(productRows, rows[start].product.toListItem(positions))
+            }
+            next[productId] = materialized
+            result += materialized.item
+            start = end
+        }
+        context.ensureActive()
+        // Publicación única: una cancelación o dato inválido no deja una caché parcialmente
+        // actualizada; construir next también retira todos los productos que desaparecieron.
+        previous = next
+        return result
+    }
+}
+
 private data class InventoryItemAccumulator(
     val first: InventoryProductHeaderReadRow,
     val positions: MutableList<InventoryReadPosition> = mutableListOf(),
@@ -136,23 +196,24 @@ private fun mapInventoryItems(rows: List<InventoryListReadRow>): List<InventoryR
         row.position?.let { accumulator.positions += it.toPosition() }
     }
     return grouped.values.map { accumulator ->
-        val first = accumulator.first
-        InventoryReadItem(
-            productId = parseProductId(first.productId),
-            businessId = parseBusinessId(first.businessId),
-            productName = first.productName,
-            sku = first.sku,
-            unitCode = first.unitCode,
-            unitSymbol = first.unitSymbol,
-            positions = accumulator.positions,
-            alerts = buildSet {
-                if (first.productStatus != CatalogStatus.ACTIVE.name) {
-                    add(InventoryDataAlert.ARCHIVED_PRODUCT)
-                }
-            },
-        )
+        accumulator.first.toListItem(accumulator.positions)
     }
 }
+
+private fun InventoryProductHeaderReadRow.toListItem(
+    positions: List<InventoryReadPosition>,
+): InventoryReadItem = InventoryReadItem(
+    productId = parseProductId(productId),
+    businessId = parseBusinessId(businessId),
+    productName = productName,
+    sku = sku,
+    unitCode = unitCode,
+    unitSymbol = unitSymbol,
+    positions = positions,
+    alerts = buildSet {
+        if (productStatus != CatalogStatus.ACTIVE.name) add(InventoryDataAlert.ARCHIVED_PRODUCT)
+    },
+)
 
 private fun InventoryProductHeaderReadRow.toItem(
     positions: List<InventoryPositionReadRow>,

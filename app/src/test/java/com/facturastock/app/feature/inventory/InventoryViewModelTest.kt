@@ -190,6 +190,49 @@ class InventoryViewModelTest {
         }
 
     @Test
+    fun `a business switch discards an uncommitted renamed index and searches only current names`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            activate()
+            inventoryReads.replaceInventory(BUSINESS_ID, listOf(sugar(), rice()))
+            val heldDefault = HeldInventoryDispatcher(dispatchers.default)
+            val provider = object : DispatcherProvider by dispatchers {
+                override val default: CoroutineDispatcher = heldDefault
+            }
+            val viewModel = createViewModel(dispatcherProvider = provider)
+            runCurrent()
+            viewModel.onAction(InventoryContract.Action.SearchChanged("café"))
+            runCurrent()
+            heldDefault.hold = true
+
+            inventoryReads.replaceInventory(BUSINESS_ID,
+                listOf(sugar().copy(productName = "Café cancelado"), rice()))
+            runCurrent()
+            heldDefault.releaseNext()
+            runCurrent() // Nombre normalizado en el candidato; su filtro todavía no se publica.
+
+            val nextBusiness = BusinessId.from(uuid(902))
+            val currentProduct = sugar().copy(businessId = nextBusiness, productName = "CAFÉ actual")
+            inventoryReads.replaceInventory(nextBusiness, listOf(currentProduct))
+            configuration.completeOnboarding(nextBusiness,
+                AppConfiguration.DEFAULT_TAX_RATE, AppConfiguration.DEFAULT_COST_POLICY)
+            runCurrent()
+            heldDefault.releaseAll()
+            runCurrent()
+
+            assertEquals(listOf(currentProduct), viewModel.uiState.value.allItems)
+            assertEquals(listOf(currentProduct), viewModel.uiState.value.items)
+            assertEquals(listOf(SUGAR_ID), viewModel.searchFor("actual"))
+            assertEquals(emptyList<ProductId>(), viewModel.searchFor("cancelado"))
+            assertEquals(emptyList<ProductId>(), viewModel.searchFor("arroz"))
+
+            val renamed = currentProduct.copy(productName = "Piña reciente")
+            inventoryReads.replaceInventory(nextBusiness, listOf(renamed))
+            runCurrent()
+            assertEquals(listOf(SUGAR_ID), viewModel.searchFor("PINA"))
+            assertEquals(emptyList<ProductId>(), viewModel.searchFor("café"))
+        }
+
+    @Test
     fun `a diagnostic finishing after a stock update cannot attach outdated divergence alerts`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             activate()

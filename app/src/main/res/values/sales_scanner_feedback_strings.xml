@@ -9,6 +9,11 @@
     <string name="sales_scanner_feedback_review_edits">Revisa la cantidad o el precio</string>
     <string name="sales_scanner_feedback_review_edits_help">Completa los cambios para seguir escaneando.</string>
     <string name="sales_scanner_feedback_location">Elige un almacén</string>
+    <string name="sales_scanner_feedback_recovered_location_help">Elige un almacén; aún no se agregó.</string>
+    <string name="sales_scanner_feedback_ambiguous">Confirma el producto</string>
+    <string name="sales_scanner_feedback_ambiguous_help">La lectura coincide con otros códigos.</string>
+    <string name="sales_scanner_feedback_catalog_changed">Revisa el producto</string>
+    <string name="sales_scanner_feedback_catalog_changed_help">El catálogo cambió durante la lectura.</string>
     <string name="sales_scanner_feedback_choose_product">Elige el producto correcto</string>
     <string name="sales_scanner_feedback_unknown">Código no encontrado</string>
     <string name="sales_scanner_feedback_replacement">Confirma el código del producto</string>
@@ -20,6 +25,9 @@
     <string name="sales_scanner_feedback_added">Agregado: %1$s</string>
     <string name="sales_scanner_feedback_already_present">Ya está en la venta: %1$s</string>
     <string name="sales_scanner_feedback_quantity">En venta: %1$s %2$s · %3$s</string>
+    <string name="sales_scanner_feedback_recovered">Recuperado: %1$s</string>
+    <string name="sales_scanner_feedback_recovered_present">Ya en venta (recuperado): %1$s</string>
+    <string name="sales_scanner_feedback_recovered_code">Código recuperado: %1$s</string>
     <string name="sales_scanner_feedback_ready">Lector listo</string>
     <string name="sales_scanner_feedback_ready_help">Un escaneo por producto. Ajusta la cantidad en el carrito.</string>
     <string name="sales_scanner_feedback_registration">Registrando producto</string>

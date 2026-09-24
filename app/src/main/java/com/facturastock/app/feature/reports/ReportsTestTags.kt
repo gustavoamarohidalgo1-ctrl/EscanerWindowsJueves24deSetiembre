@@ -28,6 +28,7 @@ object ReportsTestTags {
     const val VOID_IMPACT = "reports_void_impact"
     const val PDF_ACTIONS = "reports_pdf_actions"
     const val OPEN_DEBTORS = "reports_open_debtors"
+    const val DEBTORS_CONTENT = "reports_debtors_content"
     const val PDF_DAILY = "reports_pdf_daily"
     const val PDF_DEBTORS = "reports_pdf_debtors"
     const val PDF_PROGRESS = "reports_pdf_progress"

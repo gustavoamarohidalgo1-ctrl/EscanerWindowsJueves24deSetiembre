@@ -77,7 +77,8 @@ class NavigationContractTest {
                         argument == AppRoutes.EXPECTED_PREPARED_HASH ||
                         argument == AppRoutes.SCAN_RETAKE ||
                         argument == AppRoutes.PREFILL_BARCODE ||
-                        (definition.pattern == AppRoutes.PRODUCTS_PATTERN && argument == AppRoutes.SPECIAL_PRODUCT)
+                        (definition.pattern == AppRoutes.PRODUCTS_PATTERN &&
+                            argument in setOf(AppRoutes.SPECIAL_PRODUCT, AppRoutes.MANUAL_PRODUCT))
                 },
             )
             // El origen especial solo existe en Productos; no transporta datos de stock.
@@ -132,6 +133,11 @@ class NavigationContractTest {
             AppRoutes.editInventoryProduct(productId),
         )
         assertEquals("products?specialProduct=true", AppRoutes.specialProductRegistration())
+        assertEquals("products?manualProduct=true", AppRoutes.manualProductRegistration())
+        assertEquals(
+            listOf(AppRoutes.PRODUCTS_PATTERN),
+            AppRoutes.all.filter { AppRoutes.MANUAL_PRODUCT in it.argumentNames }.map { it.pattern },
+        )
         assertEquals(
             listOf(AppRoutes.PRODUCTS_PATTERN),
             AppRoutes.all.filter { AppRoutes.SPECIAL_PRODUCT in it.argumentNames }.map { it.pattern },

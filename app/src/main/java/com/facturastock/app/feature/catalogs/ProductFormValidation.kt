@@ -26,8 +26,13 @@ internal fun Form.ProductForm.hasValidProductFields(currency: CurrencyCode): Boo
     val unchangedInventoryBarcode = isInventoryOrigin && barcode == original?.barcode.orEmpty()
     if (!unchangedInventoryBarcode && !BarcodeValue.isValidOptional(barcode)) return false
     if (isScannedRegistration && BarcodeValue.parse(barcode) == null) return false
-    if (isSpecialRegistration && (barcode.isNotEmpty() || locationId == null || purchaseUnitId != null || purchaseFactor.isNotEmpty())) return false
-    val requiresOpeningStock = isScannedRegistration || isSpecialRegistration
+    if ((isSpecialRegistration || isManualRegistration) &&
+        (barcode.isNotEmpty() || locationId == null || purchaseUnitId != null || purchaseFactor.isNotEmpty())
+    ) {
+        return false
+    }
+    if (isManualRegistration && sku.isNotEmpty()) return false
+    val requiresOpeningStock = isScannedRegistration || isSpecialRegistration || isManualRegistration
     if (!isInventoryOrigin && (quantity.isNotBlank() || requiresOpeningStock)) {
         val parsed = quantity.productDecimalOrNull() ?: return false
         if (parsed.signum() < 0 || (requiresOpeningStock && parsed.signum() == 0)) return false

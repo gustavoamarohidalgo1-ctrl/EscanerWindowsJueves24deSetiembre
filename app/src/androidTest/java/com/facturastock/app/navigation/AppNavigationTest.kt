@@ -21,7 +21,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.facturastock.app.R
 import com.facturastock.app.core.id.UuidGenerator
-import com.facturastock.app.feature.debtors.DebtorsTestTags
 import com.facturastock.app.feature.inventory.InventoryTestTags
 import com.facturastock.app.feature.sales.SalesTestTags
 import com.facturastock.app.ui.theme.FacturaStockTheme
@@ -41,7 +40,7 @@ class AppNavigationTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun salesDebtorsShortcutOpensExistingListAndBackReturnsToTheSameSalesEntry() {
+    fun salesEntryHasNoDebtorsShortcutAndReturnsFromReportsWithoutDiscardingDrafts() {
         val discarded = mutableListOf<DraftId>()
         lateinit var navController: NavHostController
         var salesEntryId: String? = null
@@ -59,19 +58,18 @@ class AppNavigationTest {
 
         assertRoute(navController, AppRoutes.SALES)
         composeRule.runOnIdle { salesEntryId = navController.currentBackStackEntry?.id }
-        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertIsDisplayed().performClick()
-        composeRule.waitForIdle()
-        assertRoute(navController, AppRoutes.DEBTORS)
-        composeRule.onNodeWithTag(DebtorsTestTags.LIST_SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertDoesNotExist()
+        clickNavigation(R.string.navigation_reports)
+        assertRoute(navController, AppRoutes.REPORTS)
         composeRule.runOnIdle {
             assertEquals(salesEntryId, navController.previousBackStackEntry?.id)
             assertTrue(discarded.isEmpty())
         }
 
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
-        composeRule.waitForIdle()
+        clickNavigation(R.string.navigation_sales)
         assertRoute(navController, AppRoutes.SALES)
-        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertDoesNotExist()
+        composeRule.onNodeWithTag(SalesTestTags.ENTRY_KIND_SCREEN).assertIsDisplayed()
         composeRule.runOnIdle {
             assertEquals(salesEntryId, navController.currentBackStackEntry?.id)
             assertEquals(null, navController.previousBackStackEntry)

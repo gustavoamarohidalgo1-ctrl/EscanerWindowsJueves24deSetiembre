@@ -37,9 +37,11 @@ internal class ReportPdfRenderer {
             val page = ReportPages(document, prepared, context)
             try {
                 page.introduction()
+                // Orden del PDF diario: primero las ventas del día y después todo lo de deudores
+                // (cobros del día y saldos pendientes).
                 if (prepared.kind == ReportPdfKind.DAILY_SALES_WITH_DEBTORS) {
-                    page.debtPayments()
                     page.sales()
+                    page.debtPayments()
                 }
                 page.debtors()
                 page.finish()

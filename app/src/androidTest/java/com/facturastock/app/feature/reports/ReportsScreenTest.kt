@@ -1,5 +1,6 @@
 package com.facturastock.app.feature.reports
 
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +39,6 @@ import com.facturastock.app.domain.model.DebtPaymentReportItem
 import com.facturastock.app.domain.model.ExactMonetaryAmount
 import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.Quantity
-import com.facturastock.app.domain.model.ReportPdfKind
 import com.facturastock.app.domain.model.RealizedProfitIssue
 import com.facturastock.app.domain.model.RealizedSaleLineProfit
 import com.facturastock.app.domain.model.RealizedSaleProfit
@@ -481,7 +481,7 @@ class ReportsScreenTest {
     }
 
     @Test
-    fun reportActionsClearlyExportTodayEvenWhenMonthIsSelectedAndNavigateToDebtors() {
+    fun debtorsTabSitsBesidePeriodsAndPdfCardOnlyAppearsWithNotices() {
         val actions = mutableListOf<ReportsContract.Action>()
         composeRule.setContent {
             FacturaStockTheme {
@@ -491,34 +491,52 @@ class ReportsScreenTest {
                 )
             }
         }
+        composeRule.onNodeWithTag(ReportsTestTags.PDF_ACTIONS).assertDoesNotExist()
+        composeRule.onNode(
+            hasTestTag(ReportsTestTags.OPEN_DEBTORS) and hasAnyAncestor(hasTestTag(ReportsTestTags.PERIOD_SELECTOR)),
+        ).assertIsDisplayed()
+        // Sin contenido integrado, la pestaña conserva la navegación a la pantalla de deudores.
         composeRule.onNodeWithTag(ReportsTestTags.OPEN_DEBTORS)
-            .assertIsDisplayed().assertIsEnabled().assertHeightIsAtLeast(48.dp).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.reports_pdf_daily_help))
-            .performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag(ReportsTestTags.PDF_DAILY)
-            .performScrollTo().assertIsDisplayed().assertIsEnabled().assertHeightIsAtLeast(48.dp).performClick()
-        composeRule.onNodeWithTag(ReportsTestTags.PDF_DEBTORS)
-            .performScrollTo().assertIsDisplayed().assertIsEnabled().assertHeightIsAtLeast(48.dp).performClick()
-        assertEquals(listOf(
-            ReportsContract.Action.OpenDebtors,
-            ReportsContract.Action.ExportPdfRequested(ReportPdfKind.DAILY_SALES_WITH_DEBTORS),
-            ReportsContract.Action.ExportPdfRequested(ReportPdfKind.DEBTORS),
-        ), actions)
+            .assertIsEnabled().assertHeightIsAtLeast(48.dp).performClick()
+        assertEquals(listOf<ReportsContract.Action>(ReportsContract.Action.OpenDebtors), actions)
     }
 
     @Test
-    fun exportActionsAreDisabledWithoutBusinessAndDuringEveryExportStage() {
+    fun debtorsTabShowsEmbeddedDebtorsAndPeriodTabReturnsToReport() {
+        val actions = mutableListOf<ReportsContract.Action>()
+        var showingDebtors by mutableStateOf(false)
+        composeRule.setContent {
+            FacturaStockTheme {
+                ReportsScreen(
+                    state = ReportsContract.State(isLoading = false, report = report()),
+                    onAction = actions::add,
+                    showingDebtors = showingDebtors,
+                    onShowingDebtorsChange = { showingDebtors = it },
+                    debtorsContent = { modifier -> Text("lista de deudores", modifier) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag(ReportsTestTags.OPEN_DEBTORS).performClick()
+        composeRule.onNodeWithTag(ReportsTestTags.DEBTORS_CONTENT).assertIsDisplayed()
+        composeRule.onNodeWithText("lista de deudores").assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportsTestTags.HERO).assertDoesNotExist()
+        assertTrue(actions.isEmpty())
+
+        composeRule.onNodeWithTag(ReportsTestTags.PERIOD_WEEK).performClick()
+        composeRule.onNodeWithTag(ReportsTestTags.DEBTORS_CONTENT).assertDoesNotExist()
+        assertEquals(listOf<ReportsContract.Action>(ReportsContract.Action.PeriodSelected(SalesReportPeriod.WEEK)), actions)
+    }
+
+    @Test
+    fun debtorsTabIsDisabledWithoutBusinessAndProgressShowsDuringEveryExportStage() {
         var state by mutableStateOf(ReportsContract.State(isLoading = false, report = report().copy(businessId = null)))
         composeRule.setContent {
             FacturaStockTheme { ReportsScreen(state, {}) }
         }
         composeRule.onNodeWithTag(ReportsTestTags.OPEN_DEBTORS).assertIsNotEnabled()
-        composeRule.onNodeWithTag(ReportsTestTags.PDF_DAILY).assertIsNotEnabled()
-        composeRule.onNodeWithTag(ReportsTestTags.PDF_DEBTORS).assertIsNotEnabled()
         for (stage in listOf(ReportsContract.PdfStage.PREPARING, ReportsContract.PdfStage.CHOOSING_DESTINATION, ReportsContract.PdfStage.WRITING)) {
             composeRule.runOnIdle { state = state.copy(report = report(), pdfStage = stage) }
-            composeRule.onNodeWithTag(ReportsTestTags.PDF_DAILY).assertIsNotEnabled()
-            composeRule.onNodeWithTag(ReportsTestTags.PDF_DEBTORS).assertIsNotEnabled()
+            assertTrue(!state.canExportPdf)
             composeRule.onNodeWithTag(ReportsTestTags.PDF_PROGRESS).performScrollTo().assertIsDisplayed()
         }
     }
@@ -555,13 +573,13 @@ class ReportsScreenTest {
                 }
             }
         }
-        composeRule.onNodeWithTag(ReportsTestTags.PDF_DAILY).performScrollTo().assertIsDisplayed().performClick()
-        composeRule.onNodeWithTag(ReportsTestTags.PDF_DEBTORS).performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithTag(ReportsTestTags.PDF_ERROR).performScrollTo().assertIsDisplayed()
             .assertTextContains(context.getString(R.string.reports_pdf_destination_partial))
+        composeRule.onNodeWithTag(ReportsTestTags.OPEN_DEBTORS).performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(context.getString(R.string.reports_pdf_dismiss_notice)).performScrollTo().performClick()
         assertEquals(listOf(
-            ReportsContract.Action.ExportPdfRequested(ReportPdfKind.DAILY_SALES_WITH_DEBTORS),
-            ReportsContract.Action.ExportPdfRequested(ReportPdfKind.DEBTORS),
+            ReportsContract.Action.OpenDebtors,
+            ReportsContract.Action.PdfNoticeDismissed,
         ), actions)
     }
 

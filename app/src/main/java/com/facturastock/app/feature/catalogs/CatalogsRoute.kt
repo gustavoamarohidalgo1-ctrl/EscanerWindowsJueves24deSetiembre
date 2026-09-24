@@ -95,10 +95,12 @@ fun CatalogsRoute(
     viewModel: CatalogsViewModel = hiltViewModel(),
     onProductSaved: (CatalogsContract.Effect.ProductSaved) -> Unit = { onBack() },
     isSalesRegistration: Boolean = false,
+    isManualRegistration: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    BackHandler(enabled = isSalesRegistration || state.isSpecialEntryPending ||
-        (state.form as? Form.ProductForm)?.isSpecialRegistration == true) {
+    BackHandler(enabled = isSalesRegistration || isManualRegistration || state.isSpecialEntryPending ||
+        state.isManualEntryPending || state.manualEntryFailure != null ||
+        (state.form as? Form.ProductForm)?.let { it.isSpecialRegistration || it.isManualRegistration } == true) {
         if (!state.isSaving) viewModel.onAction(Action.CloseForm)
     }
     CollectUiEffects(viewModel.effects) { effect ->
@@ -111,6 +113,7 @@ fun CatalogsRoute(
         state = state,
         onAction = viewModel::onAction,
         modifier = modifier,
+        isManualRegistration = isManualRegistration,
     )
 }
 
@@ -119,7 +122,14 @@ fun CatalogsScreen(
     state: State,
     onAction: (Action) -> Unit,
     modifier: Modifier = Modifier,
+    isManualRegistration: Boolean = false,
 ) {
+    if (isManualRegistration || state.isManualEntryPending || state.manualEntryFailure != null ||
+        (state.form as? Form.ProductForm)?.isManualRegistration == true
+    ) {
+        ManualProductRegistrationScreen(state, onAction, modifier)
+        return
+    }
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             CatalogTabs(state.section, onAction)
@@ -211,6 +221,124 @@ fun CatalogsScreen(
             onDismiss = { onAction(Action.DismissRucChecksumWarning) },
         )
     }
+}
+
+@Composable
+private fun ManualProductRegistrationScreen(
+    state: State,
+    onAction: (Action) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = FacturaStockDesign.spacing
+    val title = stringResource(R.string.manual_product_title)
+    val form = (state.form as? Form.ProductForm)?.takeIf { it.isManualRegistration }
+    val isPreparing = state.isManualEntryPending || state.manualEntryFailure != null || form == null
+    val failure = state.manualEntryFailure ?: state.failure
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .suppressScannerTrailingKeys()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(spacing.md)
+            .semantics {
+                paneTitle = title
+                isTraversalGroup = true
+            }
+            .testTag(CatalogsTestTags.FORM),
+        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        ManualProductFormFields(
+            state = state,
+            form = form ?: Form.ProductForm(isManualRegistration = true),
+            enabled = !isPreparing,
+            onAction = onAction,
+        )
+        if (isPreparing && failure == null) {
+            LoadingState(message = stringResource(R.string.manual_product_loading))
+        }
+        failure?.let {
+            StatusCard(
+                statusLabel = stringResource(R.string.catalog_form_error_status),
+                title = stringResource(R.string.catalog_form_error_title),
+                message = stringResource(it.messageRes()),
+                tone = StatusTone.ERROR,
+                iconRes = R.drawable.ic_warning,
+            )
+            if (isPreparing || failure == Failure.LOAD_FAILED || failure == Failure.NO_ACTIVE_BUSINESS) {
+                FacturaStockPrimaryButton(
+                    text = stringResource(R.string.action_retry),
+                    onClick = { onAction(Action.Retry) },
+                    enabled = !state.isSaving,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        FacturaStockPrimaryButton(
+            text = stringResource(if (state.isSaving) R.string.action_saving else R.string.action_save),
+            onClick = { onAction(Action.SaveForm) },
+            enabled = !isPreparing && !state.isSaving && form?.hasRequiredFields(state) == true &&
+                failure != Failure.LOAD_FAILED && failure != Failure.NO_ACTIVE_BUSINESS,
+            modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.SAVE_FORM),
+        )
+        FacturaStockSecondaryButton(
+            text = stringResource(R.string.action_cancel),
+            onClick = { onAction(Action.CloseForm) },
+            enabled = !state.isSaving,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun ManualProductFormFields(
+    state: State,
+    form: Form.ProductForm,
+    enabled: Boolean,
+    onAction: (Action) -> Unit,
+) {
+    FormTextField(
+        value = form.title,
+        labelRes = R.string.manual_product_name,
+        required = true,
+        showRequiredError = state.failure == Failure.INVALID_FIELDS,
+        enabled = enabled && !state.isSaving,
+        modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_NAME),
+    ) { onAction(Action.ProductNameChanged(it)) }
+    ProductDecimalField(
+        value = form.quantity,
+        labelRes = R.string.manual_product_quantity,
+        required = true,
+        state = state,
+        enabled = enabled,
+        testTag = CatalogsTestTags.PRODUCT_QUANTITY,
+        onValueChange = { onAction(Action.ProductQuantityChanged(it)) },
+    )
+    ProductDecimalField(
+        value = form.purchasePrice,
+        labelRes = R.string.manual_product_purchase_price,
+        required = true,
+        state = state,
+        enabled = enabled,
+        currency = (form.inventoryCurrency ?: state.currency).value,
+        testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
+        onValueChange = { onAction(Action.ProductPurchasePriceChanged(it)) },
+    )
+    ProductDecimalField(
+        value = form.salePrice,
+        labelRes = R.string.manual_product_sale_price,
+        required = true,
+        state = state,
+        enabled = enabled,
+        currency = (form.saleCurrency ?: state.currency).value,
+        testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
+        onValueChange = { onAction(Action.ProductPriceChanged(it)) },
+    )
 }
 
 @Composable
@@ -1375,6 +1503,7 @@ private fun Row.subtitle(): Pair<Int, String>? = when (this) {
 @StringRes
 private fun Form.titleRes(): Int = when (this) {
     is Form.ProductForm -> when {
+        isManualRegistration -> R.string.manual_product_title
         isSpecialRegistration -> R.string.catalog_special_product_title
         isEditing -> R.string.catalog_edit_product
         else -> R.string.catalog_create_product

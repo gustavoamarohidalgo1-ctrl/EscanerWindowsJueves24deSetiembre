@@ -61,6 +61,84 @@ class BarcodeSuggestionsScreenTest {
     }
 
     @Test
+    fun singleSellableSuggestionExplainsThatUnavailableCodesCanStillCompete() {
+        val state = suggestionState()
+        render(
+            state.copy(
+                barcodeSuggestions = state.barcodeSuggestions.take(1),
+                barcodeSelectionReason = SalesContract.BarcodeSelectionReason.AMBIGUOUS,
+            ),
+        )
+
+        scrollToText(
+            "La lectura coincide con varios códigos del catálogo, incluidos productos agotados o archivados. " +
+                "Aquí aparecen las opciones disponibles para vender. Comprueba el producto y su código antes de agregarlo.",
+        )
+        scrollToTag(SalesTestTags.barcodeSuggestionAdd(PRODUCT_ID.value, LOCATION_ID.value))
+        composeRule.onNodeWithTag(SalesTestTags.barcodeSuggestionAdd(PRODUCT_ID.value, LOCATION_ID.value)).assertIsEnabled()
+    }
+
+    @Test
+    fun changedCatalogExplainsThePendingReadEvenWithoutSuggestions() {
+        render(
+            suggestionState().copy(
+                barcodeSuggestions = emptyList(),
+                barcodeSelectionReason = SalesContract.BarcodeSelectionReason.CATALOG_CHANGED,
+            ),
+        )
+
+        scrollToText(
+            "El catálogo cambió durante la lectura. Comprueba el producto y su código antes de agregarlo, o vuelve a escanear.",
+        )
+    }
+
+    @Test
+    fun exactRegisteredCandidateIsNotDescribedAsMissingDigits() {
+        val state = suggestionState()
+        val exact =
+            state.barcodeSuggestions.first().copy(
+                product =
+                    state.barcodeSuggestions
+                        .first()
+                        .product
+                        .copy(barcode = SCANNED_BARCODE),
+                missingDigits = 0,
+            )
+        render(
+            state.copy(
+                barcodeSuggestions = listOf(exact) + state.barcodeSuggestions.drop(1),
+                barcodeSelectionReason = SalesContract.BarcodeSelectionReason.AMBIGUOUS,
+            ),
+        )
+
+        scrollToText("Código guardado: $SCANNED_BARCODE")
+        scrollToText("Código exacto registrado")
+        composeRule.onNodeWithText("0 dígitos de diferencia").assertDoesNotExist()
+    }
+
+    @Test
+    fun recoveredWarehouseSelectionShowsProductAndSavedCodeBeforeChoosing() {
+        val actions = mutableListOf<SalesContract.Action>()
+        val first = suggestionState().barcodeSuggestions.first().product
+        val second = first.copy(locationId = SECOND_LOCATION_ID, locationName = "Almacén")
+        render(
+            suggestionState().copy(
+                pendingAssociationBarcode = null,
+                barcodeSuggestions = emptyList(),
+                pendingLocations = listOf(first, second),
+                pendingRecoveredBarcode = SCANNED_BARCODE,
+            ),
+            actions,
+        )
+
+        scrollToText("Café tostado")
+        scrollToText("Código guardado: 01234567890")
+        scrollToText("Tienda · 8 NIU disponibles")
+        composeRule.onNodeWithText("Tienda · 8 NIU disponibles").performClick()
+        assertEquals(SalesContract.Action.LocationSelected(PRODUCT_ID, LOCATION_ID), actions.last())
+    }
+
+    @Test
     fun choosingSuggestionAddsWithTheReadCodeSnapshotWithoutSelectingAnAssociation() {
         val actions = mutableListOf<SalesContract.Action>()
         render(suggestionState(), actions)

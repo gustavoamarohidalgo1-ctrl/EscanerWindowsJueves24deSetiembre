@@ -2,6 +2,9 @@
 <resources>
     <string name="sales_barcode_suggestions_title">Códigos parecidos</string>
     <string name="sales_barcode_suggestions_help">Compara el producto y su código antes de agregarlo. El código guardado se conserva.</string>
+    <string name="sales_barcode_suggestions_ambiguous_help">La lectura coincide con varios códigos del catálogo, incluidos productos agotados o archivados. Aquí aparecen las opciones disponibles para vender. Comprueba el producto y su código antes de agregarlo.</string>
+    <string name="sales_barcode_suggestions_catalog_changed_help">El catálogo cambió durante la lectura. Comprueba el producto y su código antes de agregarlo, o vuelve a escanear.</string>
+    <string name="sales_barcode_suggestions_exact_code">Código exacto registrado</string>
     <string name="sales_barcode_suggestions_saved_code">Código guardado: %1$s</string>
     <plurals name="sales_barcode_suggestions_missing_digits">
         <item quantity="one">%1$d dígito de diferencia</item>

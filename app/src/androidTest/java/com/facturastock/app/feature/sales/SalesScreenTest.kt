@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -46,7 +47,7 @@ class SalesScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun initialSelectorOffersDebtorsAlongsideCashAndCreditWithoutChangingSaleKind() {
+    fun initialSelectorOffersCashAndCreditWithoutDebtorsShortcut() {
         val actions = mutableListOf<SalesContract.Action>()
         composeRule.setContent {
             FacturaStockTheme {
@@ -56,15 +57,12 @@ class SalesScreenTest {
 
         composeRule.onNodeWithTag(SalesTestTags.CASH_ENTRY).assertIsDisplayed()
         composeRule.onNodeWithTag(SalesTestTags.CREDIT_ENTRY).assertIsDisplayed()
-        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS)
-            .assertIsDisplayed()
-            .assertIsEnabled()
-            .performClick()
-        assertEquals(listOf(SalesContract.Action.OpenDebtorsSelected), actions)
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertDoesNotExist()
+        assertTrue(actions.isEmpty())
     }
 
     @Test
-    fun debtorsShortcutIsUnavailableDuringMutationAndOutsideTheInitialSelector() {
+    fun debtorsShortcutStaysAbsentDuringMutationAndOutsideTheInitialSelector() {
         var state by mutableStateOf(SalesContract.State(isLoading = false, isMutating = true))
         var allowEntryKindSelection by mutableStateOf(true)
         val actions = mutableListOf<SalesContract.Action>()
@@ -78,7 +76,7 @@ class SalesScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertIsNotEnabled()
+        composeRule.onNodeWithTag(SalesTestTags.OPEN_DEBTORS).assertDoesNotExist()
         composeRule.runOnIdle {
             state = state.copy(isMutating = false, entryStep = SalesContract.EntryStep.SELL)
         }
@@ -419,31 +417,43 @@ class SalesScreenTest {
     }
 
     @Test
-    fun creditConfirmationNamesTheDebtorAndAmount() {
-        val total = Money.ofMinor(350, PEN)
+    fun creditRegistersDirectlyAndDisablesTheActionWhileSaving() {
+        val actions = mutableListOf<SalesContract.Action>()
+        var state by mutableStateOf(
+            checkoutReadyState().copy(
+                entryKind = SalesContract.EntryKind.CREDIT,
+                debtorNameInput = "María Quispe",
+            ),
+        )
         composeRule.setContent {
             FacturaStockTheme {
                 SalesScreen(
-                    state = checkoutReadyState().copy(
-                        entryKind = SalesContract.EntryKind.CREDIT,
-                        debtorNameInput = "María Quispe",
-                        checkoutReview = SalesContract.CheckoutReview(
-                            cartId = "00000000-0000-4000-8000-0000000000d1",
-                            version = 0L,
-                            contentHash = "a".repeat(64),
-                            total = total,
-                            debtorName = "María Quispe",
-                        ),
-                    ),
-                    onAction = {},
+                    state = state,
+                    onAction = { action ->
+                        actions += action
+                        if (action == SalesContract.Action.CheckoutRequested) {
+                            state = state.copy(isMutating = true)
+                        }
+                    },
                 )
             }
         }
 
-        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertIsDisplayed()
-        composeRule.onNodeWithText("María Quispe deberá", substring = true)
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("Registrar deuda").assertIsDisplayed()
+        composeRule.onNodeWithTag(SalesTestTags.DEBTOR_NAME).assert(hasText("María Quispe"))
+        composeRule.onNodeWithTag(SalesTestTags.SCREEN)
+            .performScrollToNode(hasTestTag(SalesTestTags.CHECKOUT))
+        composeRule.onAllNodesWithTag(SalesTestTags.CHECKOUT).assertCountEquals(1)
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT)
+            .assert(hasText("Registrar deuda"))
+            .assertIsEnabled()
+            .performClick()
+
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT)
+            .assertIsNotEnabled()
+            .performClick()
+        assertEquals(1, actions.count { it == SalesContract.Action.CheckoutRequested })
     }
 
     @Test
@@ -622,7 +632,7 @@ class SalesScreenTest {
     }
 
     @Test
-    fun checkoutRequiresAPricedLineAndSecondConfirmation() {
+    fun checkoutRequiresAPricedLineAndSubmitsOnceWithoutAConfirmationDialog() {
         val actions = mutableListOf<SalesContract.Action>()
         val pending = line(price = "", total = null)
         var state by mutableStateOf(
@@ -636,36 +646,37 @@ class SalesScreenTest {
             FacturaStockTheme {
                 SalesScreen(
                     state = state,
-                    onAction = actions::add,
+                    onAction = { action ->
+                        actions += action
+                        if (action == SalesContract.Action.CheckoutRequested) {
+                            state = state.copy(isMutating = true)
+                        }
+                    },
                 )
             }
         }
-        composeRule
-            .onNodeWithTag(SalesTestTags.SCREEN)
+        composeRule.onNodeWithTag(SalesTestTags.SCREEN)
             .performScrollToNode(hasTestTag(SalesTestTags.CHECKOUT))
-        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT).assertIsNotEnabled()
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT)
+            .assertIsNotEnabled()
+            .performClick()
+        assertEquals(0, actions.count { it == SalesContract.Action.CheckoutRequested })
 
-        val total = Money.ofMinor(350, PEN)
-        composeRule.runOnIdle {
-            state = SalesContract.State(
-                entryStep = SalesContract.EntryStep.SELL,
-                isLoading = false,
-                cartId = "00000000-0000-4000-8000-0000000000d1",
-                cartContentHash = "a".repeat(64),
-                cartLines = listOf(line(price = "3.50", total = total)),
-                total = total,
-                checkoutReview = SalesContract.CheckoutReview(
-                    cartId = "00000000-0000-4000-8000-0000000000d1",
-                    version = 0L,
-                    contentHash = "a".repeat(64),
-                    total = total,
-                ),
-            )
-        }
+        composeRule.runOnIdle { state = checkoutReadyState() }
+        composeRule.onNodeWithTag(SalesTestTags.SCREEN)
+            .performScrollToNode(hasTestTag(SalesTestTags.CHECKOUT))
+        composeRule.onAllNodesWithTag(SalesTestTags.CHECKOUT).assertCountEquals(1)
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT)
+            .assert(hasText("Concluir venta"))
+            .assertIsEnabled()
+            .performClick()
 
-        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT_DIALOG).assertIsDisplayed()
-        composeRule.onNodeWithText("Confirmar y concluir venta").performClick()
-        assertTrue(actions.contains(SalesContract.Action.CheckoutConfirmed))
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onNodeWithTag(SalesTestTags.CHECKOUT)
+            .assertIsNotEnabled()
+            .performClick()
+        assertEquals(1, actions.count { it == SalesContract.Action.CheckoutRequested })
     }
 
     @Test
