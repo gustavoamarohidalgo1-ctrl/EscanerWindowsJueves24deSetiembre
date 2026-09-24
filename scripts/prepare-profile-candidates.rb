@@ -12,7 +12,7 @@ APP_OWNER = /\A[HSP]*Lcom\/facturastock\/app\//
 APP_CLASS = /\A[HSP]*Lcom\/facturastock\/app\/[^;]+;\z/
 RESIDUAL_METHOD = /;->[a-z]\(/
 RESIDUAL_TYPE = /L[a-z]{1,2}\/[A-Za-z0-9_$-]{1,4};/
-VARIANT_MANGLED_METHOD = /\$[^;()]*_(?:local|cloud)(?:Debug|Release|Benchmark|Profile)\b/
+VARIANT_MANGLED_METHOD = /\$[^;()]*_local(?:Debug|Release|Benchmark|Profile)\b/
 REQUIRED_MANUAL_CUJS = [
   "HPLcom/facturastock/app/domain/normalization/**->**(**)**",
   "Lcom/facturastock/app/domain/normalization/**;",

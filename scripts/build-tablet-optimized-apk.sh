@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compila localRelease (R8, no depurable, perfil de arranque) y lo firma con la clave debug local
 # para actualizar en sitio una tablet que hoy ejecuta localDebug SIN perder datos: mismo paquete,
-# misma firma y mismo versionCode. Nunca se distribuye; la release real firma con FACTURASTOCK_SIGNING_*.
+# misma firma y mismo versionCode. Nunca se distribuye: es el único artefacto instalable de la tienda.
 #
 # Uso: scripts/build-tablet-optimized-apk.sh
 # Salida: app/build/outputs/tablet/app-local-release-debugsigned.apk

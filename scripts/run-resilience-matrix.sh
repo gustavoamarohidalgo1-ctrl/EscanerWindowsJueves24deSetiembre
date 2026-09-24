@@ -3,12 +3,11 @@ set -euo pipefail
 
 usage() {
     printf '%s\n' \
-        "Uso: $0 <jvm|android|firebase|all> [directorio-evidencia-nuevo]" \
+        "Uso: $0 <jvm|android|all> [directorio-evidencia-nuevo]" \
         "" \
         "jvm      Puertos deterministas: red, 429/5xx, reloj, replay, duplicados y dos outboxes." \
         "android  Checkpoints Room/archivos, rollback, leases y ENOSPC inyectado (requiere AVD)." \
-        "firebase Idempotencia y dos teléfonos lógicos contra Firebase Emulator Suite." \
-        "all      Ejecuta las tres capas en ese orden."
+        "all      Ejecuta las dos capas en ese orden."
 }
 
 fail() {
@@ -18,7 +17,7 @@ fail() {
 
 mode="${1:-}"
 case "$mode" in
-    jvm|android|firebase|all) ;;
+    jvm|android|all) ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
 esac
@@ -70,13 +69,6 @@ run_jvm_local() {
         --tests com.facturastock.app.data.local.codec.InvoiceOcrPageCodecTest
 }
 
-run_jvm_cloud() {
-    cd "$repository_root"
-    ./gradlew --offline --no-daemon --max-workers=1 \
-        :app:testCloudDebugUnitTest \
-        --tests com.facturastock.app.data.sync.FunctionsErrorMapperTest
-}
-
 run_android() {
     local adb_command="${ADB_BIN:-adb}"
     command -v "$adb_command" >/dev/null 2>&1 || fail "adb no está disponible"
@@ -92,6 +84,9 @@ run_android() {
     fi
     "$adb_command" -s "$selected_serial" get-state 2>/dev/null | grep -qx device ||
         fail "el dispositivo $selected_serial no está conectado/autorizado"
+    # connectedAndroidTest desinstala la app al terminar: en la tablet borraría los datos reales.
+    [[ "$selected_serial" == emulator-* ]] ||
+        fail "usa un emulador: connectedAndroidTest desinstala la app y borraría los datos del negocio"
 
     cd "$repository_root"
     ANDROID_SERIAL="$selected_serial" ./gradlew --offline --no-daemon --max-workers=1 \
@@ -99,32 +94,16 @@ run_android() {
         -Pandroid.testInstrumentationRunnerArguments.class=com.facturastock.app.data.repository.OfflineRoomRestartRepositoryTest,com.facturastock.app.data.repository.CapturedPageAtomicRestartTest,com.facturastock.app.data.repository.InvoiceOcrSnapshotRepositoryTest,com.facturastock.app.data.repository.PreparedPurchaseRepositoryTest,com.facturastock.app.data.local.PurchasePostingDaoTest#validBatchCommitsCompletePostedGraphAndLinksPreparedDraft,com.facturastock.app.data.local.PurchasePostingDaoTest#draftCommitFailureRollsBackTheCompletePostingGraph,com.facturastock.app.data.local.PurchasePostingDaoTest#duplicateOutboxKeyRollsBackLatePostingAndKeepsPriorPendingOperation,com.facturastock.app.data.local.dao.OutboxOperationDaoTest,com.facturastock.app.data.local.StorageErrorTranslationTest,com.facturastock.app.data.sync.PurchaseBackupSyncWorkerTest#storageFullWhileReadingTheBackupGateRetriesBeforeTouchingTheQueue,com.facturastock.app.data.sync.PurchaseBackupSyncWorkerTest#storageFullWhilePinningTenantRetriesBeforeClaimOrNetwork,com.facturastock.app.data.files.RetainedImageCipherTest#tamperedCiphertextFailsAuthenticationAndReturnsNull,com.facturastock.app.data.files.RetainedImageCipherTest#malformedEnvelopeIsCorruptAndEncryptDoesNotOverwriteIt,com.facturastock.app.data.files.LocalRetainedImageStoreTest#displayReadDistinguishesAbsentFromCorruptSoOnlyAbsenceCanUseCloud
 }
 
-run_firebase() {
-    [[ -x "$repository_root/functions/node_modules/.bin/firebase" ]] ||
-        fail "faltan dependencias bloqueadas; ejecuta npm ci dentro de functions"
-    cd "$repository_root/functions"
-    npx firebase emulators:exec \
-        --project demo-facturastock \
-        --only auth,firestore,functions,storage \
-        "node --test --test-concurrency=1 test/postPurchase.test.mjs test/syncPull.test.mjs"
-}
-
 case "$mode" in
     jvm)
         run_gate jvm-local run_jvm_local
-        run_gate jvm-cloud run_jvm_cloud
         ;;
     android)
         run_gate android-checkpoints run_android
         ;;
-    firebase)
-        run_gate firebase-idempotency run_firebase
-        ;;
     all)
         run_gate jvm-local run_jvm_local
-        run_gate jvm-cloud run_jvm_cloud
         run_gate android-checkpoints run_android
-        run_gate firebase-idempotency run_firebase
         ;;
 esac
 

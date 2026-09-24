@@ -5,15 +5,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      release_version_code:
-        description: "versionCode creciente verificado contra Play; vacío omite signed-release"
-        required: false
-        type: string
-      release_version_name:
-        description: "versionName del candidato; vacío omite signed-release"
-        required: false
-        type: string
   schedule:
     # GitHub schedules use UTC: 07:17 is 02:17 in America/Lima.
     - cron: "17 7 * * 1-5"
@@ -22,8 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Un despacho de release tiene grupo propio: un push posterior no puede cancelar una firma en curso.
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'continuous' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,12 +43,9 @@ jobs:
           bash -n scripts/*.sh
           bash scripts/run-actionlint.sh
           ruby scripts/test-prepare-ci-artifacts.rb
-          ruby scripts/test-release-apk-runtime-smoke.rb
           ruby scripts/test-release-contracts.rb
-          ruby scripts/test-release-policies.rb
           bash scripts/test-resolve-spotless-base.sh
           ruby scripts/test-summarize-macrobenchmark.rb
-          ruby scripts/verify-play-assets.rb
       - name: Resolve the event-specific Spotless baseline
         id: spotless_base
         env:
@@ -75,7 +62,7 @@ jobs:
       # without committing the matching versioned schema.
       - name: Generate Room schemas
         id: room_schema_generate
-        run: ./gradlew --no-daemon :app:kspLocalDebugKotlin :app:kspCloudDebugKotlin
+        run: ./gradlew --no-daemon :app:kspLocalDebugKotlin
       - name: Enforce append-only Room schema history
         id: room_schema_history
         env:
@@ -90,9 +77,7 @@ jobs:
         run: >-
           ./gradlew --no-daemon
           :app:testLocalDebugUnitTest
-          :app:testCloudDebugUnitTest
           :app:lintLocalDebug
-          :app:lintCloudDebug
           :app:koverVerifyLocalDebug
 
       - name: Create closed quality evidence
@@ -139,11 +124,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: functions/package-lock.json
 
       # The scanner uses git ls-files in CI and a deterministic find fallback locally.
       - name: Reject committed credentials and private keys
@@ -151,20 +131,6 @@ jobs:
         run: |
           mkdir -p security-results
           ruby scripts/scan-repository-secrets.rb 2>&1 | tee security-results/secret-scan.txt
-      - name: Install the locked Functions dependency tree
-        id: npm_install
-        working-directory: functions
-        run: npm ci --ignore-scripts
-      - name: Audit the locked Functions dependency tree
-        id: npm_audit
-        working-directory: functions
-        run: |
-          set +e
-          npm audit --audit-level=high --json > ../security-results/npm-audit.json
-          audit_status=$?
-          set -e
-          node -e 'const r=require("../security-results/npm-audit.json"); console.log("npm audit:", JSON.stringify(r.metadata?.vulnerabilities ?? {}))'
-          exit "$audit_status"
       - name: Review dependency changes in pull requests
         id: dependency_review
         if: ${{ always() && github.event_name == 'pull_request' }}
@@ -188,17 +154,13 @@ jobs:
         if: always()
         env:
           SECRET_SCAN_OUTCOME: ${{ steps.secret_scan.outcome }}
-          NPM_INSTALL_OUTCOME: ${{ steps.npm_install.outcome }}
-          NPM_AUDIT_OUTCOME: ${{ steps.npm_audit.outcome }}
           DEPENDENCY_REVIEW_OUTCOME: ${{ steps.dependency_review.outcome }}
         run: |
           mkdir -p ci-summaries/security
-          printf 'gate,status\nsecret_scan,%s\nnpm_install,%s\nnpm_audit,%s\ndependency_review,%s\n' \
-            "$SECRET_SCAN_OUTCOME" "$NPM_INSTALL_OUTCOME" "$NPM_AUDIT_OUTCOME" \
-            "$DEPENDENCY_REVIEW_OUTCOME" > ci-summaries/security/gates.csv
+          printf 'gate,status\nsecret_scan,%s\ndependency_review,%s\n' \
+            "$SECRET_SCAN_OUTCOME" "$DEPENDENCY_REVIEW_OUTCOME" > ci-summaries/security/gates.csv
           ruby scripts/summarize-security-results.rb \
             ci-summaries/security/dependencies.csv \
-            security-results/npm-audit.json \
             security-results/dependency-review.json
 
       - name: Sanitize security evidence
@@ -239,121 +201,6 @@ jobs:
           cache-provider: basic
           dependency-graph: generate-and-submit
           dependency-graph-continue-on-failure: false
-
-  firebase-emulator:
-    name: Firebase Emulator rules and Functions
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: functions/package-lock.json
-      - name: Install locked emulator dependencies
-        working-directory: functions
-        run: npm ci
-      - name: Test Auth, Firestore/Storage rules, and Functions
-        id: firebase_tests
-        working-directory: functions
-        run: >-
-          npx firebase emulators:exec
-          --project demo-facturastock
-          --only auth,firestore,functions,storage
-          "node --test --test-concurrency=1 --test-reporter=junit test/*.test.mjs > firebase-junit.xml"
-
-      - name: Create closed Firebase evidence
-        if: always()
-        env:
-          FIREBASE_TESTS_OUTCOME: ${{ steps.firebase_tests.outcome }}
-        run: |
-          mkdir -p ci-summaries/firebase
-          printf 'gate,status\nfirebase_emulator,%s\n' "$FIREBASE_TESTS_OUTCOME" \
-            > ci-summaries/firebase/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/firebase/junit.csv \
-            functions/firebase-junit.xml
-
-      - name: Sanitize Firebase evidence
-        id: stage_firebase
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/firebase
-          ci-summaries/firebase
-      - name: Upload sanitized Firebase evidence
-        if: ${{ always() && steps.stage_firebase.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: firebase-emulator-${{ github.run_attempt }}
-          path: ci-artifacts/firebase/
-          retention-days: 14
-          if-no-files-found: error
-
-  firebase-spark-emulator:
-    name: Firebase Spark direct-write rules
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: functions/package-lock.json
-      - name: Install locked emulator dependencies
-        working-directory: functions
-        run: npm ci
-      - name: Test Spark Auth and Firestore rules
-        id: spark_tests
-        working-directory: functions
-        run: >-
-          npx firebase emulators:exec
-          --config ../firebase.spark.json
-          --project demo-facturastock-spark
-          --only auth,firestore
-          "FACTURASTOCK_SPARK_RULES_TEST=1 node --test --test-concurrency=1 --test-reporter=junit test/sparkSecurityRules.test.mjs > firebase-junit.xml"
-
-      - name: Create closed Spark evidence
-        if: always()
-        env:
-          SPARK_TESTS_OUTCOME: ${{ steps.spark_tests.outcome }}
-        run: |
-          mkdir -p ci-summaries/firebase-spark
-          printf 'gate,status\nfirebase_spark_emulator,%s\n' "$SPARK_TESTS_OUTCOME" \
-            > ci-summaries/firebase-spark/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/firebase-spark/junit.csv \
-            functions/firebase-junit.xml
-
-      - name: Sanitize Spark evidence
-        id: stage_spark
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/firebase-spark
-          ci-summaries/firebase-spark
-      - name: Upload sanitized Spark evidence
-        if: ${{ always() && steps.stage_spark.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: firebase-spark-emulator-${{ github.run_attempt }}
-          path: ci-artifacts/firebase-spark/
-          retention-days: 14
-          if-no-files-found: error
 
   room-migrations:
     name: Room migration and persistence instrumentation
@@ -417,7 +264,7 @@ jobs:
           if-no-files-found: error
 
   android-ui-e2e:
-    name: Compose, cloud runtime, navigation, and 38-line E2E
+    name: Compose, navigation, and 38-line E2E
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -453,28 +300,13 @@ jobs:
             ./gradlew --no-daemon :app:connectedLocalDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notPackage=com.facturastock.app.data
 
-      - name: Run cloud Firebase runtime and consent smoke
-        id: cloud_runtime_smoke
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: 35
-          arch: x86_64
-          disable-animations: true
-          emulator-options: >-
-            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: >-
-            ./gradlew --no-daemon :app:connectedCloudDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.facturastock.app.data.reporting.CloudFirebaseRuntimeSmokeTest
-
       - name: Create closed Compose and E2E evidence
         if: always()
         env:
           UI_E2E_OUTCOME: ${{ steps.ui_e2e_tests.outcome }}
-          CLOUD_SMOKE_OUTCOME: ${{ steps.cloud_runtime_smoke.outcome }}
         run: |
           mkdir -p ci-summaries/android-ui-e2e
-          printf 'gate,status\nandroid_ui_e2e,%s\ncloud_runtime_smoke,%s\n' \
-            "$UI_E2E_OUTCOME" "$CLOUD_SMOKE_OUTCOME" \
+          printf 'gate,status\nandroid_ui_e2e,%s\n' "$UI_E2E_OUTCOME" \
             > ci-summaries/android-ui-e2e/gates.csv
           ruby scripts/summarize-junit.rb \
             ci-summaries/android-ui-e2e/junit.csv \
@@ -493,83 +325,6 @@ jobs:
         with:
           name: android-ui-e2e-${{ github.run_attempt }}
           path: ci-artifacts/android-ui-e2e/
-          retention-days: 14
-          if-no-files-found: error
-
-  android-firebase-e2e:
-    name: Android purchase saga against Firebase Emulator Suite
-    needs:
-      - quality
-      - firebase-emulator
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: functions/package-lock.json
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Install locked Emulator Suite dependencies
-        working-directory: functions
-        run: npm ci
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Run Android registration, purchase, outbox, pull, void, and expiry saga
-        id: android_firebase_saga
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: 35
-          arch: x86_64
-          disable-animations: true
-          emulator-options: >-
-            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: >-
-            cd functions &&
-            npx firebase emulators:exec
-            --project demo-facturastock
-            --only auth,firestore,functions,storage
-            "cd .. && ./gradlew --no-daemon :app:connectedCloudDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.facturastock.app.data.sync.CloudPurchaseSagaE2ETest"
-
-      - name: Create closed Android-Firebase evidence
-        if: always()
-        env:
-          ANDROID_FIREBASE_OUTCOME: ${{ steps.android_firebase_saga.outcome }}
-        run: |
-          mkdir -p ci-summaries/android-firebase-e2e
-          printf 'gate,status\nandroid_firebase_purchase_saga,%s\n' "$ANDROID_FIREBASE_OUTCOME" \
-            > ci-summaries/android-firebase-e2e/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/android-firebase-e2e/junit.csv \
-            app/build/outputs/androidTest-results/connected
-      - name: Sanitize Android-Firebase evidence
-        id: stage_android_firebase
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/android-firebase-e2e
-          ci-summaries/android-firebase-e2e
-      - name: Upload sanitized Android-Firebase evidence
-        if: ${{ always() && steps.stage_android_firebase.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-firebase-e2e-${{ github.run_attempt }}
-          path: ci-artifacts/android-firebase-e2e/
           retention-days: 14
           if-no-files-found: error
 
@@ -658,8 +413,6 @@ jobs:
         include:
           - backend: local
             variant-prefix: Local
-          - backend: cloud
-            variant-prefix: Cloud
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -753,11 +506,8 @@ jobs:
     needs:
       - quality
       - security
-      - firebase-emulator
-      - firebase-spark-emulator
       - room-migrations
       - android-ui-e2e
-      - android-firebase-e2e
       - android-sdk-smoke
       - android-performance
     runs-on: ubuntu-latest
@@ -775,28 +525,21 @@ jobs:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      # No signing or Firebase secrets are exposed to pull requests. These AABs validate only.
-      - name: Build both flavors and packaging modes
+      # No signing secrets exist: these unsigned artifacts validate packaging only.
+      - name: Build all packaging modes
         id: validation_build
         run: >-
           ./gradlew --no-daemon
           :app:assembleLocalDebug
-          :app:assembleCloudDebug
           :app:assembleLocalRelease
-          :app:assembleCloudRelease
           :app:assembleLocalProfile
-          :app:assembleCloudProfile
           :benchmark:assembleLocalProfile
-          :benchmark:assembleCloudProfile
           :app:bundleLocalRelease
-          :app:bundleCloudRelease
           :app:verifyLocalReleaseBundleOptimization
-          :app:verifyCloudReleaseBundleOptimization
-      - name: Require both unsigned validation bundles
+      - name: Require the unsigned validation bundle
         id: validation_outputs
         run: |
           test -s app/build/outputs/bundle/localRelease/app-local-release.aab
-          test -s app/build/outputs/bundle/cloudRelease/app-cloud-release.aab
 
       - name: Create closed package validation evidence
         if: always()
@@ -827,208 +570,3 @@ jobs:
           retention-days: 14
           compression-level: 0
           if-no-files-found: error
-
-  signed-release:
-    name: Signed cloud release and provenance
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main' &&
-      inputs.release_version_code != '' &&
-      inputs.release_version_name != ''
-    needs:
-      - quality
-      - security
-      - firebase-emulator
-      - firebase-spark-emulator
-      - room-migrations
-      - android-ui-e2e
-      - android-firebase-e2e
-      - android-sdk-smoke
-      - android-performance
-      - package-validation
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    environment: android-production
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-      artifact-metadata: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-
-      - name: Enforce monotonic version and forward-only Room schema
-        id: forward_only
-        env:
-          FACTURASTOCK_VERSION_CODE: ${{ inputs.release_version_code }}
-          FACTURASTOCK_MAX_DISTRIBUTED_VERSION_CODE: ${{ vars.FACTURASTOCK_MAX_DISTRIBUTED_VERSION_CODE }}
-          FACTURASTOCK_MAX_DISTRIBUTED_ROOM_SCHEMA: ${{ vars.FACTURASTOCK_MAX_DISTRIBUTED_ROOM_SCHEMA }}
-        run: >-
-          bash scripts/verify-release-forward-only.sh
-          app/schemas/com.facturastock.app.data.local.FacturaStockDatabase
-          ci-summaries/signed-release/forward-only.csv
-
-      - name: Validate registered upload certificate anchor
-        id: validate_release_anchor
-        env:
-          FACTURASTOCK_EXPECTED_UPLOAD_CERT_SHA256: ${{ vars.FACTURASTOCK_UPLOAD_CERT_SHA256 }}
-        run: |
-          normalized_fingerprint="$(
-            printf '%s' "$FACTURASTOCK_EXPECTED_UPLOAD_CERT_SHA256" |
-              tr -d '[:space:]:' |
-              tr '[:lower:]' '[:upper:]'
-          )"
-          [[ "$normalized_fingerprint" =~ ^[0-9A-F]{64}$ ]] || {
-            echo "ERROR: falta la huella SHA-256 pública de la clave de carga" >&2
-            exit 1
-          }
-      - name: Prepare pinned standalone bundletool
-        id: prepare_bundletool
-        run: >-
-          bash scripts/prepare-bundletool.sh
-          "$RUNNER_TEMP/bundletool-all-1.18.3.jar"
-
-      - name: Validate protected secrets and temporary keystore
-        id: prepare_signing
-        env:
-          FACTURASTOCK_SIGNING_KEYSTORE_BASE64: ${{ secrets.FACTURASTOCK_SIGNING_KEYSTORE_BASE64 }}
-          FACTURASTOCK_SIGNING_STORE_PASSWORD: ${{ secrets.FACTURASTOCK_SIGNING_STORE_PASSWORD }}
-          FACTURASTOCK_SIGNING_KEY_ALIAS: ${{ secrets.FACTURASTOCK_SIGNING_KEY_ALIAS }}
-          FACTURASTOCK_SIGNING_KEY_PASSWORD: ${{ secrets.FACTURASTOCK_SIGNING_KEY_PASSWORD }}
-          FACTURASTOCK_FIREBASE_PROJECT_ID: ${{ secrets.FACTURASTOCK_FIREBASE_PROJECT_ID }}
-          FACTURASTOCK_FIREBASE_APPLICATION_ID: ${{ secrets.FACTURASTOCK_FIREBASE_APPLICATION_ID }}
-          FACTURASTOCK_FIREBASE_API_KEY: ${{ secrets.FACTURASTOCK_FIREBASE_API_KEY }}
-          FACTURASTOCK_FIREBASE_STORAGE_BUCKET: ${{ secrets.FACTURASTOCK_FIREBASE_STORAGE_BUCKET }}
-          FACTURASTOCK_PRIVACY_POLICY_URL: ${{ vars.FACTURASTOCK_PRIVACY_POLICY_URL }}
-        run: bash scripts/prepare-release-signing.sh "$RUNNER_TEMP/facturastock-release.jks"
-      - name: Build signed cloud AAB and derive its universal APK
-        id: signed_build
-        env:
-          BUNDLETOOL_PATH: ${{ steps.prepare_bundletool.outputs.bundletool_path }}
-          FACTURASTOCK_SIGNING_STORE_FILE: ${{ steps.prepare_signing.outputs.keystore_path }}
-          FACTURASTOCK_SIGNING_STORE_PASSWORD: ${{ secrets.FACTURASTOCK_SIGNING_STORE_PASSWORD }}
-          FACTURASTOCK_SIGNING_KEY_ALIAS: ${{ secrets.FACTURASTOCK_SIGNING_KEY_ALIAS }}
-          FACTURASTOCK_SIGNING_KEY_PASSWORD: ${{ secrets.FACTURASTOCK_SIGNING_KEY_PASSWORD }}
-          FACTURASTOCK_FIREBASE_PROJECT_ID: ${{ secrets.FACTURASTOCK_FIREBASE_PROJECT_ID }}
-          FACTURASTOCK_FIREBASE_APPLICATION_ID: ${{ secrets.FACTURASTOCK_FIREBASE_APPLICATION_ID }}
-          FACTURASTOCK_FIREBASE_API_KEY: ${{ secrets.FACTURASTOCK_FIREBASE_API_KEY }}
-          FACTURASTOCK_FIREBASE_STORAGE_BUCKET: ${{ secrets.FACTURASTOCK_FIREBASE_STORAGE_BUCKET }}
-          FACTURASTOCK_PRIVACY_POLICY_URL: ${{ vars.FACTURASTOCK_PRIVACY_POLICY_URL }}
-          FACTURASTOCK_VERSION_CODE: ${{ inputs.release_version_code }}
-          FACTURASTOCK_VERSION_NAME: ${{ inputs.release_version_name }}
-        run: |
-          ./gradlew --no-daemon :app:packageCloudProductionRelease
-          bash scripts/build-aab-validation-apk.sh \
-            "$BUNDLETOOL_PATH" \
-            app/build/outputs/bundle/cloudRelease/app-cloud-release.aab \
-            app/build/outputs/apk-from-bundle/cloudRelease/app-cloud-release-universal.apk
-      - name: Remove temporary keystore after deriving the APK
-        id: cleanup_after_build
-        if: always()
-        run: rm -f "$RUNNER_TEMP/facturastock-release.jks"
-      - name: Verify signatures and create checksums
-        id: verify_release
-        env:
-          FACTURASTOCK_EXPECTED_UPLOAD_CERT_SHA256: ${{ vars.FACTURASTOCK_UPLOAD_CERT_SHA256 }}
-          FACTURASTOCK_VERSION_CODE: ${{ inputs.release_version_code }}
-          FACTURASTOCK_VERSION_NAME: ${{ inputs.release_version_name }}
-        run: >-
-          bash scripts/verify-release-artifacts.sh
-          app/build/outputs/bundle/cloudRelease/app-cloud-release.aab
-          app/build/outputs/apk-from-bundle/cloudRelease/app-cloud-release-universal.apk
-          app/build/outputs/release-checksums.sha256
-      - name: Enable KVM acceleration for signed APK smoke
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Install and reopen the exact AAB-derived APK
-        id: signed_runtime_smoke
-        env:
-          FACTURASTOCK_VERSION_CODE: ${{ inputs.release_version_code }}
-          FACTURASTOCK_VERSION_NAME: ${{ inputs.release_version_name }}
-          FACTURASTOCK_EXPECTED_UPLOAD_CERT_SHA256: ${{ vars.FACTURASTOCK_UPLOAD_CERT_SHA256 }}
-          FACTURASTOCK_SMOKE_REQUIRE_EMULATOR: "true"
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: 35
-          arch: x86_64
-          disable-animations: true
-          emulator-options: >-
-            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: >-
-            bash scripts/run-release-apk-runtime-smoke.sh
-            app/build/outputs/apk-from-bundle/cloudRelease/app-cloud-release-universal.apk
-            ci-summaries/signed-release/runtime-smoke
-      - name: Attest AAB and AAB-derived APK provenance
-        id: attest_release
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: |
-            app/build/outputs/bundle/cloudRelease/app-cloud-release.aab
-            app/build/outputs/apk-from-bundle/cloudRelease/app-cloud-release-universal.apk
-
-      - name: Create closed signed-release evidence
-        if: always()
-        env:
-          ANCHOR_OUTCOME: ${{ steps.validate_release_anchor.outcome }}
-          FORWARD_ONLY_OUTCOME: ${{ steps.forward_only.outcome }}
-          BUNDLETOOL_OUTCOME: ${{ steps.prepare_bundletool.outcome }}
-          PREPARE_OUTCOME: ${{ steps.prepare_signing.outcome }}
-          BUILD_OUTCOME: ${{ steps.signed_build.outcome }}
-          CLEANUP_OUTCOME: ${{ steps.cleanup_after_build.outcome }}
-          VERIFY_OUTCOME: ${{ steps.verify_release.outcome }}
-          RUNTIME_SMOKE_OUTCOME: ${{ steps.signed_runtime_smoke.outcome }}
-          ATTEST_OUTCOME: ${{ steps.attest_release.outcome }}
-        run: |
-          mkdir -p ci-summaries/signed-release
-          printf 'gate,status\nupload_certificate_anchor,%s\nforward_only_version_and_schema,%s\nbundletool,%s\nprepare_signing,%s\nsigned_build_and_derived_apk,%s\ncleanup_after_build,%s\nartifact_verification,%s\nexact_apk_runtime_smoke,%s\nattestation,%s\n' \
-            "$ANCHOR_OUTCOME" "$FORWARD_ONLY_OUTCOME" "$BUNDLETOOL_OUTCOME" "$PREPARE_OUTCOME" \
-            "$BUILD_OUTCOME" "$CLEANUP_OUTCOME" "$VERIFY_OUTCOME" "$RUNTIME_SMOKE_OUTCOME" "$ATTEST_OUTCOME" \
-            > ci-summaries/signed-release/gates.csv
-
-      - name: Sanitize publishable artifacts
-        id: stage_release
-        if: always()
-        env:
-          BUILD_OUTCOME: ${{ steps.signed_build.outcome }}
-          FORWARD_ONLY_OUTCOME: ${{ steps.forward_only.outcome }}
-          VERIFY_OUTCOME: ${{ steps.verify_release.outcome }}
-          RUNTIME_SMOKE_OUTCOME: ${{ steps.signed_runtime_smoke.outcome }}
-          ATTEST_OUTCOME: ${{ steps.attest_release.outcome }}
-        run: |
-          sources=(ci-summaries/signed-release)
-          if [[ "$FORWARD_ONLY_OUTCOME" == success && "$BUILD_OUTCOME" == success && \
-                "$VERIFY_OUTCOME" == success && "$RUNTIME_SMOKE_OUTCOME" == success && \
-                "$ATTEST_OUTCOME" == success ]]; then
-            sources+=(
-              app/build/outputs/bundle/cloudRelease/app-cloud-release.aab
-              app/build/outputs/apk-from-bundle/cloudRelease/app-cloud-release-universal.apk
-              app/build/outputs/release-checksums.sha256
-            )
-          fi
-          ruby scripts/prepare-ci-artifacts.rb ci-artifacts/signed-release "${sources[@]}"
-      - name: Upload signed release
-        if: ${{ always() && steps.stage_release.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-signed-release-${{ github.run_attempt }}
-          path: ci-artifacts/signed-release/
-          retention-days: 30
-          compression-level: 0
-          if-no-files-found: error
-      - name: Final cleanup of temporary keystore
-        if: always()
-        run: >-
-          rm -f
-          "$RUNNER_TEMP/facturastock-release.jks"
-          "$RUNNER_TEMP/bundletool-all-1.18.3.jar"

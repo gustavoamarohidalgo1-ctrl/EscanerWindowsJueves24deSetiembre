@@ -97,24 +97,7 @@ begin
   end
   assert(closed_junit.include?("failed,1.250"), "el resumen JUnit omitió estado/duración")
 
-  npm_audit_fixture = File.join(source, "npm-audit.json")
   dependency_fixture = File.join(source, "dependency-review.json")
-  File.write(
-    npm_audit_fixture,
-    JSON.generate(
-      "metadata" => {
-        "vulnerabilities" => {
-          "info" => 0,
-          "low" => 0,
-          "moderate" => 2,
-          "high" => 1,
-          "critical" => 0,
-          "total" => 3,
-        },
-      },
-      "vulnerabilities" => { "private-package-#{synthetic_email}" => {} },
-    ),
-  )
   File.write(
     dependency_fixture,
     JSON.generate([{ "package_url" => "pkg:synthetic/#{synthetic_ruc}" }]),
@@ -124,13 +107,11 @@ begin
     RbConfig.ruby,
     SUMMARIZE_SECURITY_SCRIPT,
     security_summary,
-    npm_audit_fixture,
     dependency_fixture,
     chdir: ROOT,
   )
   assert(security_status.success?, "el resumen de seguridad falló: #{security_stdout}#{security_stderr}")
   closed_security = File.read(security_summary)
-  assert(closed_security.include?("npm_audit,high,1"), "el resumen omitió el conteo npm")
   assert(closed_security.include?("dependency_review,changes,1"),
          "el resumen omitió el conteo de cambios")
   [synthetic_email, synthetic_ruc].each do |raw_value|

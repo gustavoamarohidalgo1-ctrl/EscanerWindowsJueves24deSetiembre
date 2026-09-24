@@ -6,30 +6,14 @@ require "fileutils"
 require "json"
 
 ROOT = File.expand_path("..", __dir__)
-SEVERITIES = %w[info low moderate high critical total].freeze
-
-abort "Uso: #{File.basename($PROGRAM_NAME)} <resumen.csv> <npm-audit.json> [dependency-review.json]" if ARGV.length < 2
+abort "Uso: #{File.basename($PROGRAM_NAME)} <resumen.csv> [dependency-review.json]" if ARGV.empty?
 
 destination = File.expand_path(ARGV.shift, ROOT)
-npm_path = File.expand_path(ARGV.shift, ROOT)
 dependency_review_path = ARGV.empty? ? nil : File.expand_path(ARGV.shift, ROOT)
 abort "El resumen debe quedar dentro del proyecto" unless destination.start_with?("#{ROOT}/")
 
 begin
   rows = []
-  if File.file?(npm_path)
-    npm_report = JSON.parse(File.read(npm_path))
-    vulnerabilities = npm_report.dig("metadata", "vulnerabilities") || {}
-    SEVERITIES.each do |severity|
-      count = Integer(vulnerabilities.fetch(severity, 0))
-      rows << ["npm_audit", severity, count]
-    rescue ArgumentError, TypeError
-      rows << ["npm_audit", severity, 0]
-    end
-  else
-    rows << ["npm_audit", "report_present", 0]
-  end
-
   if dependency_review_path && File.file?(dependency_review_path)
     dependency_report = JSON.parse(File.read(dependency_review_path))
     changes =
