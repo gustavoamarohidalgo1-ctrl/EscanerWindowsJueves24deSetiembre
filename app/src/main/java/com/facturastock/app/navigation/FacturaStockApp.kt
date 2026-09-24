@@ -44,9 +44,6 @@ import com.facturastock.app.domain.model.ReportPdfKind
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.core.id.RandomUuidGenerator
 import com.facturastock.app.core.id.UuidGenerator
-import com.facturastock.app.feature.account.AccountRoute
-import com.facturastock.app.feature.account.invitations.InvitationsRoute
-import com.facturastock.app.feature.account.members.MembersRoute
 import com.facturastock.app.feature.capture.CaptureRoute
 import com.facturastock.app.feature.catalogs.CatalogsRoute
 import com.facturastock.app.feature.common.CollectUiEffects
@@ -80,9 +77,9 @@ import com.facturastock.app.feature.sales.SalesContract
 import com.facturastock.app.feature.sales.SalesRoute
 import com.facturastock.app.feature.sales.SalesScreen
 import com.facturastock.app.feature.sales.SalesTestTags
+import com.facturastock.app.feature.settings.SettingsRoute
 import com.facturastock.app.feature.source.SourceRoute
 import com.facturastock.app.feature.summary.PurchaseSummaryRoute
-import com.facturastock.app.feature.sync.SyncRoute
 import com.facturastock.app.feature.top.TopLevelPlaceholderScreen
 import com.facturastock.app.ui.components.FacturaStockBottomItem
 import com.facturastock.app.ui.components.FacturaStockBottomNavigation
@@ -475,7 +472,26 @@ private fun FacturaStockContent(
                     } else {
                         null
                     },
-                    // Sin engranaje: la pantalla Ajustes se retiró porque el negocio no la usa.
+                    // Ajustes mínimos (perfil del negocio y exportación de datos).
+                    actionIconRes = if (currentDefinition?.topLevel == true) {
+                        R.drawable.ic_settings
+                    } else {
+                        null
+                    },
+                    actionContentDescription = if (currentDefinition?.topLevel == true) {
+                        stringResource(R.string.navigation_open_settings)
+                    } else {
+                        null
+                    },
+                    onActionClick = if (currentDefinition?.topLevel == true) {
+                        {
+                            requestNavigation(
+                                PendingNavigation(AppRoutes.SETTINGS, topLevel = false),
+                            )
+                        }
+                    } else {
+                        null
+                    },
                 )
             },
             bottomBar = {
@@ -1003,61 +1019,13 @@ private fun FacturaStockNavHost(
                 )
             }
         }
-        composable(AppRoutes.ACCOUNT) {
+        composable(AppRoutes.SETTINGS) {
             if (useInjectedViewModels) {
-                AccountRoute(
-                    onOpenMembers = {
-                        navController.navigate(AppRoutes.ACCOUNT_MEMBERS) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenInvitations = {
-                        navController.navigate(AppRoutes.ACCOUNT_INVITATIONS) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onBack = navController::popBackStack,
-                )
+                SettingsRoute()
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.navigation_account,
-                    messageRes = R.string.account_placeholder_message,
-                )
-            }
-        }
-        composable(AppRoutes.ACCOUNT_MEMBERS) {
-            if (useInjectedViewModels) {
-                MembersRoute(
-                    onBack = navController::popBackStack,
-                )
-            } else {
-                TopLevelPlaceholderScreen(
-                    titleRes = R.string.navigation_account_members,
-                    messageRes = R.string.members_placeholder_message,
-                )
-            }
-        }
-        composable(AppRoutes.ACCOUNT_INVITATIONS) {
-            if (useInjectedViewModels) {
-                InvitationsRoute(
-                    onBack = navController::popBackStack,
-                )
-            } else {
-                TopLevelPlaceholderScreen(
-                    titleRes = R.string.navigation_account_invitations,
-                    messageRes = R.string.invitations_placeholder_message,
-                )
-            }
-        }
-        composable(AppRoutes.SYNC) {
-            if (useInjectedViewModels) {
-                SyncRoute(
-                    onBack = navController::popBackStack,
-                )
-            } else {
-                TopLevelPlaceholderScreen(
-                    titleRes = R.string.navigation_sync,
-                    messageRes = R.string.sync_placeholder_message,
+                    titleRes = R.string.settings_empty_title,
+                    messageRes = R.string.settings_empty_message,
                 )
             }
         }

@@ -34,9 +34,6 @@ android {
         create("local") {
             dimension = "backend"
         }
-        create("cloud") {
-            dimension = "backend"
-        }
     }
 
     buildTypes {

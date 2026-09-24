@@ -7,7 +7,7 @@
       Sin permisos de almacenamiento: la galería se abre con el Photo Picker y la imagen
       elegida se copia de inmediato al almacenamiento privado. La cámara es opcional para
       que la app siga instalable en dispositivos sin ella (la galería sigue funcionando).
-      La política de red es del flavor: src/local elimina INTERNET; src/cloud lo declara.
+      Sin red: src/local elimina cualquier permiso INTERNET transitivo.
     -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature

@@ -9,7 +9,6 @@ import com.facturastock.app.domain.model.InventoryReadItem
 import com.facturastock.app.domain.model.ProductInventorySummary
 import com.facturastock.app.domain.model.ProductProfit
 import com.facturastock.app.domain.repository.ProductInventoryRepository
-import com.facturastock.app.domain.repository.DemoInvoiceSource
 import com.facturastock.app.domain.repository.InventoryReadRepository
 import com.facturastock.app.domain.repository.ProductProfitRepository
 import com.facturastock.app.domain.repository.DisabledDocumentBackupLifecycleRepository
@@ -22,12 +21,9 @@ import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.model.id.LineId
 import com.facturastock.app.domain.model.id.PurchaseId
 import com.facturastock.app.domain.usecase.CompleteOnboardingUseCase
-import com.facturastock.app.domain.usecase.BindCloudBusinessLinkUseCase
 import com.facturastock.app.domain.usecase.DeleteDraftUseCase
-import com.facturastock.app.domain.usecase.EnterDemoModeUseCase
 import com.facturastock.app.domain.usecase.ExportUserDataUseCase
 import com.facturastock.app.domain.usecase.EnterManualInvoiceReviewUseCase
-import com.facturastock.app.domain.usecase.ExitDemoModeUseCase
 import com.facturastock.app.domain.usecase.FindDraftFirstImageUseCase
 import com.facturastock.app.domain.usecase.ImportDraftImageUseCase
 import com.facturastock.app.domain.usecase.ImportScannedInvoiceProductsUseCase
@@ -42,43 +38,22 @@ import com.facturastock.app.domain.usecase.ObservePurchaseDetailUseCase
 import com.facturastock.app.domain.usecase.ObservePurchaseHistoryUseCase
 import com.facturastock.app.domain.usecase.LoadRemotePurchaseDocumentUseCase
 import com.facturastock.app.domain.usecase.ReadRetainedImageUseCase
-import com.facturastock.app.domain.usecase.ObservePurchasesUseCase
 import com.facturastock.app.domain.usecase.RetryPurchaseBackupUseCase
-import com.facturastock.app.domain.usecase.RetrySyncOperationUseCase
 import com.facturastock.app.domain.usecase.ObserveHomeDashboardUseCase
 import com.facturastock.app.domain.usecase.ParseInvoiceUseCase
-import com.facturastock.app.domain.usecase.PullRemoteChangesUseCase
-import com.facturastock.app.domain.usecase.ReconcileRemoteLedgerUseCase
-import com.facturastock.app.domain.usecase.RecordReconciliationReviewUseCase
-import com.facturastock.app.domain.usecase.ResolveSyncConflictUseCase
 import com.facturastock.app.domain.usecase.RetryDraftOcrUseCase
 import com.facturastock.app.domain.usecase.RunInvoiceOcrUseCase
-import com.facturastock.app.domain.usecase.RunPrivacyMaintenanceUseCase
 import com.facturastock.app.domain.usecase.RunDraftStageUseCase
 import com.facturastock.app.domain.usecase.AuthorizePurchaseDuplicateOverrideUseCase
 import com.facturastock.app.domain.usecase.ApplyImageRetentionAfterConfirmUseCase
 import com.facturastock.app.domain.usecase.ApplyImageRetentionAfterOcrUseCase
 import com.facturastock.app.domain.usecase.CheckPurchaseDuplicateUseCase
 import com.facturastock.app.domain.usecase.ConfirmPurchaseUseCase
-import com.facturastock.app.domain.usecase.StartDemoInvoiceScenarioUseCase
 import com.facturastock.app.domain.usecase.StartInvoiceDraftUseCase
 import com.facturastock.app.domain.usecase.UpdateBusinessProfileUseCase
-import com.facturastock.app.domain.usecase.UpdateBackupEnabledUseCase
-import com.facturastock.app.domain.usecase.UpdateBiometricLockEnabledUseCase
-import com.facturastock.app.domain.usecase.UpdateDiagnosticsConsentUseCase
-import com.facturastock.app.domain.usecase.UpdateDocumentBackupEnabledUseCase
-import com.facturastock.app.domain.usecase.UpdateImageRetentionPolicyUseCase
 import com.facturastock.app.domain.usecase.UpdateTaxConfigurationUseCase
 import com.facturastock.app.domain.usecase.UpdateProductSalePriceUseCase
 import com.facturastock.app.domain.usecase.WriteUserDataExportUseCase
-import com.facturastock.app.testing.FakeCloudBusinessBindingRepository
-import com.facturastock.app.domain.observability.DisabledProductionObservability
-import com.facturastock.app.feature.account.AccountContract
-import com.facturastock.app.feature.account.AccountViewModel
-import com.facturastock.app.feature.account.invitations.InvitationsContract
-import com.facturastock.app.feature.account.invitations.InvitationsViewModel
-import com.facturastock.app.feature.account.members.MembersContract
-import com.facturastock.app.feature.account.members.MembersViewModel
 import com.facturastock.app.feature.capture.CaptureContract
 import com.facturastock.app.feature.capture.CaptureViewModel
 import com.facturastock.app.feature.catalogs.CatalogsContract
@@ -102,14 +77,9 @@ import com.facturastock.app.feature.root.AppGateViewModel
 import com.facturastock.app.feature.root.GateState
 import com.facturastock.app.feature.settings.SettingsContract
 import com.facturastock.app.feature.settings.SettingsViewModel
-import com.facturastock.app.feature.sync.SyncContract
-import com.facturastock.app.feature.sync.SyncViewModel
 import com.facturastock.app.testing.ControlledDraftWorkflowRepository
 import com.facturastock.app.testing.ControlledPurchasePostingRepository
-import com.facturastock.app.testing.FakeAccountRepository
 import com.facturastock.app.testing.FakeAppConfigurationRepository
-import com.facturastock.app.testing.FakeAuditTrailRepository
-import com.facturastock.app.testing.FakeBusinessMembershipRepository
 import com.facturastock.app.testing.FakeBusinessRepository
 import com.facturastock.app.testing.FakeHomeDashboardReadRepository
 import com.facturastock.app.testing.FakeDraftFileStore
@@ -127,18 +97,13 @@ import com.facturastock.app.testing.FakeProductRepository
 import com.facturastock.app.testing.FakePreparedPurchaseRepository
 import com.facturastock.app.testing.FakePurchaseOverrideAuthorizationRepository
 import com.facturastock.app.testing.FakePurchaseReadRepository
-import com.facturastock.app.testing.FakePurchaseBackupOutboxRepository
 import com.facturastock.app.testing.FakePurchaseBackupRepository
 import com.facturastock.app.testing.FakePurchaseBackupScheduler
 import com.facturastock.app.testing.FakePurchaseRepository
-import com.facturastock.app.testing.FakeRemoteLedgerRepository
 import com.facturastock.app.testing.FakeRetainedImageStore
 import com.facturastock.app.testing.FakeRecentDraftReadRepository
-import com.facturastock.app.testing.FakeRetentionFileSweep
 import com.facturastock.app.testing.FakeSupplierRepository
 import com.facturastock.app.testing.FakeSupplierProductAliasRepository
-import com.facturastock.app.testing.FakeSyncCursorRepository
-import com.facturastock.app.testing.FakeSyncReconciliationRepository
 import com.facturastock.app.testing.FakeUnitRepository
 import com.facturastock.app.testing.FakeUserDataExportWriter
 import com.facturastock.app.testing.MainDispatcherRule
@@ -518,7 +483,6 @@ class ViewModelInitialStateTest {
             val dispatchers = TestDispatcherProvider(mainDispatcherRule.dispatcher)
             val businesses = FakeBusinessRepository(clock)
             val appConfig = FakeAppConfigurationRepository()
-            val drafts = FakeInvoiceDraftRepository(clock)
             val suppliers = FakeSupplierRepository(clock)
             val products = FakeProductRepository(clock)
             val units = FakeUnitRepository(clock)
@@ -526,45 +490,12 @@ class ViewModelInitialStateTest {
             val aliases = FakeSupplierProductAliasRepository(clock)
             val inventoryReads = FakeInventoryReadRepository()
             val purchaseReads = FakePurchaseReadRepository()
-            val uuidGenerator = UuidGenerator { UUID.randomUUID() }
             val viewModel = SettingsViewModel(
                 SavedStateHandle(),
                 ObserveAppConfigurationUseCase(appConfig),
                 businesses,
                 UpdateBusinessProfileUseCase(businesses),
                 UpdateTaxConfigurationUseCase(appConfig),
-                EnterDemoModeUseCase(
-                    businessRepository = businesses,
-                    supplierRepository = suppliers,
-                    unitRepository = units,
-                    inventoryLocationRepository = locations,
-                    productRepository = products,
-                    appConfigurationRepository = appConfig,
-                    uuidGenerator = uuidGenerator,
-                    appClock = clock,
-                ),
-                ExitDemoModeUseCase(appConfig, businesses),
-                StartDemoInvoiceScenarioUseCase(
-                    appConfigurationRepository = appConfig,
-                    invoiceDraftRepository = drafts,
-                    demoInvoiceSource = DemoInvoiceSource { byteArrayOf(1) },
-                    importDraftImageUseCase = ImportDraftImageUseCase(
-                        appConfigurationRepository = appConfig,
-                        invoiceDraftRepository = drafts,
-                        draftImageImporter = FakeDraftImageImporter(),
-                        draftFileStore = FakeDraftFileStore(),
-                        uuidGenerator = uuidGenerator,
-                    ),
-                    appClock = clock,
-                ),
-                UpdateDiagnosticsConsentUseCase(
-                    appConfigurationRepository = appConfig,
-                    observability = DisabledProductionObservability,
-                ),
-                UpdateImageRetentionPolicyUseCase(appConfig),
-                UpdateBackupEnabledUseCase(appConfig, FakePurchaseBackupScheduler()),
-                UpdateDocumentBackupEnabledUseCase(appConfig),
-                UpdateBiometricLockEnabledUseCase(appConfig),
                 WriteUserDataExportUseCase(
                     exportUserData = ExportUserDataUseCase(
                         appConfigurationRepository = appConfig,
@@ -579,15 +510,6 @@ class ViewModelInitialStateTest {
                         appClock = clock,
                     ),
                     writer = FakeUserDataExportWriter(),
-                ),
-                RunPrivacyMaintenanceUseCase(
-                    appConfigurationRepository = appConfig,
-                    invoiceDraftRepository = drafts,
-                    purchaseReadRepository = purchaseReads,
-                    retentionFileSweep = FakeRetentionFileSweep(),
-                    draftFileStore = FakeDraftFileStore(),
-                    retainedImageStore = FakeRetainedImageStore(),
-                    appClock = clock,
                 ),
                 dispatchers,
             )
@@ -605,101 +527,6 @@ class ViewModelInitialStateTest {
             )
 
             assertEquals(GateState.Loading, viewModel.uiState.value)
-        }
-
-    @Test
-    fun `AccountViewModel exposes its initial state before observing the session`() =
-        runTest(context = mainDispatcherRule.dispatcher) {
-            val dispatchers = TestDispatcherProvider(mainDispatcherRule.dispatcher)
-            val viewModel = AccountViewModel(
-                SavedStateHandle(),
-                FakeAccountRepository(),
-                FakeBusinessMembershipRepository(),
-                ObserveAppConfigurationUseCase(FakeAppConfigurationRepository()),
-                FakePurchaseBackupScheduler(),
-                BindCloudBusinessLinkUseCase(
-                    FakeCloudBusinessBindingRepository(),
-                    AppClock { NOW },
-                ),
-                dispatchers,
-            )
-
-            // La sesión aún no se conoce: el estado inicial no asume ninguna.
-            assertEquals(AccountContract.State(), viewModel.uiState.value)
-        }
-
-    @Test
-    fun `MembersViewModel exposes its initial state before observing the session`() =
-        runTest(context = mainDispatcherRule.dispatcher) {
-            val dispatchers = TestDispatcherProvider(mainDispatcherRule.dispatcher)
-            val viewModel = MembersViewModel(
-                FakeAccountRepository(),
-                FakeBusinessMembershipRepository(),
-                dispatchers,
-            )
-
-            assertEquals(MembersContract.State(), viewModel.uiState.value)
-        }
-
-    @Test
-    fun `InvitationsViewModel exposes its initial state before loading`() =
-        runTest(context = mainDispatcherRule.dispatcher) {
-            val dispatchers = TestDispatcherProvider(mainDispatcherRule.dispatcher)
-            val viewModel = InvitationsViewModel(
-                FakeAccountRepository(),
-                FakeBusinessMembershipRepository(),
-                ObserveAppConfigurationUseCase(FakeAppConfigurationRepository()),
-                FakePurchaseBackupScheduler(),
-                BindCloudBusinessLinkUseCase(
-                    FakeCloudBusinessBindingRepository(),
-                    AppClock { NOW },
-                ),
-                dispatchers,
-            )
-
-            assertEquals(InvitationsContract.State(), viewModel.uiState.value)
-        }
-
-    @Test
-    fun `SyncViewModel exposes its initial state before observing the session`() =
-        runTest(context = mainDispatcherRule.dispatcher) {
-            val dispatchers = TestDispatcherProvider(mainDispatcherRule.dispatcher)
-            val clock = AppClock { NOW }
-            val configuration = FakeAppConfigurationRepository()
-            val outbox = FakePurchaseBackupOutboxRepository()
-            // El libro remoto no está disponible en el estado inicial (flavor local).
-            val cursors = FakeSyncCursorRepository()
-            val remoteLedger = FakeRemoteLedgerRepository(available = false)
-            val reconciliation = FakeSyncReconciliationRepository()
-            val auditTrail = FakeAuditTrailRepository()
-            val retryBackup = RetryPurchaseBackupUseCase(
-                configuration,
-                FakePurchaseBackupRepository(),
-                FakePurchaseBackupScheduler(),
-            )
-            val retryOperation = RetrySyncOperationUseCase(
-                outbox,
-                FakePurchaseBackupScheduler(),
-                clock,
-            )
-            val viewModel = SyncViewModel(
-                FakeAccountRepository(),
-                ObserveAppConfigurationUseCase(configuration),
-                outbox,
-                cursors,
-                remoteLedger,
-                cursors,
-                ObservePurchasesUseCase(configuration, FakePurchaseReadRepository()),
-                PullRemoteChangesUseCase(remoteLedger, cursors, cursors, clock),
-                ReconcileRemoteLedgerUseCase(cursors, reconciliation, clock),
-                ResolveSyncConflictUseCase(outbox, retryBackup, clock),
-                RecordReconciliationReviewUseCase(auditTrail, UuidGenerator { DRAFT_UUID }, clock),
-                retryOperation,
-                dispatchers,
-            )
-
-            // La sesión aún no se conoce: el estado inicial no asume ninguna.
-            assertEquals(SyncContract.State(), viewModel.uiState.value)
         }
 
     private companion object {

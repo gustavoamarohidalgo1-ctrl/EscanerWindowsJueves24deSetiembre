@@ -49,12 +49,8 @@ object AppRoutes {
     const val PURCHASES = "purchases"
     const val INVENTORY = "inventory"
     const val INVENTORY_REGISTER = "inventory/register"
+    const val SETTINGS = "settings"
     const val ONBOARDING = "onboarding"
-
-    const val ACCOUNT = "account"
-    const val ACCOUNT_MEMBERS = "account/members"
-    const val ACCOUNT_INVITATIONS = "account/invitations"
-    const val SYNC = "sync"
 
     const val NEW_PURCHASE = "purchase/new"
     const val NEW_DEBT = "debtors/new"
@@ -98,11 +94,8 @@ object AppRoutes {
             titleRes = R.string.navigation_products,
         ),
         RouteDefinition(PURCHASES, titleRes = R.string.navigation_purchase_history),
+        RouteDefinition(SETTINGS, titleRes = R.string.navigation_settings),
         RouteDefinition(ONBOARDING, titleRes = R.string.onboarding_title),
-        RouteDefinition(ACCOUNT, titleRes = R.string.navigation_account),
-        RouteDefinition(ACCOUNT_MEMBERS, titleRes = R.string.navigation_account_members),
-        RouteDefinition(ACCOUNT_INVITATIONS, titleRes = R.string.navigation_account_invitations),
-        RouteDefinition(SYNC, titleRes = R.string.navigation_sync),
         RouteDefinition(NEW_PURCHASE, titleRes = R.string.purchase_new_title),
         RouteDefinition(NEW_DEBT, titleRes = R.string.debt_entry_title),
         draftRoute(PURCHASE_SOURCE, R.string.purchase_source_title, REPLACE_ID),

@@ -3,11 +3,9 @@ import com.android.tools.profgen.Apk
 import com.android.tools.profgen.ArtProfile
 import com.android.tools.profgen.ObfuscationMap
 import com.android.tools.profgen.dumpProfile
-import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.w3c.dom.Element
-import java.net.URI
 import java.util.Properties
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
@@ -19,71 +17,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
-    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.kover)
 }
 
-val localProperties =
-    Properties().apply {
-        val file = rootProject.file("local.properties")
-        if (file.isFile) file.inputStream().use(::load)
-    }
-
-fun configuredValue(
-    environmentName: String,
-    localPropertyName: String,
-): String =
-    providers
-        .environmentVariable(environmentName)
-        .orNull
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
-        ?: localProperties.getProperty(localPropertyName, "").trim()
-
-fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-
-fun configuredDebugEmulatorPort(
-    propertyName: String,
-    defaultValue: Int,
-): Int {
-    val raw =
-        providers
-            .gradleProperty(propertyName)
-            .orNull
-            ?.trim()
-            ?.takeIf(String::isNotEmpty) ?: return defaultValue
-    check(Regex("[1-9][0-9]{0,4}").matches(raw)) {
-        "$propertyName debe ser un puerto decimal"
-    }
-    return raw.toInt().also { port ->
-        check(port in 1_024..65_535) { "$propertyName debe estar entre 1024 y 65535" }
-    }
-}
-
-fun validatedOptionalHttpsUrl(
-    rawValue: String,
-    configurationName: String,
-): String {
-    if (rawValue.isBlank()) return ""
-    val uri =
-        runCatching { URI(rawValue) }.getOrElse {
-            error("$configurationName debe ser una URL HTTPS válida")
-        }
-    check(
-        uri.isAbsolute &&
-            uri.scheme.equals("https", ignoreCase = true) &&
-            !uri.host.isNullOrBlank() &&
-            uri.userInfo == null,
-    ) {
-        "$configurationName debe usar HTTPS, incluir host y no contener credenciales"
-    }
-    return uri.toASCIIString()
-}
-
 val definitiveApplicationId = "com.facturastock.app"
-// Se arma en configuración para que el gate de higiene pueda buscar el fixture debug en el DEX
-// release sin incrustar una cadena con forma de credencial en este script.
-val emulatorFirebaseApiKeyMarker = "AI" + "za00000000000000000000000000000000000"
 val requiredTargetSdk = 36
 val configuredCompileSdk =
     libs.versions.compileSdk
@@ -136,55 +73,6 @@ val configuredVersionName =
         normalized
     }
 
-val firebaseProjectId =
-    configuredValue("FACTURASTOCK_FIREBASE_PROJECT_ID", "firebase.projectId")
-val firebaseApplicationId =
-    configuredValue("FACTURASTOCK_FIREBASE_APPLICATION_ID", "firebase.applicationId")
-val firebaseApiKey = configuredValue("FACTURASTOCK_FIREBASE_API_KEY", "firebase.apiKey")
-val firebaseStorageBucket =
-    configuredValue("FACTURASTOCK_FIREBASE_STORAGE_BUCKET", "firebase.storageBucket")
-val privacyPolicyUrl =
-    validatedOptionalHttpsUrl(
-        configuredValue("FACTURASTOCK_PRIVACY_POLICY_URL", "privacy.policyUrl"),
-        "FACTURASTOCK_PRIVACY_POLICY_URL",
-    )
-val debugFirestoreEmulatorPort =
-    configuredDebugEmulatorPort("facturastock.firestoreEmulatorPort", 8_080)
-
-val signingEnvironment =
-    listOf(
-        "FACTURASTOCK_SIGNING_STORE_FILE",
-        "FACTURASTOCK_SIGNING_STORE_PASSWORD",
-        "FACTURASTOCK_SIGNING_KEY_ALIAS",
-        "FACTURASTOCK_SIGNING_KEY_PASSWORD",
-    ).associateWith { name -> providers.environmentVariable(name).orNull.orEmpty() }
-val configuredSigningValues = signingEnvironment.filterValues(String::isNotBlank)
-check(configuredSigningValues.isEmpty() || configuredSigningValues.size == signingEnvironment.size) {
-    "La firma release está incompleta; define las cuatro variables FACTURASTOCK_SIGNING_*"
-}
-val hasCiReleaseSigning = configuredSigningValues.size == signingEnvironment.size
-val releaseSigningStoreFile =
-    if (hasCiReleaseSigning) {
-        rootProject
-            .file(
-                configuredSigningValues
-                    .getValue("FACTURASTOCK_SIGNING_STORE_FILE")
-                    .trim(),
-            ).canonicalFile
-    } else {
-        null
-    }
-
-releaseSigningStoreFile?.let { storeFile ->
-    val repositoryPath = rootProject.projectDir.canonicalFile.toPath()
-    check(!storeFile.toPath().startsWith(repositoryPath)) {
-        "El keystore release debe vivir fuera del repositorio"
-    }
-    check(storeFile.isFile && storeFile.canRead()) {
-        "FACTURASTOCK_SIGNING_STORE_FILE debe apuntar a un archivo externo legible"
-    }
-}
-
 android {
     namespace = definitiveApplicationId
     compileSdk = configuredCompileSdk
@@ -200,94 +88,19 @@ android {
         // Solo la variante profile lo apaga para que la captura termine en Vender sin mezclar
         // mantenimiento post-arranque. Producción y benchmark conservan el comportamiento real.
         buildConfigField("boolean", "RUN_DEFERRED_STARTUP", "true")
-        // Vacío en builds locales/no configurados. El gate de distribución exige una URL HTTPS
-        // explícita para cloudRelease; la UI nunca inventa ni incrusta un destino alternativo.
-        buildConfigField("String", "PRIVACY_POLICY_URL", buildConfigString(""))
     }
 
-    signingConfigs {
-        if (hasCiReleaseSigning) {
-            create("ciRelease") {
-                storeFile = releaseSigningStoreFile
-                storePassword =
-                    configuredSigningValues.getValue(
-                        "FACTURASTOCK_SIGNING_STORE_PASSWORD",
-                    )
-                keyAlias = configuredSigningValues.getValue("FACTURASTOCK_SIGNING_KEY_ALIAS")
-                keyPassword =
-                    configuredSigningValues.getValue(
-                        "FACTURASTOCK_SIGNING_KEY_PASSWORD",
-                    )
-            }
-        }
-    }
-
-    // La política offline-first vive en el flavor `local` (sin INTERNET ni Firebase). El
-    // flavor `cloud` añade el respaldo Firebase opcional detrás del puerto
-    // PurchaseBackupTransport; nunca cambia el flujo local compartido en src/main.
+    // Única variante: offline-first, sin INTERNET ni servicios remotos (src/local).
     flavorDimensions += "backend"
     productFlavors {
         create("local") {
             dimension = "backend"
-        }
-        create("cloud") {
-            dimension = "backend"
-            // Solo cloudRelease hereda esta firma: debug y benchmark la reemplazan con debug.
-            signingConfigs.findByName("ciRelease")?.let { signingConfig = it }
-            // Local lee local.properties; CI inyecta solo variables de entorno en el job de
-            // release protegido. Vacío significa transporte no configurado.
-            buildConfigField(
-                "String",
-                "FIREBASE_PROJECT_ID",
-                buildConfigString(firebaseProjectId),
-            )
-            buildConfigField(
-                "String",
-                "FIREBASE_APPLICATION_ID",
-                buildConfigString(firebaseApplicationId),
-            )
-            buildConfigField(
-                "String",
-                "FIREBASE_API_KEY",
-                buildConfigString(firebaseApiKey),
-            )
-            buildConfigField(
-                "String",
-                "FIREBASE_STORAGE_BUCKET",
-                buildConfigString(firebaseStorageBucket),
-            )
-            buildConfigField(
-                "String",
-                "PRIVACY_POLICY_URL",
-                buildConfigString(privacyPolicyUrl),
-            )
         }
     }
 
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
-            // Permite ejecutar el E2E local cuando 8080 ya pertenece a otro Emulator Suite. El
-            // campo solo existe en variantes debug; CI conserva 8080 salvo override explícito.
-            buildConfigField(
-                "int",
-                "FIRESTORE_EMULATOR_PORT",
-                debugFirestoreEmulatorPort.toString(),
-            )
-            configure<CrashlyticsExtension> {
-                mappingFileUploadEnabled = false
-            }
-        }
-        create("spark") {
-            // APK instalable contra el proyecto Firebase real del plan Spark. Conserva una
-            // firma local reproducible y depurabilidad para poder registrar el token de App
-            // Check, pero su runtime no conecta ningún servicio al Emulator Suite.
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("debug")
-            isDebuggable = true
-            configure<CrashlyticsExtension> {
-                mappingFileUploadEnabled = false
-            }
         }
         getByName("release") {
             isDebuggable = false
@@ -297,9 +110,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            configure<CrashlyticsExtension> {
-                mappingFileUploadEnabled = false
-            }
         }
         create("benchmark") {
             initWith(getByName("release"))
@@ -308,9 +118,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             isDebuggable = false
-            configure<CrashlyticsExtension> {
-                mappingFileUploadEnabled = false
-            }
         }
         create("profile") {
             initWith(getByName("release"))
@@ -322,9 +129,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             buildConfigField("boolean", "RUN_DEFERRED_STARTUP", "false")
-            configure<CrashlyticsExtension> {
-                mappingFileUploadEnabled = false
-            }
         }
     }
 
@@ -342,18 +146,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-}
-
-// `spark` solo tiene sentido con el backend Firebase. Evitar localSpark conserva la frontera
-// offline: el flavor local no compila fuentes ni proveedores Firebase por accidente.
-androidComponents.beforeVariants(
-    androidComponents.selector().withBuildType("spark"),
-) { variantBuilder ->
-    val backendFlavor =
-        variantBuilder.productFlavors
-            .single { (dimension, _) -> dimension == "backend" }
-            .second
-    if (backendFlavor != "cloud") variantBuilder.enable = false
 }
 
 val verifyAndroidVariantMatrix by tasks.registering {
@@ -468,8 +260,6 @@ androidComponents.onVariants { variant ->
     }
 
     if (variant.buildType == "release") {
-        val backendFlavor =
-            variant.productFlavors.single { (dimension, _) -> dimension == "backend" }.second
         val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
         val capitalizedVariantName = variant.name.replaceFirstChar(Char::uppercase)
         val verifyVariantManifest =
@@ -562,60 +352,12 @@ androidComponents.onVariants { variant ->
                         elements("activity").filter {
                             it.androidAttribute("exported") == "true"
                         }
-                    val firebaseAuthCallbacks =
-                        if (backendFlavor == "cloud") {
-                            setOf(
-                                "com.google.firebase.auth.internal.GenericIdpActivity" to "genericidp",
-                                "com.google.firebase.auth.internal.RecaptchaActivity" to "recaptcha",
-                            )
-                        } else {
-                            emptySet()
-                        }
-                    val expectedExportedActivities =
-                        setOf("com.facturastock.app.MainActivity") +
-                            firebaseAuthCallbacks.mapTo(mutableSetOf()) { it.first }
+                    val expectedExportedActivities = setOf("com.facturastock.app.MainActivity")
                     val actualExportedActivities =
                         exportedActivities.mapTo(mutableSetOf()) { it.androidAttribute("name") }
                     check(actualExportedActivities == expectedExportedActivities) {
                         "${variant.name}: actividades exportadas inesperadas " +
                             "(esperadas=$expectedExportedActivities, reales=$actualExportedActivities)"
-                    }
-                    firebaseAuthCallbacks.forEach { (className, expectedScheme) ->
-                        val callback =
-                            exportedActivities.single { it.androidAttribute("name") == className }
-                        val actions =
-                            callback
-                                .getElementsByTagName("action")
-                                .let { nodes ->
-                                    (0 until nodes.length).mapTo(mutableSetOf()) { index ->
-                                        (nodes.item(index) as Element).androidAttribute("name")
-                                    }
-                                }
-                        val categories =
-                            callback
-                                .getElementsByTagName("category")
-                                .let { nodes ->
-                                    (0 until nodes.length).mapTo(mutableSetOf()) { index ->
-                                        (nodes.item(index) as Element).androidAttribute("name")
-                                    }
-                                }
-                        val callbackData = callback.getElementsByTagName("data")
-                        check(
-                            actions == setOf("android.intent.action.VIEW") &&
-                                categories ==
-                                setOf(
-                                    "android.intent.category.DEFAULT",
-                                    "android.intent.category.BROWSABLE",
-                                ) &&
-                                callbackData.length == 1 &&
-                                (callbackData.item(0) as Element).androidAttribute("scheme") ==
-                                expectedScheme &&
-                                (callbackData.item(0) as Element).androidAttribute("host") ==
-                                "firebase.auth",
-                        ) {
-                            "${variant.name}: callback Firebase Auth exportado sin filtro mínimo: " +
-                                className
-                        }
                     }
                     val exportedBackgroundComponents =
                         (elements("service") + elements("receiver")).filter {
@@ -683,41 +425,14 @@ androidComponents.onVariants { variant ->
                         elements("meta-data").associate { element ->
                             element.androidAttribute("name") to element.androidAttribute("value")
                         }
-                    if (backendFlavor == "cloud") {
-                        val providerNames =
-                            elements("provider")
-                                .mapTo(mutableSetOf()) { provider ->
-                                    provider.androidAttribute("name")
-                                }
-                        check(
-                            "com.google.firebase.provider.FirebaseInitProvider" !in providerNames,
-                        ) {
-                            "cloudRelease debe conservar la inicialización Firebase perezosa"
-                        }
-                        check("android.permission.INTERNET" in permissions) {
-                            "cloudRelease debe declarar INTERNET"
-                        }
-                        setOf(
-                            "firebase_analytics_collection_enabled",
-                            "firebase_crashlytics_collection_enabled",
-                            "google_analytics_default_allow_ad_personalization_signals",
-                            "google_analytics_adid_collection_enabled",
-                            "google_analytics_automatic_screen_reporting_enabled",
-                        ).forEach { key ->
-                            check(metadata[key] == "false") {
-                                "cloudRelease: $key debe iniciar en false"
-                            }
-                        }
-                    } else {
-                        check("android.permission.INTERNET" !in permissions) {
-                            "localRelease debe permanecer sin INTERNET"
-                        }
-                        check("firebase_analytics_collection_enabled" !in metadata) {
-                            "localRelease no debe contener Analytics"
-                        }
-                        check("firebase_crashlytics_collection_enabled" !in metadata) {
-                            "localRelease no debe contener Crashlytics"
-                        }
+                    check("android.permission.INTERNET" !in permissions) {
+                        "localRelease debe permanecer sin INTERNET"
+                    }
+                    check("firebase_analytics_collection_enabled" !in metadata) {
+                        "localRelease no debe contener Analytics"
+                    }
+                    check("firebase_crashlytics_collection_enabled" !in metadata) {
+                        "localRelease no debe contener Crashlytics"
                     }
                 }
             }
@@ -733,11 +448,6 @@ verifyAndroidVariantMatrix.configure {
                 "localRelease",
                 "localBenchmark",
                 "localProfile",
-                "cloudDebug",
-                "cloudSpark",
-                "cloudRelease",
-                "cloudBenchmark",
-                "cloudProfile",
             )
         check(configuredVariantApplicationIds.keys == expectedVariants) {
             "Matriz Android inesperada: ${configuredVariantApplicationIds.keys.sorted()}"
@@ -753,10 +463,6 @@ verifyAndroidVariantMatrix.configure {
         check(android.productFlavors.getByName("local").signingConfig == null) {
             "localRelease es solo un artefacto de validación y debe quedar unsigned"
         }
-        val cloudSigning = android.productFlavors.getByName("cloud").signingConfig
-        check(
-            if (hasCiReleaseSigning) cloudSigning?.name == "ciRelease" else cloudSigning == null,
-        ) { "Solo el flavor cloud puede recibir la firma release externa" }
     }
 }
 
@@ -779,11 +485,6 @@ val supportedComposeCompilerReportVariants =
         "localRelease",
         "localBenchmark",
         "localProfile",
-        "cloudDebug",
-        "cloudSpark",
-        "cloudRelease",
-        "cloudBenchmark",
-        "cloudProfile",
     )
 val composeCompilerReportVariant =
     providers
@@ -830,7 +531,7 @@ val prepareComposeCompilerReports by tasks.registering {
 }
 
 tasks.withType<KotlinCompile>().configureEach {
-    if (Regex("^compile(?:Local|Cloud)(?:Debug|Spark|Release|Benchmark|Profile)Kotlin$").matches(name)) {
+    if (Regex("^compileLocal(?:Debug|Release|Benchmark|Profile)Kotlin$").matches(name)) {
         // AGP deriva el nombre de módulo de la variante. Fijarlo en la tarea final evita que los
         // métodos `internal` observados por Profile cambien de firma al consumirlos en Release.
         compilerOptions.moduleName.set("facturastock_app")
@@ -912,14 +613,6 @@ kover {
     }
 }
 
-// AGP creates combined flavor/build-type buckets lazily. Declare them before the dependency
-// block so their providers remain isolated to the matching cloud variant.
-val cloudDebugImplementation by configurations.creating
-val cloudSparkImplementation by configurations.creating
-val cloudReleaseImplementation by configurations.creating
-val cloudBenchmarkImplementation by configurations.creating
-val cloudProfileImplementation by configurations.creating
-
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
@@ -951,23 +644,6 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.androidx.exifinterface)
-
-    // Firebase solo existe en el flavor cloud; verifyOfflineFirstBoundaries lo hace cumplir.
-    // (forma de string: las configuraciones por flavor no generan accessors type-safe)
-    "cloudImplementation"(platform(libs.firebase.bom))
-    "cloudImplementation"(libs.firebase.auth)
-    "cloudImplementation"(libs.firebase.firestore)
-    "cloudImplementation"(libs.firebase.functions)
-    "cloudImplementation"(libs.firebase.storage)
-    "cloudImplementation"(libs.firebase.crashlytics)
-    "cloudImplementation"(libs.firebase.appcheck)
-    cloudDebugImplementation(libs.firebase.appcheck.debug)
-    cloudSparkImplementation(libs.firebase.appcheck.debug)
-    cloudReleaseImplementation(libs.firebase.appcheck.playintegrity)
-    cloudBenchmarkImplementation(libs.firebase.appcheck.playintegrity)
-    cloudProfileImplementation(libs.firebase.appcheck.playintegrity)
-    "cloudImplementation"(libs.firebase.analytics)
-    "cloudImplementation"(libs.coroutines.play.services)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
@@ -1148,7 +824,7 @@ val verifyNoSensitiveLogging by tasks.registering {
     description = "Verifies that production sources never log paths, documents or identifiers."
 
     val mainSourceDirectories =
-        listOf("main", "local", "cloud").flatMap { flavor ->
+        listOf("main", "local").flatMap { flavor ->
             listOf("java", "kotlin").map { sourceKind ->
                 layout.projectDirectory.dir("src/$flavor/$sourceKind")
             }
@@ -1196,7 +872,7 @@ val verifyMobileSecurityBoundaries by tasks.registering {
     description = "Verifies Android storage, URI, cleartext, screenshot, and secret boundaries."
 
     val productionSources =
-        listOf("main", "local", "cloud").map { sourceSet ->
+        listOf("main", "local").map { sourceSet ->
             layout.projectDirectory.dir("src/$sourceSet")
         }
     val mainManifest = layout.projectDirectory.file("src/main/AndroidManifest.xml")
@@ -1377,11 +1053,12 @@ private val offlineFirstSharedConfigurationNames =
         "releaseImplementation",
         "testImplementation",
         "androidTestImplementation",
+        "localImplementation",
     )
 
 // Snapshot dependency declarations during configuration. Reading Task.project from doLast is
 // deprecated, prevents configuration-cache reuse and becomes an error in Gradle 10.
-val firebaseDependenciesOutsideCloudFlavor =
+val firebaseDependencies =
     offlineFirstSharedConfigurationNames
         .mapNotNull(configurations::findByName)
         .flatMap { configuration ->
@@ -1397,7 +1074,7 @@ val verifyOfflineFirstBoundaries by tasks.registering {
     description = "Verifies that UI cannot read the network and that airplane-mode support stays explicit."
 
     val featureSources =
-        listOf("main", "local", "cloud").flatMap { flavor ->
+        listOf("main", "local").flatMap { flavor ->
             listOf("java", "kotlin").map { sourceKind ->
                 layout.projectDirectory.dir("src/$flavor/$sourceKind/com/facturastock/app/feature")
             }
@@ -1458,10 +1135,9 @@ val verifyOfflineFirstBoundaries by tasks.registering {
             violations += "src/local/AndroidManifest.xml: INTERNET debe permanecer eliminado explícitamente"
         }
 
-        // Firebase solo puede entrar al APK del flavor cloud. Se verifica sobre el modelo de
-        // configuraciones: ninguna configuración compartida puede declarar módulos Firebase.
-        firebaseDependenciesOutsideCloudFlavor.forEach { dependency ->
-            violations += "app/build.gradle.kts: Firebase fuera del flavor cloud: $dependency"
+        // La app no tiene backend remoto: ninguna configuración puede declarar módulos Firebase.
+        firebaseDependencies.forEach { dependency ->
+            violations += "app/build.gradle.kts: Firebase no permitido: $dependency"
         }
         val catalogText = versionCatalog.asFile.readText().lowercase()
         listOf("retrofit", "okhttp", "ktor-client")
@@ -1486,219 +1162,12 @@ val verifyOfflineFirstBoundaries by tasks.registering {
     }
 }
 
-val verifyCloudAppCheckBoundaries by tasks.registering {
-    group = "verification"
-    description = "Verifies that debug App Check and emulator config never enter cloud release."
-
-    val cloudReleaseSources =
-        listOf("main", "cloud", "cloudRelease", "cloudBenchmark", "cloudProfile").map { sourceSet ->
-            layout.projectDirectory.dir("src/$sourceSet")
-        }
-    inputs.files(cloudReleaseSources)
-
-    doLast {
-        fun resolvedModules(configurationName: String): Set<String> =
-            configurations
-                .getByName(configurationName)
-                .incoming
-                .resolutionResult
-                .allComponents
-                .mapNotNull { component -> component.moduleVersion }
-                .mapTo(mutableSetOf()) { module -> "${module.group}:${module.name}" }
-
-        val debugModules = resolvedModules("cloudDebugRuntimeClasspath")
-        val sparkModules = resolvedModules("cloudSparkRuntimeClasspath")
-        val releaseModules = resolvedModules("cloudReleaseRuntimeClasspath")
-        val benchmarkModules = resolvedModules("cloudBenchmarkRuntimeClasspath")
-        val profileModules = resolvedModules("cloudProfileRuntimeClasspath")
-        val debugProvider = "com.google.firebase:firebase-appcheck-debug"
-        val releaseProvider = "com.google.firebase:firebase-appcheck-playintegrity"
-
-        check(debugProvider in debugModules) {
-            "cloudDebug debe incluir $debugProvider"
-        }
-        check(releaseProvider !in debugModules) {
-            "cloudDebug no debe incluir $releaseProvider"
-        }
-        check(debugProvider in sparkModules) {
-            "cloudSpark debe incluir $debugProvider para registrar esta instalación"
-        }
-        check(releaseProvider !in sparkModules) {
-            "cloudSpark no debe incluir $releaseProvider"
-        }
-        check(releaseProvider in releaseModules) {
-            "cloudRelease debe incluir $releaseProvider"
-        }
-        check(debugProvider !in releaseModules) {
-            "cloudRelease no debe incluir $debugProvider"
-        }
-        check(releaseProvider in benchmarkModules) {
-            "cloudBenchmark debe usar el proveedor no-debug $releaseProvider"
-        }
-        check(debugProvider !in benchmarkModules) {
-            "cloudBenchmark no debe incluir $debugProvider"
-        }
-        check(releaseProvider in profileModules) {
-            "cloudProfile debe usar el proveedor no-debug $releaseProvider"
-        }
-        check(debugProvider !in profileModules) {
-            "cloudProfile no debe incluir $debugProvider"
-        }
-
-        val forbiddenEmulatorLiterals =
-            setOf(
-                "demo-facturastock",
-                "demo-api-key",
-                emulatorFirebaseApiKeyMarker,
-                "1:1000000000000:android:0000000000000000000000",
-                "10.0.2.2",
-                "devEnsureMembership",
-            )
-        val sourceViolations = mutableListOf<String>()
-        cloudReleaseSources
-            .asSequence()
-            .flatMap { directory ->
-                directory.asFileTree
-                    .matching { include("**/*.kt", "**/*.xml", "**/*.json", "**/*.properties") }
-                    .files
-                    .asSequence()
-            }.distinct()
-            .sortedBy { source -> source.path }
-            .forEach { source ->
-                val text = source.readText()
-                forbiddenEmulatorLiterals
-                    .filter(text::contains)
-                    .forEach { literal ->
-                        sourceViolations +=
-                            "${source.relativeTo(projectDir).invariantSeparatorsPath}: literal emulator prohibido $literal"
-                    }
-            }
-        check(sourceViolations.isEmpty()) {
-            "Configuración emulator filtrada a cloudRelease:\n${sourceViolations.joinToString("\n")}"
-        }
-    }
-}
-
-val verifyCloudSparkBoundaries by tasks.registering {
-    group = "verification"
-    description = "Verifies that cloudSpark sources never connect paid/emulated services."
-
-    val sparkSources = layout.projectDirectory.dir("src/spark")
-    inputs.dir(sparkSources)
-
-    doLast {
-        val forbiddenRuntimeFragments =
-            setOf(
-                ".useEmulator(",
-                "FirebaseFunctions.getInstance",
-                "FirebaseStorage.getInstance",
-                "10.0.2.2",
-                "localhost",
-                "demo-facturastock",
-            )
-        val violations = mutableListOf<String>()
-        sparkSources.asFileTree
-            .matching { include("**/*.kt", "**/*.xml", "**/*.json", "**/*.properties") }
-            .files
-            .sortedBy(File::getPath)
-            .forEach { source ->
-                val text = source.readText()
-                forbiddenRuntimeFragments.filter(text::contains).forEach { fragment ->
-                    violations +=
-                        "${source.relativeTo(projectDir).invariantSeparatorsPath}: $fragment"
-                }
-            }
-        check(violations.isEmpty()) {
-            "cloudSpark contiene conexiones prohibidas:\n${violations.joinToString("\n")}"
-        }
-    }
-}
-
-val verifyCloudSparkConfiguration by tasks.registering {
-    group = "verification"
-    description = "Requires valid Firebase configuration only when building cloudSpark."
-    dependsOn(verifyCloudSparkBoundaries)
-    inputs.property("firebaseProjectConfigured", firebaseProjectId.isNotBlank())
-    inputs.property("firebaseApplicationConfigured", firebaseApplicationId.isNotBlank())
-    inputs.property("firebaseApiKeyConfigured", firebaseApiKey.isNotBlank())
-
-    doLast {
-        check(firebaseProjectId.isNotBlank()) {
-            "cloudSpark requiere FACTURASTOCK_FIREBASE_PROJECT_ID o firebase.projectId"
-        }
-        check(firebaseApplicationId.isNotBlank()) {
-            "cloudSpark requiere FACTURASTOCK_FIREBASE_APPLICATION_ID o firebase.applicationId"
-        }
-        check(firebaseApiKey.isNotBlank()) {
-            "cloudSpark requiere FACTURASTOCK_FIREBASE_API_KEY o firebase.apiKey"
-        }
-        check(Regex("[a-z][a-z0-9-]{4,28}[a-z0-9]").matches(firebaseProjectId)) {
-            "firebase.projectId no tiene sintaxis Firebase válida"
-        }
-        check(Regex("1:[0-9]+:android:[0-9a-f]+").matches(firebaseApplicationId)) {
-            "firebase.applicationId no tiene sintaxis Android Firebase válida"
-        }
-        check(Regex("AIza[0-9A-Za-z_-]{35}").matches(firebaseApiKey)) {
-            "firebase.apiKey no tiene sintaxis Firebase válida"
-        }
-    }
-}
-
-val cloudReleaseBundle =
-    layout.buildDirectory.file("outputs/bundle/cloudRelease/app-cloud-release.aab")
-val verifyCloudReleaseBundleHygiene by tasks.registering {
-    group = "verification"
-    description = "Scans cloudRelease DEX and rejects Emulator Suite configuration literals."
-    dependsOn("bundleCloudRelease")
-    inputs.file(cloudReleaseBundle)
-
-    doLast {
-        val bundle = cloudReleaseBundle.get().asFile
-        check(bundle.isFile) { "No existe el AAB cloudRelease para inspección" }
-        val forbidden =
-            listOf(
-                "demo-facturastock",
-                "demo-api-key",
-                emulatorFirebaseApiKeyMarker,
-                "1:1000000000000:android:0000000000000000000000",
-                "10.0.2.2",
-                "devEnsureMembership",
-            )
-        val violations = mutableSetOf<String>()
-        var dexCount = 0
-
-        ZipFile(bundle).use { archive ->
-            archive
-                .entries()
-                .asSequence()
-                .filter { entry -> !entry.isDirectory && entry.name.endsWith(".dex") }
-                .forEach { entry ->
-                    dexCount += 1
-                    val dexText =
-                        archive.getInputStream(entry).use { stream ->
-                            stream.readBytes().toString(Charsets.ISO_8859_1)
-                        }
-                    forbidden.forEach { literal ->
-                        if (dexText.contains(literal)) {
-                            violations += "${entry.name}: $literal"
-                        }
-                    }
-                }
-        }
-        check(dexCount > 0) { "El AAB cloudRelease no contiene DEX inspeccionable" }
-        check(violations.isEmpty()) {
-            "cloudRelease contiene configuración del Emulator Suite: ${violations.sorted()}"
-        }
-    }
-}
-
 val verifyAndroidReleaseConfiguration by tasks.registering {
     group = "verification"
     description = "Runs all deterministic Android release identity and packaging gates."
     dependsOn(
         verifyAndroidVariantMatrix,
         verifyReleaseManifests,
-        verifyCloudAppCheckBoundaries,
         verifyLocalProfileRuleResolution,
         "verifyR8ReleaseConfiguration",
     )
@@ -1803,7 +1272,7 @@ val verifyR8ReleaseConfiguration by tasks.registering {
             "El perfil manual no debe apropiarse de clases de dependencias"
         }
         val variantMangledProfileMethod =
-            Regex("\\$[^;()]*_(local|cloud)(Debug|Release|Benchmark|Profile)\\b")
+            Regex("\\$[^;()]*_local(Debug|Release|Benchmark|Profile)\\b")
         check(maintainedRules.none(variantMangledProfileMethod::containsMatchIn)) {
             "El Baseline Profile contiene métodos internal ligados a una variante"
         }
@@ -2003,106 +1472,13 @@ val verifyLocalReleaseBundleOptimization =
         bundleTaskName = "bundleLocalRelease",
         bundleRelativePath = "outputs/bundle/localRelease/app-local-release.aab",
     )
-val verifyCloudReleaseBundleOptimization =
-    registerReleaseBundleOptimizationVerification(
-        taskName = "verifyCloudReleaseBundleOptimization",
-        bundleTaskName = "bundleCloudRelease",
-        bundleRelativePath = "outputs/bundle/cloudRelease/app-cloud-release.aab",
-    )
-
-val verifyCloudProductionReleaseInputs by tasks.registering {
-    group = "verification"
-    description = "Requires explicit version, cloud config, and external signing for distribution."
-
-    doLast {
-        check(rawVersionCode != null && rawVersionName != null) {
-            "El candidato cloudRelease requiere FACTURASTOCK_VERSION_CODE y FACTURASTOCK_VERSION_NAME"
-        }
-        check(hasCiReleaseSigning && releaseSigningStoreFile != null) {
-            "El candidato cloudRelease requiere las cuatro variables FACTURASTOCK_SIGNING_*"
-        }
-        check(
-            firebaseProjectId.isNotBlank() &&
-                firebaseApplicationId.isNotBlank() &&
-                firebaseApiKey.isNotBlank() &&
-                firebaseStorageBucket.isNotBlank(),
-        ) {
-            "El candidato cloudRelease requiere Firebase y su bucket Storage protegidos completos"
-        }
-        check(Regex("[a-z][a-z0-9-]{4,28}[a-z0-9]").matches(firebaseProjectId)) {
-            "FACTURASTOCK_FIREBASE_PROJECT_ID no tiene sintaxis de projectId Firebase válida"
-        }
-        check(Regex("1:[0-9]+:android:[0-9a-f]+").matches(firebaseApplicationId)) {
-            "FACTURASTOCK_FIREBASE_APPLICATION_ID no tiene sintaxis de appId Android válida"
-        }
-        check(Regex("AIza[0-9A-Za-z_-]{35}").matches(firebaseApiKey)) {
-            "FACTURASTOCK_FIREBASE_API_KEY no tiene sintaxis de API key Firebase válida"
-        }
-        check(
-            Regex("[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]").matches(firebaseStorageBucket) &&
-                ".." !in firebaseStorageBucket,
-        ) {
-            "FACTURASTOCK_FIREBASE_STORAGE_BUCKET no tiene sintaxis de bucket válida"
-        }
-        check(privacyPolicyUrl.isNotBlank()) {
-            "El candidato cloudRelease requiere FACTURASTOCK_PRIVACY_POLICY_URL HTTPS"
-        }
-    }
-}
-
-val verifyCloudProductionReleaseQuality by tasks.registering {
-    group = "verification"
-    description = "Runs release-variant Lint and unit tests before materializing a production candidate."
-    dependsOn(
-        "lintCloudRelease",
-        "testCloudReleaseUnitTest",
-    )
-}
-
-val packageCloudProductionRelease by tasks.registering {
-    group = "build"
-    description = "Builds signed cloudRelease APK/AAB candidates; it never publishes them."
-    dependsOn(
-        verifyCloudProductionReleaseInputs,
-        verifyCloudProductionReleaseQuality,
-        verifyAndroidReleaseConfiguration,
-        verifyCloudReleaseBundleHygiene,
-        verifyCloudReleaseBundleOptimization,
-        "assembleCloudRelease",
-        "bundleCloudRelease",
-    )
-}
-
 val releasePackagingTaskNames =
     setOf(
         "assembleLocalRelease",
-        "assembleCloudRelease",
         "bundleLocalRelease",
-        "bundleCloudRelease",
     )
 tasks.matching { task -> task.name in releasePackagingTaskNames }.configureEach {
     dependsOn(verifyAndroidReleaseConfiguration)
-    if (name == "assembleCloudRelease" || name == "bundleCloudRelease") {
-        mustRunAfter(verifyCloudProductionReleaseInputs)
-        if (hasCiReleaseSigning) {
-            // Un cloudRelease firmado ya es un candidato de distribución: no puede eludir los
-            // inputs ni la calidad release aunque alguien invoque assemble/bundle directamente.
-            dependsOn(
-                verifyCloudProductionReleaseInputs,
-                verifyCloudProductionReleaseQuality,
-            )
-        }
-    }
-}
-
-verifyOfflineFirstBoundaries.configure {
-    dependsOn(verifyCloudAppCheckBoundaries, verifyCloudSparkBoundaries)
-}
-
-// También protege package/bundle/install: el control pertenece al pre-build de la variante,
-// no al preBuild compartido que ejecutan localDebug y los gates sin credenciales de CI.
-tasks.matching { task -> task.name == "preCloudSparkBuild" }.configureEach {
-    dependsOn(verifyCloudSparkConfiguration)
 }
 
 val verifyRoomSchemaPolicy by tasks.registering {
@@ -2127,7 +1503,7 @@ val verifyRoomSchemaPolicy by tasks.registering {
             "src/main/java/com/facturastock/app/data/restore/FullDeviceSnapshotContract.kt",
         )
     val productionSourceDirectories =
-        listOf("main", "local", "cloud").flatMap { sourceSet ->
+        listOf("main", "local").flatMap { sourceSet ->
             listOf("java", "kotlin").map { language ->
                 layout.projectDirectory.dir("src/$sourceSet/$language")
             }

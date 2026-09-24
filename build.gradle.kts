@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.hilt) apply false
-    alias(libs.plugins.firebase.crashlytics) apply false
     alias(libs.plugins.spotless)
 }
 
@@ -109,20 +108,14 @@ spotless {
             "docs/**/*.md",
             "*.json",
             "*.properties",
-            "*.rules",
             "gradle/**/*.toml",
             "gradle/**/*.properties",
-            "functions/*.js",
-            "functions/*.json",
-            "functions/test/*.mjs",
             "scripts/*.sh",
             "scripts/*.rb",
-            "scripts/*.mjs",
         )
         // Test evidence uses Markdown hard line breaks intentionally and is immutable.
         targetExclude(
             "**/build/**",
-            "functions/node_modules/**",
             "evidence/**",
             "docs/test-evidence/**",
             "local.properties",
@@ -139,47 +132,11 @@ tasks.named("spotlessApply") {
     dependsOn(verifySpotlessBase)
 }
 
-val functionsProductionSources =
-    fileTree("functions") {
-        include("**/*.js")
-        exclude("test/**", "node_modules/**", ".tmp*", "**/.tmp*")
-    }
-
-tasks.register("verifyFunctionsLogging") {
-    group = "verification"
-    description = "Rejects direct console/logger calls in production Firebase Functions."
-    inputs.files(functionsProductionSources)
-
-    doLast {
-        val directLoggerAccess =
-            Regex(
-                """\b(?:console|logger|functions\s*\.\s*logger)\s*(?:\.|\[)""",
-            )
-        val violations =
-            functionsProductionSources.files
-                .sortedBy { it.path.replace('\\', '/') }
-                .flatMap { source ->
-                    source.readLines().mapIndexedNotNull { index, line ->
-                        if (directLoggerAccess.containsMatchIn(line)) {
-                            "${source.relativeTo(rootDir).path.replace('\\', '/')}:${index + 1}"
-                        } else {
-                            null
-                        }
-                    }
-                }
-        check(violations.isEmpty()) {
-            "Logging directo prohibido en Functions (use un sink sanitizado): " +
-                violations.joinToString()
-        }
-    }
-}
-
 tasks.register("ciStaticAnalysis") {
     group = "verification"
     description = "Runs deterministic formatting and the project's architectural static gates."
     dependsOn(
         "spotlessCheck",
-        "verifyFunctionsLogging",
         ":app:verifyDomainBoundaries",
         ":app:verifyUiConventions",
         ":app:verifyNoSensitiveLogging",

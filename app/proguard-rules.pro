@@ -1,4 +1,4 @@
-# FacturaStock usa anotaciones generadas por Room/Hilt/Firebase y firmas genéricas en release.
+# FacturaStock usa anotaciones generadas por Room/Hilt y firmas genéricas en release.
 -keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations,AnnotationDefault,Signature,InnerClasses,EnclosingMethod
 
 # Room genera la implementación de la base. Sus consumer rules cubren adaptadores; estas reglas

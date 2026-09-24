@@ -19,8 +19,8 @@ class NavigationContractTest {
 
     @Test
     fun registryContainsThreeCommercialTopLevelsAndLegacyAliases() {
-        assertEquals(32, AppRoutes.all.size)
-        assertEquals(32, AppRoutes.all.map { it.pattern }.distinct().size)
+        assertEquals(29, AppRoutes.all.size)
+        assertEquals(29, AppRoutes.all.map { it.pattern }.distinct().size)
         assertEquals(
             setOf(
                 AppRoutes.SALES,
@@ -38,9 +38,13 @@ class NavigationContractTest {
         assertFalse(AppRoutes.INVOICES in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.PRODUCTS in AppRoutes.topLevel.map { it.pattern })
         assertFalse(AppRoutes.PURCHASES in AppRoutes.topLevel.map { it.pattern })
-        // Ajustes se retiró: ninguna ruta, ni principal ni secundaria, debe volver a exponerla.
-        assertFalse("settings" in AppRoutes.all.map { it.pattern })
-        assertTrue(AppRoutes.SYNC in AppRoutes.all.map { it.pattern })
+        // Ajustes mínimos es secundaria: se abre con el engranaje, nunca desde la barra inferior.
+        assertTrue(AppRoutes.SETTINGS in AppRoutes.all.map { it.pattern })
+        assertFalse(AppRoutes.SETTINGS in AppRoutes.topLevel.map { it.pattern })
+        // Sin nube: Cuenta, miembros, invitaciones y sincronización ya no son destinos.
+        listOf("account", "account/members", "account/invitations", "sync").forEach { removed ->
+            assertFalse(removed in AppRoutes.all.map { it.pattern })
+        }
     }
 
     @Test

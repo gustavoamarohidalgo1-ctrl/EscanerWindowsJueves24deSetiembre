@@ -4,23 +4,12 @@ import androidx.lifecycle.SavedStateHandle
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.domain.config.CostPolicy
 import com.facturastock.app.domain.config.TaxRate
-import com.facturastock.app.domain.model.ImageRetentionPolicy
 import com.facturastock.app.domain.model.RucValidator
 import com.facturastock.app.domain.model.UserDataExportWriteStatus
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.domain.repository.BusinessRepository
-import com.facturastock.app.domain.usecase.EnterDemoModeUseCase
-import com.facturastock.app.domain.usecase.ExitDemoModeUseCase
 import com.facturastock.app.domain.usecase.ObserveAppConfigurationUseCase
-import com.facturastock.app.domain.usecase.StartDemoInvoiceScenarioResult
-import com.facturastock.app.domain.usecase.StartDemoInvoiceScenarioUseCase
 import com.facturastock.app.domain.usecase.UpdateBusinessProfileUseCase
-import com.facturastock.app.domain.usecase.RunPrivacyMaintenanceUseCase
-import com.facturastock.app.domain.usecase.UpdateBackupEnabledUseCase
-import com.facturastock.app.domain.usecase.UpdateBiometricLockEnabledUseCase
-import com.facturastock.app.domain.usecase.UpdateDiagnosticsConsentUseCase
-import com.facturastock.app.domain.usecase.UpdateDocumentBackupEnabledUseCase
-import com.facturastock.app.domain.usecase.UpdateImageRetentionPolicyUseCase
 import com.facturastock.app.domain.usecase.UpdateTaxConfigurationUseCase
 import com.facturastock.app.domain.usecase.WriteUserDataExportUseCase
 import com.facturastock.app.feature.common.UdfViewModel
@@ -42,16 +31,7 @@ class SettingsViewModel @Inject constructor(
     private val businessRepository: BusinessRepository,
     private val updateBusinessProfileUseCase: UpdateBusinessProfileUseCase,
     private val updateTaxConfigurationUseCase: UpdateTaxConfigurationUseCase,
-    private val enterDemoModeUseCase: EnterDemoModeUseCase,
-    private val exitDemoModeUseCase: ExitDemoModeUseCase,
-    private val startDemoInvoiceScenarioUseCase: StartDemoInvoiceScenarioUseCase,
-    private val updateDiagnosticsConsentUseCase: UpdateDiagnosticsConsentUseCase,
-    private val updateImageRetentionPolicyUseCase: UpdateImageRetentionPolicyUseCase,
-    private val updateBackupEnabledUseCase: UpdateBackupEnabledUseCase,
-    private val updateDocumentBackupEnabledUseCase: UpdateDocumentBackupEnabledUseCase,
-    private val updateBiometricLockEnabledUseCase: UpdateBiometricLockEnabledUseCase,
     private val writeUserDataExportUseCase: WriteUserDataExportUseCase,
-    private val runPrivacyMaintenanceUseCase: RunPrivacyMaintenanceUseCase,
     dispatcherProvider: DispatcherProvider,
 ) : UdfViewModel<SettingsContract.State, SettingsContract.Action, SettingsContract.Effect>(
     initialState = restoredSettingsState(savedStateHandle),
@@ -64,8 +44,7 @@ class SettingsViewModel @Inject constructor(
     private var businessFieldsDirty =
         savedStateHandle.get<Boolean>(BUSINESS_FIELDS_DIRTY_KEY) == true
     private var taxFieldsDirty = savedStateHandle.get<Boolean>(TAX_FIELDS_DIRTY_KEY) == true
-    private var demoScenarioStartRequested = false
-    private val privacyOperationClaimed = AtomicBoolean(false)
+    private val exportClaimed = AtomicBoolean(false)
     private val saveOperationClaimed = AtomicBoolean(false)
 
     init {
@@ -113,36 +92,16 @@ class SettingsViewModel @Inject constructor(
                     copy(costPolicy = action.value, savedFeedback = false)
                 }
 
-            is SettingsContract.Action.DiagnosticsConsentChanged ->
-                updateDiagnosticsConsent(action.enabled)
+            SettingsContract.Action.SaveBusinessProfile -> saveBusinessProfile()
 
-            is SettingsContract.Action.ImageRetentionPolicySelected ->
-                selectImageRetentionPolicy(action.policy)
+            SettingsContract.Action.SaveTaxConfiguration -> executeMain {
+                updateState { copy(showTaxWarningDialog = true) }
+            }
 
-            SettingsContract.Action.ConfirmImageRetentionPolicy ->
-                uiState.value.pendingImageRetentionPolicy?.let { policy ->
-                    applyImageRetentionPolicy(policy, runMaintenance = true)
-                }
-
-            is SettingsContract.Action.BackupEnabledChanged ->
-                updateBackupPreference(action.enabled)
-
-            is SettingsContract.Action.DocumentBackupEnabledChanged ->
-                updatePrivacyPreference {
-                    updateDocumentBackupEnabledUseCase(action.enabled)
-                }
-
-            is SettingsContract.Action.BiometricLockEnabledChanged ->
-                updatePrivacyPreference {
-                    updateBiometricLockEnabledUseCase(action.enabled)
-                }
+            SettingsContract.Action.ConfirmTaxConfiguration -> saveTaxConfiguration()
 
             SettingsContract.Action.ExportData -> executeMain {
-                if (
-                    !privacyOperationClaimed.get() &&
-                    !uiState.value.isPrivacyBusy &&
-                    !uiState.value.awaitingExportDestination
-                ) {
+                if (!exportClaimed.get() && uiState.value.canExport) {
                     updateState { copy(awaitingExportDestination = true) }
                     emitEffect(SettingsContract.Effect.CreateExportDocument)
                 }
@@ -155,72 +114,12 @@ class SettingsViewModel @Inject constructor(
                 updateState { copy(awaitingExportDestination = false) }
             }
 
-            SettingsContract.Action.DeleteImages -> executeMain {
-                if (!privacyOperationClaimed.get() && !uiState.value.isPrivacyBusy) {
-                    updateState { copy(showDeleteImagesDialog = true) }
-                }
-            }
-
-            SettingsContract.Action.ConfirmDeleteImages -> runPrivacyMaintenance(
-                forceImageDeletion = true,
-                operation = SettingsContract.PrivacyOperation.DELETE_IMAGES,
-            )
-
-            SettingsContract.Action.CleanPrivateFiles -> runPrivacyMaintenance(
-                forceImageDeletion = false,
-                operation = SettingsContract.PrivacyOperation.CLEAN_FILES,
-            )
-
-            SettingsContract.Action.SaveBusinessProfile -> saveBusinessProfile()
-
-            SettingsContract.Action.SaveTaxConfiguration -> executeMain {
-                updateState { copy(showTaxWarningDialog = true) }
-            }
-
-            SettingsContract.Action.ConfirmTaxConfiguration -> saveTaxConfiguration()
-
-            SettingsContract.Action.EnterDemoMode -> executeMain {
-                updateState { copy(showDemoEnterDialog = true) }
-            }
-
-            SettingsContract.Action.ConfirmEnterDemoMode -> enterDemoMode()
-
-            SettingsContract.Action.StartDemoScenario -> startDemoScenario()
-
-            SettingsContract.Action.ExitDemoMode -> executeMain {
-                if (!uiState.value.isStartingDemoScenario && !demoScenarioStartRequested) {
-                    updateState { copy(showDemoExitDialog = true) }
-                }
-            }
-
-            SettingsContract.Action.ConfirmExitDemoMode -> exitDemoMode()
-
-            SettingsContract.Action.OpenAccount -> executeMain {
-                emitEffect(SettingsContract.Effect.OpenAccount)
-            }
-
-            SettingsContract.Action.OpenSync -> executeMain {
-                emitEffect(SettingsContract.Effect.OpenSync)
-            }
-
-            SettingsContract.Action.OpenPrivacyPolicy -> executeMain {
-                emitEffect(SettingsContract.Effect.OpenPrivacyPolicy)
-            }
-
-            SettingsContract.Action.DismissPrivacyResult -> executeMain {
-                updateState { copy(privacyResult = null) }
+            SettingsContract.Action.DismissExportResult -> executeMain {
+                updateState { copy(exportResult = null) }
             }
 
             SettingsContract.Action.DismissDialogs -> executeMain {
-                updateState {
-                    copy(
-                        showTaxWarningDialog = false,
-                        showDemoEnterDialog = false,
-                        showDemoExitDialog = false,
-                        showDeleteImagesDialog = false,
-                        pendingImageRetentionPolicy = null,
-                    )
-                }
+                updateState { copy(showTaxWarningDialog = false) }
             }
 
             SettingsContract.Action.Retry -> observeConfiguration()
@@ -389,99 +288,27 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
-    private fun updateDiagnosticsConsent(enabled: Boolean) {
-        if (uiState.value.isSaving || enabled == uiState.value.diagnosticsEnabled) return
-        executeClaimedSaveIo(
-            before = {
-                updateState { copy(isSaving = true, failure = null, savedFeedback = false) }
-            },
-            operation = { updateDiagnosticsConsentUseCase(enabled) },
-            onSuccess = {
-                updateState { copy(isSaving = false, savedFeedback = true) }
-            },
-            onFailure = {
-                updateState {
-                    copy(isSaving = false, failure = SettingsContract.Failure.SAVE_FAILED)
-                }
-            },
-        )
-    }
-
-    private fun updatePrivacyPreference(operation: suspend () -> Unit) {
-        if (
-            privacyOperationClaimed.get() ||
-            uiState.value.isSaving ||
-            uiState.value.isPrivacyBusy
-        ) {
-            return
-        }
-        executeClaimedSaveIo(
-            before = {
-                updateState {
-                    copy(isSaving = true, failure = null, savedFeedback = false)
-                }
-            },
-            operation = operation,
-            onSuccess = {
-                updateState { copy(isSaving = false, savedFeedback = true) }
-            },
-            onFailure = {
-                updateState {
-                    copy(isSaving = false, failure = SettingsContract.Failure.SAVE_FAILED)
-                }
-            },
-        )
-    }
-
-    private fun updateBackupPreference(enabled: Boolean) {
-        if (
-            privacyOperationClaimed.get() ||
-            uiState.value.isSaving ||
-            uiState.value.isPrivacyBusy
-        ) {
-            return
-        }
-        executeClaimedSaveIo(
-            before = {
-                updateState {
-                    copy(
-                        isSaving = true,
-                        failure = null,
-                        savedFeedback = false,
-                        privacyResult = null,
-                    )
-                }
-            },
-            operation = { updateBackupEnabledUseCase(enabled) },
-            onSuccess = { result ->
-                updateState {
-                    copy(
-                        isSaving = false,
-                        privacyResult = SettingsContract.PrivacyResult.BackupUpdated(
-                            enabled = result.enabled,
-                            schedulerUpdated = result.schedulerUpdated,
-                        ),
-                    )
-                }
-            },
-            onFailure = {
-                updateState {
-                    copy(isSaving = false, failure = SettingsContract.Failure.SAVE_FAILED)
-                }
-            },
-        )
-    }
-
+    /**
+     * Reclama la exportación antes de publicar un coroutine. El snapshot Compose se actualiza en
+     * el siguiente turno de Main, por lo que `isExporting` por sí solo no absorbe dos eventos
+     * recibidos en el mismo frame. La bandera se libera al completar el Job en cualquier caso.
+     */
     private fun writeExport(documentUri: String) {
         if (documentUri.isBlank()) return
-        executeClaimedPrivacyIo(
-            claimedOperation = SettingsContract.PrivacyOperation.EXPORT,
+        if (
+            saveOperationClaimed.get() ||
+            uiState.value.isExporting ||
+            !exportClaimed.compareAndSet(false, true)
+        ) {
+            return
+        }
+        executeIo(
             before = {
                 updateState {
                     copy(
-                        privacyOperation = SettingsContract.PrivacyOperation.EXPORT,
+                        isExporting = true,
                         awaitingExportDestination = false,
-                        privacyResult = null,
+                        exportResult = null,
                     )
                 }
             },
@@ -489,9 +316,9 @@ class SettingsViewModel @Inject constructor(
             onSuccess = { result ->
                 updateState {
                     copy(
-                        privacyOperation = null,
-                        privacyResult = result.export?.let {
-                            SettingsContract.PrivacyResult.Exported(
+                        isExporting = false,
+                        exportResult = result.export?.let {
+                            SettingsContract.ExportResult.Exported(
                                 products = it.products.size,
                                 suppliers = it.suppliers.size,
                                 units = it.units.size,
@@ -512,176 +339,23 @@ class SettingsViewModel @Inject constructor(
                             result.status ==
                             UserDataExportWriteStatus.FAILED_DESTINATION_MAY_CONTAIN_PARTIAL_DATA
                         ) {
-                            SettingsContract.PrivacyResult.ExportDestinationCleanupUnconfirmed
+                            SettingsContract.ExportResult.DestinationCleanupUnconfirmed
                         } else {
-                            SettingsContract.PrivacyResult.Failed
+                            SettingsContract.ExportResult.Failed
                         },
                     )
                 }
             },
             onFailure = {
                 updateState {
-                    copy(
-                        privacyOperation = null,
-                        privacyResult = SettingsContract.PrivacyResult.Failed,
-                    )
+                    copy(isExporting = false, exportResult = SettingsContract.ExportResult.Failed)
                 }
             },
-        )
-    }
-
-    private fun selectImageRetentionPolicy(policy: ImageRetentionPolicy) {
-        val snapshot = uiState.value
-        if (
-            privacyOperationClaimed.get() ||
-            snapshot.isPrivacyBusy ||
-            snapshot.isSaving ||
-            policy == snapshot.imageRetentionPolicy
-        ) {
-            return
-        }
-        if (policy == ImageRetentionPolicy.KEEP) {
-            applyImageRetentionPolicy(policy, runMaintenance = false)
-        } else {
-            executeMain {
-                updateState {
-                    copy(
-                        pendingImageRetentionPolicy = policy,
-                        privacyResult = null,
-                    )
-                }
-            }
-        }
-    }
-
-    private fun applyImageRetentionPolicy(
-        policy: ImageRetentionPolicy,
-        runMaintenance: Boolean,
-    ) {
-        executeClaimedPrivacyIo(
-            claimedOperation = SettingsContract.PrivacyOperation.UPDATE_RETENTION,
-            before = {
-                updateState {
-                    copy(
-                        pendingImageRetentionPolicy = null,
-                        privacyOperation = SettingsContract.PrivacyOperation.UPDATE_RETENTION,
-                        privacyResult = null,
-                    )
-                }
-            },
-            operation = {
-                updateImageRetentionPolicyUseCase(policy)
-                val report = if (runMaintenance) {
-                    try {
-                        runPrivacyMaintenanceUseCase(forceImageDeletion = false)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        null
-                    }
-                } else {
-                    null
-                }
-                SettingsContract.PrivacyResult.RetentionPolicyUpdated(
-                    policy = policy,
-                    maintenanceAttempted = runMaintenance,
-                    report = report,
-                )
-            },
-            onSuccess = { result ->
-                updateState {
-                    copy(
-                        privacyOperation = null,
-                        privacyResult = result,
-                    )
-                }
-            },
-            onFailure = {
-                updateState {
-                    copy(
-                        privacyOperation = null,
-                        privacyResult = SettingsContract.PrivacyResult.Failed,
-                    )
-                }
-            },
-        )
-    }
-
-    private fun runPrivacyMaintenance(
-        forceImageDeletion: Boolean,
-        operation: SettingsContract.PrivacyOperation,
-    ) {
-        executeClaimedPrivacyIo(
-            claimedOperation = operation,
-            before = {
-                updateState {
-                    copy(
-                        showDeleteImagesDialog = false,
-                        privacyOperation = operation,
-                        privacyResult = null,
-                    )
-                }
-            },
-            operation = { runPrivacyMaintenanceUseCase(forceImageDeletion) },
-            onSuccess = { report ->
-                updateState {
-                    copy(
-                        privacyOperation = null,
-                        privacyResult = if (forceImageDeletion) {
-                            SettingsContract.PrivacyResult.ImagesDeleted(report)
-                        } else {
-                            SettingsContract.PrivacyResult.FilesCleaned(report)
-                        },
-                    )
-                }
-            },
-            onFailure = {
-                updateState {
-                    copy(
-                        privacyOperation = null,
-                        privacyResult = SettingsContract.PrivacyResult.Failed,
-                    )
-                }
-            },
-        )
-    }
-
-    /**
-     * Reclama la operación antes de publicar un coroutine. El snapshot Compose se actualiza en
-     * el siguiente turno de Main, por lo que `privacyOperation` por sí solo no absorbe dos
-     * eventos recibidos en el mismo frame. La bandera atómica se libera al completar el Job en
-     * éxito, fallo o cancelación; la cancelación limpia además el estado busy antes de relanzarse.
-     */
-    private fun <T> executeClaimedPrivacyIo(
-        claimedOperation: SettingsContract.PrivacyOperation,
-        before: () -> Unit,
-        operation: suspend () -> T,
-        onSuccess: suspend (T) -> Unit,
-        onFailure: suspend (Throwable) -> Unit,
-    ) {
-        if (
-            saveOperationClaimed.get() ||
-            uiState.value.isPrivacyBusy ||
-            !privacyOperationClaimed.compareAndSet(false, true)
-        ) {
-            return
-        }
-        executeIo(
-            before = before,
-            operation = operation,
-            onSuccess = onSuccess,
-            onFailure = onFailure,
             onCancellation = {
-                updateState {
-                    if (privacyOperation == claimedOperation) {
-                        copy(privacyOperation = null)
-                    } else {
-                        this
-                    }
-                }
+                updateState { copy(isExporting = false) }
             },
         ).invokeOnCompletion {
-            privacyOperationClaimed.set(false)
+            exportClaimed.set(false)
         }
     }
 
@@ -693,9 +367,9 @@ class SettingsViewModel @Inject constructor(
         onFailure: suspend (Throwable) -> Unit,
     ) {
         if (
-            privacyOperationClaimed.get() ||
+            exportClaimed.get() ||
             uiState.value.isSaving ||
-            uiState.value.isPrivacyBusy ||
+            uiState.value.isExporting ||
             !saveOperationClaimed.compareAndSet(false, true)
         ) {
             return
@@ -711,112 +385,6 @@ class SettingsViewModel @Inject constructor(
         ).invokeOnCompletion {
             saveOperationClaimed.set(false)
         }
-    }
-
-    private fun enterDemoMode() {
-        executeIo(
-            before = {
-                updateState {
-                    copy(
-                        showDemoEnterDialog = false,
-                        isSaving = true,
-                        failure = null,
-                        demoScenarioFailure = null,
-                        savedFeedback = false,
-                    )
-                }
-            },
-            operation = { enterDemoModeUseCase() },
-            onSuccess = {
-                // La nueva emisión de configuración recarga el negocio activo (el demo).
-                updateState { copy(isSaving = false) }
-            },
-            onFailure = {
-                updateState {
-                    copy(isSaving = false, failure = SettingsContract.Failure.SAVE_FAILED)
-                }
-            },
-        )
-    }
-
-    private fun startDemoScenario() {
-        if (demoScenarioStartRequested || !uiState.value.canStartDemoScenario) return
-        // El estado Compose se publica en el siguiente turno del dispatcher; esta compuerta
-        // síncrona absorbe dos eventos de toque recibidos antes de que ese snapshot cambie.
-        demoScenarioStartRequested = true
-        executeIo(
-            before = {
-                updateState {
-                    copy(
-                        isStartingDemoScenario = true,
-                        demoScenarioFailure = null,
-                        savedFeedback = false,
-                    )
-                }
-            },
-            operation = { startDemoInvoiceScenarioUseCase() },
-            onSuccess = { result ->
-                demoScenarioStartRequested = false
-                updateState { copy(isStartingDemoScenario = false) }
-                when (result) {
-                    is StartDemoInvoiceScenarioResult.Ready -> emitEffect(
-                        SettingsContract.Effect.OpenDemoCapture(
-                            draftId = result.draftId,
-                            captureId = result.captureId,
-                        ),
-                    )
-
-                    is StartDemoInvoiceScenarioResult.AlreadyCompleted -> emitEffect(
-                        SettingsContract.Effect.OpenDemoPurchase(result.purchaseId),
-                    )
-
-                    StartDemoInvoiceScenarioResult.NotInDemoMode -> updateState {
-                        copy(
-                            demoScenarioFailure =
-                                SettingsContract.DemoScenarioFailure.NOT_IN_DEMO_MODE,
-                        )
-                    }
-
-                    StartDemoInvoiceScenarioResult.Conflict -> updateState {
-                        copy(demoScenarioFailure = SettingsContract.DemoScenarioFailure.CONFLICT)
-                    }
-                }
-            },
-            onFailure = {
-                demoScenarioStartRequested = false
-                updateState {
-                    copy(
-                        isStartingDemoScenario = false,
-                        demoScenarioFailure = SettingsContract.DemoScenarioFailure.START_FAILED,
-                    )
-                }
-            },
-        )
-    }
-
-    private fun exitDemoMode() {
-        executeIo(
-            before = {
-                updateState {
-                    copy(
-                        showDemoExitDialog = false,
-                        isSaving = true,
-                        failure = null,
-                        demoScenarioFailure = null,
-                        savedFeedback = false,
-                    )
-                }
-            },
-            operation = { exitDemoModeUseCase() },
-            onSuccess = {
-                updateState { copy(isSaving = false) }
-            },
-            onFailure = {
-                updateState {
-                    copy(isSaving = false, failure = SettingsContract.Failure.SAVE_FAILED)
-                }
-            },
-        )
     }
 
     private fun updateField(

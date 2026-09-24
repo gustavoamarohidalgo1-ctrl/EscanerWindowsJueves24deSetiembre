@@ -200,6 +200,15 @@ class HomeScreenAccessibilityTest {
                 .assertHasClickAction()
                 .assertTouchTargetAtLeast48Dp()
         }
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.navigation_open_settings))
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button),
+            )
+            .assertTouchTargetAtLeast48Dp()
+
         val topBarHeight = composeRule
             .onNodeWithTag(FacturaStockNavigationTestTags.TOP)
             .fetchSemanticsNode()

@@ -55,8 +55,7 @@ class InvoiceHubScreenTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText(
             "Solo guardaremos en Productos los artículos detectados en la factura. " +
-                "No registraremos una compra ni cambiaremos las existencias. " +
-                "Con el respaldo activo, los productos se sincronizan con la nube.",
+                "No registraremos una compra ni cambiaremos las existencias.",
         ).assertIsDisplayed()
     }
 
