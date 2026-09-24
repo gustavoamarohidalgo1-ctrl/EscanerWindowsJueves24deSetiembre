@@ -1,12 +1,6 @@
 package com.facturastock.app.data.files
 
-import android.content.ContentResolver
-import android.content.Context
-import android.graphics.BitmapFactory
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
-import androidx.core.net.toUri
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.domain.error.FileError
 import com.facturastock.app.domain.error.FileException
 import com.facturastock.app.domain.model.CaptureImagePolicy
@@ -14,16 +8,26 @@ import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.model.id.ImageId
 import com.facturastock.app.domain.repository.DraftImageImporter
 import com.facturastock.app.domain.repository.ImportedImageFile
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.net.URI
+import java.net.URISyntaxException
+import java.nio.file.AccessDeniedException
 import java.nio.file.FileAlreadyExistsException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.Locale
+import javax.imageio.ImageIO
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -35,9 +39,10 @@ import kotlinx.coroutines.ensureActive
  * Importador local de imágenes de factura con dos entradas que comparten el mismo núcleo
  * de validación, limpieza y persistencia:
  *
- * - **Galería** ([import]): copia el contenido de la URI a un archivo temporal dentro de
- *   [Context.getFilesDir] en una sola pasada contando bytes, y valida el MIME declarado
- *   por el proveedor.
+ * - **Archivo** ([import]): la URI `file:` elegida con el diálogo de archivos del sistema se
+ *   copia a un archivo temporal dentro de [AppDirectories.filesDir] en una sola pasada contando
+ *   bytes. El MIME se deduce de la firma real del contenido (no de la extensión, que en
+ *   escritorio no ofrece ninguna garantía) y se valida contra la política.
  * - **Cámara** ([importBytes]): escribe los bytes JPEG ya capturados en memoria (su tamaño
  *   se conoce antes de tocar disco) y valida el MIME real al decodificar las cabeceras:
  *   solo se acepta `image/jpeg`, que es lo que produce `ImageCapture` de CameraX.
@@ -55,7 +60,7 @@ import kotlinx.coroutines.ensureActive
  * 5. SHA-256 y tamaño se calculan sobre el archivo YA LIMPIO, de modo que el hash y los
  *    metadatos persistidos coinciden exactamente con el contenido guardado.
  * 6. Barrera durable (`flush` + `FileDescriptor.sync`) y publicación sin reemplazo al destino
- *    definitivo, seguida de `fsync` del padre y sus ancestros privados,
+ *    definitivo, seguida de la sincronización del padre y sus ancestros privados,
  *    `draft_images/{draftId}/{imageId}.{ext}`. Todas las mutaciones del subárbol se serializan
  *    por borrador: si el destino ya existe solo se reutiliza cuando su SHA-256 coincide; una
  *    colisión con contenido distinto falla preservando siempre el archivo anterior.
@@ -71,16 +76,19 @@ import kotlinx.coroutines.ensureActive
  * La traducción de fallos de E/S vive en
  * [toFileException] (ENOSPC → [FileError.InsufficientSpace]; otro [IOException] →
  * [FileError.Corrupt]).
+ *
+ * WebP: la política lo admite, pero el JDK no incluye decodificador WebP. Mientras no haya un
+ * plugin de ImageIO registrado para `image/webp`, esos archivos se rechazan como
+ * [FileError.UnsupportedFormat] antes de copiarlos, en lugar de fallar más tarde como corruptos.
  */
 @Singleton
 class LocalDraftImageImporter @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val staleImportCleanup: StaleImportCleanup,
     private val mutationCoordinator: PrivateImageMutationCoordinator =
         PrivateImageMutationCoordinator(),
 ) : DraftImageImporter {
-    private val rootDirectory: File = context.filesDir
-    private val contentResolver: ContentResolver = context.contentResolver
+    private val rootDirectory: File = directories.filesDir
 
     override suspend fun import(
         draftId: DraftId,
@@ -132,22 +140,86 @@ class LocalDraftImageImporter @Inject constructor(
         }
     }
 
-    /** MIME declarado por el proveedor, rechazado si la política no lo admite. */
+    /**
+     * MIME del origen deducido de su firma, rechazado si la política no lo admite o si la
+     * plataforma no puede decodificarlo. Un origen inexistente o sin permiso de lectura equivale
+     * al proveedor que revocó el acceso en Android: [FileError.NotFound].
+     */
     private fun resolveAllowedMimeType(sourceUri: String): String {
         val mimeType = try {
-            contentResolver.getType(sourceUri.toUri())
-        } catch (failure: SecurityException) {
-            // El proveedor revocó el acceso al contenido: equivale a que ya no existe.
+            sniffMimeType(resolveSourcePath(sourceUri))
+        } catch (failure: NoSuchFileException) {
             throw FileException(FileError.NotFound, failure)
-        } catch (failure: RuntimeException) {
-            // Proveedor roto o URI mal formada: sin tipo confiable no se acepta.
+        } catch (failure: FileNotFoundException) {
+            throw FileException(FileError.NotFound, failure)
+        } catch (failure: AccessDeniedException) {
+            throw FileException(FileError.NotFound, failure)
+        } catch (failure: SecurityException) {
+            // Sin permiso de lectura: equivale a que el contenido ya no existe.
+            throw FileException(FileError.NotFound, failure)
+        } catch (_: IOException) {
+            // Origen ilegible o URI mal formada: sin tipo confiable no se acepta.
+            null
+        } catch (_: RuntimeException) {
             null
         }?.trim()?.lowercase(Locale.ROOT)
-        if (!CaptureImagePolicy.isMimeTypeAllowed(mimeType)) {
+        if (!CaptureImagePolicy.isMimeTypeAllowed(mimeType) || !isDecodable(checkNotNull(mimeType))) {
             throw FileException(FileError.UnsupportedFormat)
         }
-        return checkNotNull(mimeType)
+        return mimeType
     }
+
+    /**
+     * Convierte la URI del diálogo de archivos en una ruta local. Solo se admiten URIs `file:`
+     * o rutas absolutas sin esquema; cualquier otro esquema no tiene proveedor en escritorio.
+     */
+    private fun resolveSourcePath(sourceUri: String): Path {
+        val trimmed = sourceUri.trim()
+        return try {
+            if (trimmed.startsWith(FILE_URI_PREFIX, ignoreCase = true)) {
+                Paths.get(URI(trimmed))
+            } else {
+                Paths.get(trimmed).also { path ->
+                    if (!path.isAbsolute) throw IOException("La ruta de origen no es absoluta")
+                }
+            }
+        } catch (failure: URISyntaxException) {
+            throw IOException("URI de origen mal formada", failure)
+        } catch (failure: InvalidPathException) {
+            throw IOException("Ruta de origen inválida", failure)
+        } catch (failure: IllegalArgumentException) {
+            throw IOException("URI de origen no admitida", failure)
+        }
+    }
+
+    /** Lee solo la firma del contenido; equivale al `getType` del proveedor en Android. */
+    private fun sniffMimeType(source: Path): String? {
+        val header = ByteArray(MIME_SNIFF_BYTES)
+        var read = 0
+        openSource(source).use { input ->
+            while (read < header.size) {
+                val count = input.read(header, read, header.size - read)
+                if (count < 0) break
+                read += count
+            }
+        }
+        return when {
+            read >= 3 && header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() &&
+                header[2] == 0xFF.toByte() -> JPEG_MIME_TYPE
+            read >= PNG_SIGNATURE.size &&
+                header.copyOf(PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE) -> PNG_MIME_TYPE
+            read >= MIME_SNIFF_BYTES &&
+                String(header, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+                String(header, 8, 4, Charsets.US_ASCII) == "WEBP" -> WEBP_MIME_TYPE
+            else -> null
+        }
+    }
+
+    private fun isDecodable(mimeType: String): Boolean =
+        mimeType != WEBP_MIME_TYPE || ImageIO.getImageReadersByMIMEType(mimeType).hasNext()
+
+    private fun openSource(source: Path): InputStream =
+        Files.newInputStream(source, StandardOpenOption.READ)
 
     private fun createTempFile(): File = try {
         File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX, rootDirectory)
@@ -159,8 +231,13 @@ class LocalDraftImageImporter @Inject constructor(
     private suspend fun copySourceToTemp(sourceUri: String, tempFile: File) {
         var totalBytes = 0L
         try {
-            val input = contentResolver.openInputStream(sourceUri.toUri())
-                ?: throw FileException(FileError.NotFound)
+            val input = try {
+                openSource(resolveSourcePath(sourceUri))
+            } catch (failure: NoSuchFileException) {
+                throw FileException(FileError.NotFound, failure)
+            } catch (failure: AccessDeniedException) {
+                throw FileException(FileError.NotFound, failure)
+            }
             input.use { source ->
                 FileOutputStream(tempFile).use { output ->
                     val buffer = ByteArray(COPY_BUFFER_BYTES)
@@ -219,7 +296,7 @@ class LocalDraftImageImporter @Inject constructor(
         imageId: ImageId,
         mimeType: String,
         tempFile: File,
-        bounds: BitmapFactory.Options = decodeBounds(tempFile),
+        bounds: DecodedImageBounds = decodeBounds(tempFile),
     ): ImportedImageFile {
         if (!CaptureImagePolicy.areDimensionsAllowed(bounds.outWidth, bounds.outHeight)) {
             throw FileException(FileError.TooLarge)
@@ -257,9 +334,8 @@ class LocalDraftImageImporter @Inject constructor(
     }
 
     /** Cabeceras decodificadas sin cargar píxeles; un archivo ilegible es [FileError.Corrupt]. */
-    private fun decodeBounds(tempFile: File): BitmapFactory.Options {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(tempFile.absolutePath, bounds)
+    private fun decodeBounds(tempFile: File): DecodedImageBounds {
+        val bounds = DesktopImageCodec.decodeBounds(tempFile)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             throw FileException(FileError.Corrupt)
         }
@@ -271,17 +347,15 @@ class LocalDraftImageImporter @Inject constructor(
      * que el contenido es legible con una decodificación real con muestreo, sin reventar la
      * memoria.
      */
-    private fun probeDecodable(tempFile: File, bounds: BitmapFactory.Options) {
-        val probe = BitmapFactory.Options().apply {
-            inSampleSize = decodeSampleSize(bounds.outWidth, bounds.outHeight)
-        }
+    private fun probeDecodable(tempFile: File, bounds: DecodedImageBounds) {
+        val sampleSize = decodeSampleSize(bounds.outWidth, bounds.outHeight)
         val decoded = try {
-            BitmapFactory.decodeFile(tempFile.absolutePath, probe)
+            DesktopImageCodec.decodeFile(tempFile, sampleSize)
                 ?: throw FileException(FileError.Corrupt)
         } catch (failure: OutOfMemoryError) {
             throw FileException(FileError.TooLarge, failure)
         }
-        decoded.recycle()
+        decoded.recycleSafely()
     }
 
     /** Muestra potencia de dos que limita el lado mayor, incluidas imágenes panorámicas. */
@@ -386,29 +460,28 @@ class LocalDraftImageImporter @Inject constructor(
     }
 
     /**
-     * Publica sin reemplazo. El hard-link es una operación atómica del filesystem y conserva el
-     * inode ya sincronizado; el temporal raíz se elimina en el `finally` del llamador después de
-     * confirmar el directorio destino. En filesystems Android que no admiten hard-links se usa
-     * `Files.move` sin `REPLACE_EXISTING`, siempre dentro del mismo `filesDir`; a diferencia del
-     * fallback anterior, jamás se copia una secuencia parcial directamente al nombre publicado.
-     * Android puede expresar el bloqueo SELinux de hard-links como `EACCES` o `EPERM`; ambos
-     * permiten este fallback porque origen y destino ya están resueltos dentro del mismo
-     * `filesDir` privado y el movimiento sigue prohibiendo reemplazar un nombre existente.
+     * Publica sin reemplazo. El hard-link (`Files.createLink`) es una operación atómica del
+     * filesystem y conserva el archivo ya sincronizado; el temporal raíz se elimina en el
+     * `finally` del llamador después de confirmar el directorio destino. En filesystems que no
+     * admiten hard-links (FAT32/exFAT, algunos recursos de red) o cuando el sistema rechaza el
+     * enlace, se usa `Files.move` sin `REPLACE_EXISTING`, siempre dentro del mismo `filesDir`;
+     * jamás se copia una secuencia parcial directamente al nombre publicado y el movimiento
+     * sigue prohibiendo reemplazar un nombre existente.
      */
     private fun publishWithoutReplacing(source: File, destination: File) {
         try {
-            Os.link(source.absolutePath, destination.absolutePath)
-        } catch (failure: ErrnoException) {
-            when (failure.errno) {
-                OsConstants.EEXIST -> throw FileAlreadyExistsException(destination.path)
-                OsConstants.EACCES,
-                OsConstants.EPERM,
-                OsConstants.ENOTSUP,
-                OsConstants.EOPNOTSUPP,
-                OsConstants.EXDEV,
-                -> Files.move(source.toPath(), destination.toPath())
-                else -> throw IOException("No se pudo publicar la imagen privada", failure)
-            }
+            Files.createLink(destination.toPath(), source.toPath())
+        } catch (failure: FileAlreadyExistsException) {
+            throw failure
+        } catch (failure: NoSuchFileException) {
+            throw IOException("No se pudo publicar la imagen privada", failure)
+        } catch (_: UnsupportedOperationException) {
+            Files.move(source.toPath(), destination.toPath())
+        } catch (_: FileSystemException) {
+            // Acceso denegado, dispositivos distintos u operación no admitida por el volumen.
+            Files.move(source.toPath(), destination.toPath())
+        } catch (failure: IOException) {
+            throw IOException("No se pudo publicar la imagen privada", failure)
         }
     }
 
@@ -450,6 +523,13 @@ class LocalDraftImageImporter @Inject constructor(
         const val TEMP_FILE_PREFIX = "import-"
         const val TEMP_FILE_SUFFIX = ".tmp"
         private const val JPEG_MIME_TYPE = "image/jpeg"
+        private const val PNG_MIME_TYPE = "image/png"
+        private const val WEBP_MIME_TYPE = "image/webp"
+        private const val FILE_URI_PREFIX = "file:"
+        private const val MIME_SNIFF_BYTES = 12
+        private val PNG_SIGNATURE = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        )
         private const val COPY_BUFFER_BYTES = 8 * 1024
         private const val DECODE_PROBE_PX = 1_024
         private const val HEX_DIGITS = "0123456789abcdef"

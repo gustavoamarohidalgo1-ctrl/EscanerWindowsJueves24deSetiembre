@@ -1,10 +1,6 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import androidx.core.graphics.scale
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.domain.model.PrivateImageDeletionResult
 import com.facturastock.app.domain.model.id.ImageId
@@ -14,7 +10,7 @@ import com.facturastock.app.domain.repository.DocumentUploadPreparer
 import com.facturastock.app.domain.repository.DocumentUploadSource
 import com.facturastock.app.domain.repository.PreparedDocumentUpload
 import com.facturastock.app.domain.repository.guardDocumentUploadPreparation
-import dagger.hilt.android.qualifiers.ApplicationContext
+import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -36,7 +32,7 @@ import kotlinx.coroutines.withContext
 /** Prepara y conserva cifrado el JPEG exacto que el callable recibirá. */
 @Singleton
 class LocalDocumentUploadPreparer @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val retainedImages: com.facturastock.app.domain.repository.RetainedImageStore,
     private val cipher: RetainedImageCipher,
     private val dispatchers: DispatcherProvider,
@@ -44,8 +40,8 @@ class LocalDocumentUploadPreparer @Inject constructor(
     private val directoryPublicationDurability: PrivatePublicationDurability =
         PrivatePublicationDurability(),
 ) : DocumentUploadPreparer {
-    private val rootDirectory = context.filesDir
-    private val directory = File(context.filesDir, DIRECTORY)
+    private val rootDirectory = directories.filesDir
+    private val directory = File(directories.filesDir, DIRECTORY)
     private val mutex = Mutex()
     // Protegido por [mutex]. Una instancia recién creada vuelve a confirmar el ancestro: esto
     // cierra tanto un fallo de fsync en caliente como el reinicio del proceso anterior al reboot.
@@ -314,8 +310,7 @@ class LocalDocumentUploadPreparer @Inject constructor(
         cancellationJob: Job?,
     ): PreparedDocumentUpload? {
         cancellationJob?.ensureActive()
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(source, 0, source.size, bounds)
+        val bounds = DesktopImageCodec.decodeBounds(source)
         val actualMime = bounds.outMimeType?.lowercase()
         if (!DocumentUploadDecodePolicy.acceptsSourceDimensions(
                 bounds.outWidth,
@@ -330,43 +325,28 @@ class LocalDocumentUploadPreparer @Inject constructor(
             sampleSizeFor(targetScale),
             DocumentUploadDecodePolicy.sampleSize(bounds.outWidth, bounds.outHeight),
         )
-        val decoded = BitmapFactory.decodeByteArray(
-            source,
-            0,
-            source.size,
-            BitmapFactory.Options().apply {
-                inSampleSize = sampleSize
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            },
-        ) ?: return null
-        var working = decoded
+        val decoded = DesktopImageCodec.decodeByteArray(source, sampleSize) ?: return null
+        var working: BufferedImage = decoded
         try {
             cancellationJob?.ensureActive()
             val sampledScale = min(1.0, targetScale * sampleSize)
             if (sampledScale < 1.0) {
-                val scaled = working.scale(
+                val scaled = DesktopImageCodec.scale(
+                    working,
                     (working.width * sampledScale).toInt().coerceAtLeast(1),
                     (working.height * sampledScale).toInt().coerceAtLeast(1),
                     filter = true,
                 )
                 if (scaled !== working) {
-                    working.recycle()
+                    working.recycleSafely()
                     working = scaled
                 }
             }
             if (rotationDegrees != 0) {
                 cancellationJob?.ensureActive()
-                val rotated = Bitmap.createBitmap(
-                    working,
-                    0,
-                    0,
-                    working.width,
-                    working.height,
-                    Matrix().apply { postRotate(rotationDegrees.toFloat()) },
-                    true,
-                )
+                val rotated = DesktopImageCodec.rotate(working, rotationDegrees, filter = true)
                 if (rotated !== working) {
-                    working.recycle()
+                    working.recycleSafely()
                     working = rotated
                 }
             }
@@ -378,7 +358,13 @@ class LocalDocumentUploadPreparer @Inject constructor(
                         maximumBytes = PreparedDocumentUpload.MAX_UPLOAD_BYTES,
                         cancellationJob = cancellationJob,
                     ).use { output ->
-                        if (!working.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                        val compressed = try {
+                            DesktopImageCodec.compressJpeg(working, quality, output)
+                        } catch (_: IOException) {
+                            // Equivale al `false` de `Bitmap.compress` ante un fallo del flujo.
+                            false
+                        }
+                        if (!compressed) {
                             // Algunos codecs traducen una excepción del OutputStream a `false`.
                             // Recomprueba el Job para no degradar cancelación a un resultado nulo.
                             cancellationJob?.ensureActive()
@@ -402,13 +388,14 @@ class LocalDocumentUploadPreparer @Inject constructor(
                 ) {
                     return null
                 }
-                val scaled = working.scale(
+                val scaled = DesktopImageCodec.scale(
+                    working,
                     (working.width * RESIZE_FACTOR).toInt().coerceAtLeast(1),
                     (working.height * RESIZE_FACTOR).toInt().coerceAtLeast(1),
                     filter = true,
                 )
                 if (scaled === working) return null
-                working.recycle()
+                working.recycleSafely()
                 working = scaled
             }
             return null
@@ -417,7 +404,7 @@ class LocalDocumentUploadPreparer @Inject constructor(
         } catch (_: RuntimeException) {
             return null
         } finally {
-            if (!working.isRecycled) working.recycle()
+            working.recycleSafely()
         }
     }
 
@@ -442,8 +429,7 @@ class LocalDocumentUploadPreparer @Inject constructor(
     }
 
     private fun jpegDimensions(bytes: ByteArray): Pair<Int, Int>? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val bounds = DesktopImageCodec.decodeBounds(bytes)
         return if (bounds.outMimeType?.lowercase() == JPEG_MIME_TYPE &&
             bounds.outWidth in 1..PreparedDocumentUpload.MAX_DIMENSION &&
             bounds.outHeight in 1..PreparedDocumentUpload.MAX_DIMENSION &&
@@ -485,7 +471,7 @@ class LocalDocumentUploadPreparer @Inject constructor(
 
 /**
  * Conserva como máximo el payload admitido. Los bytes que exceden el límite se descartan
- * mientras `Bitmap.compress` termina, y el buffer interno se limpia al cerrar incluso si la
+ * mientras el escritor JPEG termina, y el buffer interno se limpia al cerrar incluso si la
  * compresión se cancela o falla.
  */
 internal class CappedCancellationByteArrayOutputStream(

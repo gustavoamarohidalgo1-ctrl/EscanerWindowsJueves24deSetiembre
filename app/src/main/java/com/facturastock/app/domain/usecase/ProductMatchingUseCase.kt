@@ -585,8 +585,8 @@ internal object ProductNameSimilarity {
 }
 
 /**
- * Evita el matcher solo para ASCII con espacios simples. Android y JVM no usan la misma clase
- * Unicode para \\s: cualquier carácter no ASCII conserva el regex original de su plataforma.
+ * Evita el matcher solo para ASCII con espacios simples. `(?U)` da a \\s la clase Unicode de
+ * Android (ICU): NBSP, espacio fino y em-space colapsan igual en Windows que en la tablet.
  */
 private fun collapseMatchWhitespace(raw: String): String {
     var previousWasSpace = false
@@ -604,4 +604,4 @@ private fun collapseMatchWhitespace(raw: String): String {
     return raw
 }
 
-private val MATCH_WHITESPACE = Regex("\\s+")
+private val MATCH_WHITESPACE = Regex("(?U)\\s+")

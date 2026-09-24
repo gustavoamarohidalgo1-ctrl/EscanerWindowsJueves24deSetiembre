@@ -1,14 +1,16 @@
 package com.facturastock.app.data.files
 
-import android.os.Build
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.channels.FileChannel
+import java.nio.file.AccessDeniedException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -20,18 +22,29 @@ import javax.inject.Inject
  * 2. publicar por rename/link dentro del mismo almacenamiento privado;
  * 3. volver a sincronizar el nombre publicado y los directorios que contienen sus entradas.
  *
- * La sincronización de directorios no está implementada de forma uniforme por todos los
- * filesystems/OEM Android. Solo `EINVAL`, `ENOTSUP` y `EOPNOTSUPP` se consideran una ausencia
- * explícita de esa capacidad. Cualquier otro error (incluidos `EIO` y `ENOSPC`) se propaga: el
- * llamador debe fallar antes de guardar la ruta en Room. Un fallo posterior al rename puede dejar
- * un archivo íntegro pero aún no referenciado; un retry puede revalidarlo y completar la barrera.
+ * En escritorio la sincronización de archivos usa [FileChannel.force] con metadatos (`fsync`
+ * en POSIX, `FlushFileBuffers` en Windows). La de directorios depende del sistema operativo:
+ *
+ * - **POSIX (Linux/macOS)**: el JDK permite abrir el directorio en solo lectura y `force`
+ *   ejecuta `fsync` sobre él. Solo `EINVAL`, `ENOTSUP` y `EOPNOTSUPP` se consideran una
+ *   ausencia explícita de esa capacidad. Cualquier otro error (incluidos `EIO` y `ENOSPC`) se
+ *   propaga: el llamador debe fallar antes de guardar la ruta en Room.
+ * - **Windows**: el JDK abre archivos con `CreateFileW` sin `FILE_FLAG_BACKUP_SEMANTICS`, de modo
+ *   que un directorio no puede abrirse como canal (y `FlushFileBuffers` sobre un directorio
+ *   exige además escritura). Se intenta igualmente y el rechazo del sistema se ignora: NTFS
+ *   registra en su journal de metadatos el rename/creación de entradas, y la entrada ya quedó
+ *   persistida junto con los datos del archivo, que sí se sincronizaron con `force(true)`.
+ *
+ * Un fallo posterior al rename puede dejar un archivo íntegro pero aún no referenciado; un
+ * retry puede revalidarlo y completar la barrera.
  */
 internal object DurablePrivateFilePublication {
 
     /**
-     * Reemplazo POSIX atómico dentro del mismo directorio. Usar directamente `rename(2)` evita
-     * que un proveedor NIO emule el fallback de `Files.move` mediante copia sobre el nombre
-     * publicado, lo que lo haría observable a medias tras una muerte de proceso.
+     * Reemplazo atómico dentro del mismo directorio con `Files.move(ATOMIC_MOVE)` (`rename(2)` en
+     * POSIX, `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` en Windows). Si el sistema no admite el
+     * movimiento atómico se falla en lugar de dejar que NIO emule el reemplazo con una copia
+     * sobre el nombre publicado, que lo haría observable a medias tras una muerte de proceso.
      */
     @Throws(IOException::class)
     fun replaceByRename(source: File, destination: File) {
@@ -49,46 +62,50 @@ internal object DurablePrivateFilePublication {
             throw IOException("El reemplazo privado no tiene un directorio padre seguro")
         }
         try {
-            Os.rename(source.absolutePath, destination.absolutePath)
-        } catch (failure: ErrnoException) {
+            Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (failure: AtomicMoveNotSupportedException) {
+            throw IOException("El sistema no admite el reemplazo atómico privado", failure)
+        } catch (failure: IOException) {
             throw IOException("No se pudo renombrar la publicación privada", failure)
         }
     }
 
     /**
-     * Sincroniza bytes y metadatos del archivo. Se abre `O_RDWR|O_NOFOLLOW`, sin `O_TRUNC`, y se
-     * revalida el descriptor; [flush] precede explícitamente a `fd.sync()` aunque esta llamada
-     * normalmente no tenga datos nuevos en Java.
+     * Sincroniza bytes y metadatos del archivo. Se abre en escritura sin truncar y sin seguir
+     * enlaces (`NOFOLLOW_LINKS`), se revalida que siga siendo un archivo regular y se ejecuta
+     * `force(true)`. Windows exige un handle con escritura para `FlushFileBuffers`.
      */
     @Throws(IOException::class)
     fun syncFile(file: File) {
-        val descriptor = try {
-            Os.open(
-                file.absolutePath,
-                compatibleOpenFlags(OsConstants.O_RDWR or OsConstants.O_NOFOLLOW),
-                0,
-            )
-        } catch (failure: ErrnoException) {
+        val path = file.toPath()
+        if (!isRegularNoFollow(path)) {
+            throw IOException("La publicación privada no es un archivo regular")
+        }
+        val channel = try {
+            FileChannel.open(path, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+        } catch (failure: IOException) {
+            throw IOException("No se pudo abrir la publicación privada para sincronizarla", failure)
+        } catch (failure: UnsupportedOperationException) {
             throw IOException("No se pudo abrir la publicación privada para sincronizarla", failure)
         }
-        FileOutputStream(descriptor).use { output ->
-            val stat = try {
-                Os.fstat(descriptor)
-            } catch (failure: ErrnoException) {
-                throw IOException("No se pudo revalidar la publicación privada", failure)
-            }
-            if (!OsConstants.S_ISREG(stat.st_mode)) {
+        channel.use { opened ->
+            // El JDK no expone `fstat` sobre el canal: se revalida la ruta ya abierta.
+            if (!isRegularNoFollow(path)) {
                 throw IOException("La publicación privada no es un archivo regular")
             }
-            output.flush()
-            output.fd.sync()
+            opened.force(true)
         }
     }
 
     /**
      * Sincroniza el directorio padre y cada ancestro hasta [durabilityRoot], inclusive. Esto
      * persiste tanto el nombre final como cualquier directorio creado con `mkdirs()` para llegar
-     * a él. La ruta se comprueba léxicamente y cada descriptor se revalida sin seguir symlinks.
+     * a él. La ruta se comprueba léxicamente y cada directorio se revalida sin seguir symlinks.
      */
     @Throws(IOException::class)
     fun syncParentChainAfterRename(destination: File, durabilityRoot: File) {
@@ -122,55 +139,55 @@ internal object DurablePrivateFilePublication {
     }
 
     private fun syncDirectoryIfSupported(directory: File) {
+        val path = directory.toPath()
         if (
-            Files.isSymbolicLink(directory.toPath()) ||
-            !Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+            Files.isSymbolicLink(path) ||
+            !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
         ) {
             throw IOException("El padre de la publicación privada no es un directorio seguro")
         }
-        val descriptor = try {
-            Os.open(
-                directory.absolutePath,
-                compatibleOpenFlags(OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW),
-                0,
-            )
-        } catch (failure: ErrnoException) {
+        val channel = try {
+            FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+        } catch (failure: IOException) {
+            // Windows no permite abrir un directorio como canal desde el JDK (ver cabecera).
+            if (isWindows) return
+            throw IOException("No se pudo abrir el directorio para sincronizarlo", failure)
+        } catch (failure: UnsupportedOperationException) {
+            if (isWindows) return
             throw IOException("No se pudo abrir el directorio para sincronizarlo", failure)
         }
         try {
-            val stat = try {
-                Os.fstat(descriptor)
-            } catch (failure: ErrnoException) {
-                throw IOException("No se pudo revalidar el directorio privado", failure)
-            }
-            if (!OsConstants.S_ISDIR(stat.st_mode)) {
+            if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)) {
                 throw IOException("La ruta abierta ya no es un directorio privado")
             }
             try {
-                Os.fsync(descriptor)
-            } catch (failure: ErrnoException) {
-                if (!isUnsupportedDirectorySyncErrno(failure.errno)) {
+                channel.force(true)
+            } catch (failure: IOException) {
+                if (!isWindows && !isUnsupportedDirectorySyncFailure(failure)) {
                     throw IOException("No se pudo sincronizar el directorio privado", failure)
                 }
+                // Windows: `FlushFileBuffers` sobre un handle de solo lectura se rechaza con
+                // acceso denegado; es la misma ausencia de capacidad descrita en la cabecera.
             }
         } finally {
-            // Después de un fsync exitoso, un fallo al cerrar no revierte la durabilidad. Además,
-            // algunos wrappers OEM reportan EBADF al cerrar un descriptor ya invalidado.
+            // Después de un fsync exitoso, un fallo al cerrar no revierte la durabilidad.
             try {
-                Os.close(descriptor)
-            } catch (_: ErrnoException) {
-                // El descriptor ya no puede reutilizarse; no se degrada un fsync confirmado.
+                channel.close()
+            } catch (_: IOException) {
+                // El canal ya no puede reutilizarse; no se degrada un fsync confirmado.
             }
         }
     }
 
-    /** `O_CLOEXEC` no forma parte del SDK público de Android 8.0 (API 26). */
-    private fun compatibleOpenFlags(baseFlags: Int): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            baseFlags or OsConstants.O_CLOEXEC
-        } else {
-            baseFlags
-        }
+    private fun isRegularNoFollow(path: java.nio.file.Path): Boolean = try {
+        Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            .isRegularFile
+    } catch (_: IOException) {
+        false
+    }
+
+    private val isWindows: Boolean =
+        System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT).startsWith("windows")
 }
 
 /**
@@ -253,6 +270,20 @@ open class PrivateDeletionDurability @Inject constructor() {
 
 /** Política estrecha y comprobable: errores de medio/capacidad nunca se confunden con soporte. */
 internal fun isUnsupportedDirectorySyncErrno(errno: Int): Boolean =
-    errno == OsConstants.EINVAL ||
-        errno == OsConstants.ENOTSUP ||
-        errno == OsConstants.EOPNOTSUPP
+    errno in UNSUPPORTED_DIRECTORY_SYNC_ERRNOS
+
+/**
+ * El JDK no expone `errno` en [IOException]: sus mensajes nativos reproducen `strerror`. Se
+ * reconocen solo los textos de `EINVAL`, `ENOTSUP` y `EOPNOTSUPP`; un acceso denegado explícito
+ * ([AccessDeniedException]) nunca se interpreta como falta de soporte.
+ */
+internal fun isUnsupportedDirectorySyncFailure(failure: IOException): Boolean {
+    if (failure is AccessDeniedException) return false
+    val text = failure.message?.lowercase(Locale.ROOT).orEmpty()
+    return "invalid argument" in text ||
+        "operation not supported" in text ||
+        "not supported" in text
+}
+
+// EINVAL es 22 en todas las plataformas; ENOTSUP/EOPNOTSUPP son 95 en Linux y 45/102 en macOS.
+private val UNSUPPORTED_DIRECTORY_SYNC_ERRNOS = setOf(22, 95, 45, 102)

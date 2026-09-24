@@ -18,14 +18,11 @@ import com.facturastock.app.domain.usecase.ConfirmPurchaseUseCase
 import com.facturastock.app.domain.usecase.ObserveInvoiceDraftUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
-
-@HiltViewModel
 class PreparationViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val confirmPurchaseUseCase: ConfirmPurchaseUseCase,

@@ -1,6 +1,6 @@
 package com.facturastock.app.ui.components
 
-import androidx.annotation.DrawableRes
+import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +34,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
@@ -50,10 +50,10 @@ fun FacturaStockTopBar(
     modifier: Modifier = Modifier,
     contentMaxWidth: Dp? = null,
     compact: Boolean = false,
-    @DrawableRes navigationIconRes: Int? = null,
+    navigationIconRes: DrawableResource? = null,
     navigationContentDescription: String? = null,
     onNavigationClick: (() -> Unit)? = null,
-    @DrawableRes actionIconRes: Int? = null,
+    actionIconRes: DrawableResource? = null,
     actionContentDescription: String? = null,
     onActionClick: (() -> Unit)? = null,
     extraActions: List<FacturaStockTopBarAction> = emptyList(),
@@ -182,7 +182,7 @@ fun FacturaStockTopBar(
 /** Icono adicional que una pantalla principal muestra en la barra superior, antes de ajustes. */
 @Immutable
 data class FacturaStockTopBarAction(
-    @param:DrawableRes val iconRes: Int,
+    val iconRes: DrawableResource,
     val contentDescription: String,
     val onClick: () -> Unit,
     val enabled: Boolean = true,
@@ -192,7 +192,7 @@ data class FacturaStockTopBarAction(
 @Immutable
 data class FacturaStockBottomItem(
     val label: String,
-    @param:DrawableRes val iconRes: Int,
+    val iconRes: DrawableResource,
 )
 
 object FacturaStockNavigationTestTags {
@@ -314,7 +314,7 @@ fun FacturaStockNavigationRail(
     selectedIndex: Int,
     onItemSelected: (Int) -> Unit,
     brandLabel: String,
-    @DrawableRes brandIconRes: Int,
+    brandIconRes: DrawableResource,
     modifier: Modifier = Modifier,
 ) {
     require(items.size in 2..5)

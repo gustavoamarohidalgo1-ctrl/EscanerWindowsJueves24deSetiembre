@@ -8,16 +8,16 @@ import com.facturastock.app.domain.repository.OcrImageFile
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 
-/** Usa OCR fake solo para el borrador sintético estable; todo archivo normal sigue por ML Kit. */
+/** Usa OCR fake solo para el borrador sintético estable; todo archivo normal va al OCR de Windows. */
 class DemoAwareInvoiceTextRecognizer @Inject constructor(
     private val appConfigurationRepository: AppConfigurationRepository,
-    private val mlKit: MlKitInvoiceTextRecognizer,
+    private val windowsOcr: WindowsOcrInvoiceTextRecognizer,
 ) : InvoiceTextRecognizer {
     override suspend fun recognize(pages: List<OcrImageFile>) =
         if (isExactDemoPage(pages)) {
             DemoInvoiceFixture.recognize(pages)
         } else {
-            mlKit.recognize(pages)
+            windowsOcr.recognize(pages)
         }
 
     internal suspend fun isExactDemoPage(pages: List<OcrImageFile>): Boolean {

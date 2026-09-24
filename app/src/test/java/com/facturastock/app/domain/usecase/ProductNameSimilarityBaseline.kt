@@ -148,7 +148,7 @@ internal object ProductNameSimilarityBaseline {
     private fun tokens(folded: String): Set<String> = folded.split(' ').filter { it.length >= 2 }.toSet()
 
     private val COMBINING_MARKS = Regex("\\p{M}+")
-    private val WHITESPACE = Regex("\\s+")
+    private val WHITESPACE = Regex("(?U)\\s+")
     private const val MIN_PREFIX_LENGTH = 3
     private const val PREFIX_MATCH_SCORE = 850
 }

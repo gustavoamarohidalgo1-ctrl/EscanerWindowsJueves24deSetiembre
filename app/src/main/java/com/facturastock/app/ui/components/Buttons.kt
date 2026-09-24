@@ -1,6 +1,6 @@
 package com.facturastock.app.ui.components
 
-import androidx.annotation.DrawableRes
+import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
@@ -14,7 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import com.facturastock.app.ui.theme.FacturaStockDesign
 
@@ -24,7 +24,7 @@ fun FacturaStockPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    @DrawableRes leadingIconRes: Int? = null,
+    leadingIconRes: DrawableResource? = null,
 ) {
     val spacing = FacturaStockDesign.spacing
 
@@ -60,7 +60,7 @@ fun FacturaStockSecondaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    @DrawableRes leadingIconRes: Int? = null,
+    leadingIconRes: DrawableResource? = null,
     leadingIconPainter: Painter? = null,
 ) {
     val spacing = FacturaStockDesign.spacing

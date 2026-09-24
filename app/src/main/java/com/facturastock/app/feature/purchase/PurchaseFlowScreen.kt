@@ -1,7 +1,8 @@
 package com.facturastock.app.feature.purchase
 
-import androidx.annotation.DrawableRes
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,10 +12,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import com.facturastock.app.R
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.components.StatusCard
@@ -23,14 +23,14 @@ import com.facturastock.app.ui.theme.FacturaStockDesign
 
 @Composable
 fun PurchaseFlowScreen(
-    @StringRes titleRes: Int,
-    @StringRes messageRes: Int,
-    @StringRes primaryActionRes: Int,
+    titleRes: StringResource,
+    messageRes: StringResource,
+    primaryActionRes: StringResource,
     onPrimaryAction: () -> Unit,
     modifier: Modifier = Modifier,
     step: Int? = null,
     totalSteps: Int = PURCHASE_EDITABLE_STEP_COUNT,
-    @DrawableRes iconRes: Int = R.drawable.ic_receipt,
+    iconRes: DrawableResource = Res.drawable.ic_receipt,
     tone: StatusTone = StatusTone.INFO,
     primaryActionEnabled: Boolean = true,
     showPreviousAction: Boolean = false,
@@ -47,7 +47,7 @@ fun PurchaseFlowScreen(
         if (step != null) {
             item {
                 Text(
-                    text = stringResource(R.string.purchase_flow_step, step, totalSteps),
+                    text = stringResource(Res.string.purchase_flow_step, step, totalSteps),
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -64,7 +64,7 @@ fun PurchaseFlowScreen(
         item {
             StatusCard(
                 statusLabel = step?.let {
-                    stringResource(R.string.purchase_flow_step, it, totalSteps)
+                    stringResource(Res.string.purchase_flow_step, it, totalSteps)
                 } ?: title,
                 title = title,
                 message = stringResource(messageRes),
@@ -83,7 +83,7 @@ fun PurchaseFlowScreen(
         if (showPreviousAction) {
             item {
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.action_previous_step),
+                    text = stringResource(Res.string.action_previous_step),
                     onClick = onPreviousAction,
                     modifier = Modifier.fillMaxWidth(),
                 )

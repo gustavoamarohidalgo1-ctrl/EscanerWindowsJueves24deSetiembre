@@ -4,7 +4,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Upsert
+import androidx.room.Transaction
+import androidx.room.Update
 import com.facturastock.app.data.local.entity.RemoteCatalogChangeEntity
 import com.facturastock.app.data.local.entity.RemoteMovementSummaryEntity
 import com.facturastock.app.data.local.entity.RemotePurchaseChangeEntity
@@ -20,8 +21,23 @@ interface RemoteSyncDao {
     @Query("SELECT * FROM remote_sync_states WHERE cloudBusinessId = :cloudBusinessId")
     fun observeState(cloudBusinessId: String): Flow<RemoteSyncStateEntity?>
 
-    @Upsert
-    suspend fun upsertState(state: RemoteSyncStateEntity)
+    /**
+     * Inserta o reemplaza el estado por clave primaria. No usa `@Upsert`: el adaptador de Room
+     * decide entre INSERT y UPDATE capturando `androidx.sqlite.SQLiteException`, pero el driver
+     * de escritorio ([com.facturastock.app.data.local.sqlite.TranslatingSQLiteDriver]) la
+     * convierte en la jerarquía tipada propia, así que el conflicto de clave primaria escapaba
+     * como error en vez de actualizar la fila existente.
+     */
+    @Transaction
+    suspend fun upsertState(state: RemoteSyncStateEntity) {
+        if (updateState(state) == 0) insertState(state)
+    }
+
+    @Update
+    suspend fun updateState(state: RemoteSyncStateEntity): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertState(state: RemoteSyncStateEntity)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertPurchaseChange(change: RemotePurchaseChangeEntity): Long

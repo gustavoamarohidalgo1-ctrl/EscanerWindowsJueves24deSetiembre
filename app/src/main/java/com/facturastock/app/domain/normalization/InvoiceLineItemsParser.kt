@@ -1187,7 +1187,7 @@ private val CLOSED_RATE_CELL = Regex(
         "([0-9OIL|]+(?:[.,][0-9OIL|]+)?)\\s*%?$",
 )
 private val HEADER_PUNCTUATION = Regex("[._:/\\-]+")
-private val MULTIPLE_SPACES = Regex("\\s+")
+private val MULTIPLE_SPACES = Regex("(?U)\\s+")
 
 private const val CORNER_COUNT = 4
 private const val MIN_SPLIT_ELEMENT_COUNT = 2

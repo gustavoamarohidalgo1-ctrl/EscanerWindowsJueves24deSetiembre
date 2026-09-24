@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "FacturaStock"
 include(":app")
-include(":benchmark")

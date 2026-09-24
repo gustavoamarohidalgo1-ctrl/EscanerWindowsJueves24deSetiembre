@@ -539,7 +539,7 @@ class ProductMatchingUseCaseTest {
         val matching = ProductMatchingUseCase(repository, aliases)
         val variants = mapOf('a' to 'á', 'e' to 'é', 'i' to 'í', 'o' to 'ó', 'u' to 'ú', 'n' to 'ñ')
         for (raw in listOf("azuc", "Cafe molido", "arroz arroz", "AR AR", "harina integral avena organica natural", " \tazuc\n RUBIA  ")) {
-            val name = raw.trim().replace(Regex("\\s+"), " ")
+            val name = raw.trim().replace(Regex("(?U)\\s+"), " ")
             val base = name.split(' ').filter { it.length >= 3 }.distinct()
                 .sortedByDescending(String::length).takeIf { it.isNotEmpty() } ?: listOf(name.trim())
             val accents = base.flatMap { seed ->

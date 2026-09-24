@@ -1796,7 +1796,7 @@ private val PRINTED_CURRENCY_MARKER = Regex("""(?i)(?<![A-Z])(?:S\s*/|US\$|[A-Z]
 private val PARSER_CURRENCY_MARKER = PRINTED_CURRENCY_MARKER
 private val CURRENCY_BEFORE_PARENTHESES = Regex("(?i)^$TOTALS_CURRENCY_PATTERN\\s*\\(")
 private val LABEL_PUNCTUATION = Regex("[._:/]+")
-private val MULTIPLE_SPACES = Regex("\\s+")
+private val MULTIPLE_SPACES = Regex("(?U)\\s+")
 private val LABEL_VALUE_SEPARATORS = setOf(':', '=', '-', '‒', '−', '–', '—')
 private val MALFORMED_AMOUNT_START = Regex(
     "(?i)^[+\\-‒−–—]?(?:\\s*)(?:\\(|S\\s*/|US\\$|[A-Z]{3}(?![A-Z])|[.,0-9OIL|])",

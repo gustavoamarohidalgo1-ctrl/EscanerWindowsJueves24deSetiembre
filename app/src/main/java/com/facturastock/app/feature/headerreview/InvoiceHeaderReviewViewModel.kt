@@ -34,7 +34,6 @@ import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewContract.Pag
 import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewContract.ReviewWarning
 import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewContract.ReviewWarningCode
 import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewContract.State
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -42,8 +41,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
-
-@HiltViewModel
 class InvoiceHeaderReviewViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val loadInvoiceHeaderReviewUseCase: LoadInvoiceHeaderReviewUseCase,

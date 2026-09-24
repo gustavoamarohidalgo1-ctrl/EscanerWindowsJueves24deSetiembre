@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.facturastock.app.domain.config.AppConfiguration
 import com.facturastock.app.domain.usecase.ObserveAppConfigurationUseCase
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,7 +23,6 @@ import kotlinx.coroutines.flow.update
  * y permite reiniciar explícitamente la observación sin recrear la Activity.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@HiltViewModel
 class AppGateViewModel @Inject constructor(
     private val observeAppConfigurationUseCase: ObserveAppConfigurationUseCase,
 ) : ViewModel() {

@@ -1,15 +1,15 @@
 package com.facturastock.app.navigation
 
-import android.net.Uri
-import androidx.annotation.DrawableRes
-import androidx.annotation.StringRes
-import com.facturastock.app.R
+import org.jetbrains.compose.resources.DrawableResource
+
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import com.facturastock.app.domain.model.id.BusinessId
 
 data class RouteDefinition(
     val pattern: String,
     val argumentNames: Set<String> = emptySet(),
-    @param:StringRes val titleRes: Int,
+    val titleRes: StringResource,
     val topLevel: Boolean = false,
     val protectsDraftOnExit: Boolean = false,
 )
@@ -76,74 +76,74 @@ object AppRoutes {
     const val DEBT_DETAIL = "debtors/{$DEBT_ID}"
 
     val all: List<RouteDefinition> = listOf(
-        RouteDefinition(HOME, titleRes = R.string.sales_title),
-        RouteDefinition(SALES, titleRes = R.string.sales_title, topLevel = true),
+        RouteDefinition(HOME, titleRes = Res.string.sales_title),
+        RouteDefinition(SALES, titleRes = Res.string.sales_title, topLevel = true),
         RouteDefinition(
             SALES_PRODUCT_REGISTRATION,
             argumentNames = setOf(PREFILL_BARCODE, REGISTRATION_REQUEST_ID, REGISTRATION_BUSINESS_ID),
-            titleRes = R.string.inventory_register_products,
+            titleRes = Res.string.inventory_register_products,
         ),
-        RouteDefinition(DEBTORS, titleRes = R.string.debtors_title),
-        RouteDefinition(INVOICES, titleRes = R.string.sales_title),
-        RouteDefinition(INVENTORY, titleRes = R.string.navigation_inventory, topLevel = true),
-        RouteDefinition(INVENTORY_REGISTER, titleRes = R.string.inventory_register_products),
-        RouteDefinition(REPORTS, titleRes = R.string.navigation_reports, topLevel = true),
+        RouteDefinition(DEBTORS, titleRes = Res.string.debtors_title),
+        RouteDefinition(INVOICES, titleRes = Res.string.sales_title),
+        RouteDefinition(INVENTORY, titleRes = Res.string.navigation_inventory, topLevel = true),
+        RouteDefinition(INVENTORY_REGISTER, titleRes = Res.string.inventory_register_products),
+        RouteDefinition(REPORTS, titleRes = Res.string.navigation_reports, topLevel = true),
         RouteDefinition(
             PRODUCTS_PATTERN,
             argumentNames = setOf(PREFILL_BARCODE, EDIT_PRODUCT_ID, SPECIAL_PRODUCT, MANUAL_PRODUCT),
-            titleRes = R.string.navigation_products,
+            titleRes = Res.string.navigation_products,
         ),
-        RouteDefinition(PURCHASES, titleRes = R.string.navigation_purchase_history),
-        RouteDefinition(SETTINGS, titleRes = R.string.navigation_settings),
-        RouteDefinition(ONBOARDING, titleRes = R.string.onboarding_title),
-        RouteDefinition(NEW_PURCHASE, titleRes = R.string.purchase_new_title),
-        RouteDefinition(NEW_DEBT, titleRes = R.string.debt_entry_title),
-        draftRoute(PURCHASE_SOURCE, R.string.purchase_source_title, REPLACE_ID),
-        draftRoute(CAMERA, R.string.purchase_camera_title, REPLACE_ID, SCAN_RETAKE),
+        RouteDefinition(PURCHASES, titleRes = Res.string.navigation_purchase_history),
+        RouteDefinition(SETTINGS, titleRes = Res.string.navigation_settings),
+        RouteDefinition(ONBOARDING, titleRes = Res.string.onboarding_title),
+        RouteDefinition(NEW_PURCHASE, titleRes = Res.string.purchase_new_title),
+        RouteDefinition(NEW_DEBT, titleRes = Res.string.debt_entry_title),
+        draftRoute(PURCHASE_SOURCE, Res.string.purchase_source_title, REPLACE_ID),
+        draftRoute(CAMERA, Res.string.purchase_camera_title, REPLACE_ID, SCAN_RETAKE),
         draftRoute(
             IMAGE_PREVIEW,
-            R.string.purchase_preview_title,
+            Res.string.purchase_preview_title,
             CAPTURE_ID,
         ),
-        draftRoute(PROCESSING, R.string.purchase_processing_title),
-        draftRoute(INVOICE_HEADER, R.string.purchase_header_title),
-        draftRoute(INVOICE_LINES, R.string.purchase_lines_title),
-        draftRoute(INVOICE_MATCHING, R.string.matching_title),
+        draftRoute(PROCESSING, Res.string.purchase_processing_title),
+        draftRoute(INVOICE_HEADER, Res.string.purchase_header_title),
+        draftRoute(INVOICE_LINES, Res.string.purchase_lines_title),
+        draftRoute(INVOICE_MATCHING, Res.string.matching_title),
         draftRoute(
             PRODUCT_LINKING,
-            R.string.purchase_linking_title,
+            Res.string.purchase_linking_title,
             LINE_ID,
         ),
-        draftRoute(PURCHASE_SUMMARY, R.string.purchase_summary_title),
+        draftRoute(PURCHASE_SUMMARY, Res.string.purchase_summary_title),
         draftRoute(
             PURCHASE_CONFIRMATION,
-            R.string.purchase_confirmation_title,
+            Res.string.purchase_confirmation_title,
             EXPECTED_PREPARED_HASH,
         ),
         RouteDefinition(
             PURCHASE_SUCCESS,
             argumentNames = setOf(PURCHASE_ID),
-            titleRes = R.string.purchase_success_title,
+            titleRes = Res.string.purchase_success_title,
         ),
         RouteDefinition(
             PURCHASE_DETAIL,
             argumentNames = setOf(PURCHASE_ID),
-            titleRes = R.string.purchase_detail_title,
+            titleRes = Res.string.purchase_detail_title,
         ),
         RouteDefinition(
             PURCHASE_VOID,
             argumentNames = setOf(PURCHASE_ID),
-            titleRes = R.string.purchase_void_title,
+            titleRes = Res.string.purchase_void_title,
         ),
         RouteDefinition(
             INVENTORY_DETAIL,
             argumentNames = setOf(PRODUCT_ID),
-            titleRes = R.string.inventory_detail_title,
+            titleRes = Res.string.inventory_detail_title,
         ),
         RouteDefinition(
             DEBT_DETAIL,
             argumentNames = setOf(DEBT_ID),
-            titleRes = R.string.debt_detail_title,
+            titleRes = Res.string.debt_detail_title,
         ),
     ).also { definitions ->
         require(definitions.map(RouteDefinition::pattern).distinct().size == definitions.size)
@@ -256,13 +256,13 @@ object AppRoutes {
      * parámetro abre la lista de productos sin formulario.
      */
     fun productsWithBarcode(barcode: String): String =
-        "products?barcode=" + Uri.encode(barcode)
+        "products?barcode=" + encodeRouteComponent(barcode)
 
     /** Alta directa desde Inventario, sin requerir código de barras ni abrir los catálogos. */
     fun manualProductRegistration(): String = "products?manualProduct=true"
 
     fun salesProductRegistration(barcode: String, requestId: String, businessId: BusinessId): String =
-        "sales/register?barcode=${Uri.encode(barcode)}&requestId=${Uri.encode(requestId)}&businessId=${businessId.value}"
+        "sales/register?barcode=${encodeRouteComponent(barcode)}&requestId=${encodeRouteComponent(requestId)}&businessId=${businessId.value}"
 
     /** Edición por identidad estable, también para productos sin código de barras. */
     fun editInventoryProduct(productId: ProductId): String =
@@ -270,7 +270,7 @@ object AppRoutes {
 
     private fun draftRoute(
         pattern: String,
-        @StringRes titleRes: Int,
+        titleRes: StringResource,
         vararg additionalIds: String,
     ): RouteDefinition = RouteDefinition(
         pattern = pattern,
@@ -284,22 +284,26 @@ object AppRoutes {
 
 enum class TopLevelDestination(
     val route: String,
-    @param:StringRes val labelRes: Int,
-    @param:DrawableRes val iconRes: Int,
+    val labelRes: StringResource,
+    val iconRes: DrawableResource,
 ) {
     SALES(
         route = AppRoutes.SALES,
-        labelRes = R.string.navigation_sales,
-        iconRes = R.drawable.ic_sale,
+        labelRes = Res.string.navigation_sales,
+        iconRes = Res.drawable.ic_sale,
     ),
     INVENTORY(
         route = AppRoutes.INVENTORY,
-        labelRes = R.string.navigation_inventory,
-        iconRes = R.drawable.ic_inventory,
+        labelRes = Res.string.navigation_inventory,
+        iconRes = Res.drawable.ic_inventory,
     ),
     REPORTS(
         route = AppRoutes.REPORTS,
-        labelRes = R.string.navigation_reports,
-        iconRes = R.drawable.ic_reports,
+        labelRes = Res.string.navigation_reports,
+        iconRes = Res.drawable.ic_reports,
     ),
 }
+
+/** Codificación porcentual equivalente a `android.net.Uri.encode` (espacio como %20). */
+internal fun encodeRouteComponent(value: String): String =
+    java.net.URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")

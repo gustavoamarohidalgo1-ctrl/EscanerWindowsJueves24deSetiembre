@@ -1,30 +1,13 @@
 package com.facturastock.app.feature.common
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.content.res.ColorStateList
-import android.graphics.Rect
-import android.text.Editable
-import android.text.InputType
-import android.text.TextWatcher
-import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.View
-import android.view.inputmethod.BaseInputConnection
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
-import android.view.inputmethod.InputConnectionWrapper
-import android.view.inputmethod.InputMethodManager
-import android.view.inputmethod.TextAttribute
-import android.widget.EditText
-import androidx.annotation.StringRes
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,21 +18,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.awt.awtEventOrNull
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.BarcodeValue
+import com.facturastock.app.resources.*
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.theme.FacturaStockDesign
+import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
-/** Captura explícita para lectores que escriben mediante IME, teclas virtuales o USB sin sufijo. */
+/**
+ * Campo de captura para el lector USB (que en Windows escribe como un teclado) y para escribir a
+ * mano. Conserva el contrato de la versión Android: el lector confirma con su Enter/Tab de fin de
+ * lectura; escribir a mano en modo búsqueda filtra productos y el botón confirma el código.
+ *
+ * En la tablet el lector se distinguía por ser un dispositivo físico frente al teclado en
+ * pantalla. En un PC ambos son teclados, así que se distingue por el ritmo: un lector entrega la
+ * lectura completa en una ráfaga de pocos milisegundos entre caracteres.
+ */
 @Composable
 fun ScannerCodeInput(
     enabled: Boolean,
@@ -57,17 +62,19 @@ fun ScannerCodeInput(
     modifier: Modifier = Modifier,
     physicalInput: String = "",
     onClearPhysicalInput: () -> Unit = {},
-    @StringRes submitLabelRes: Int = R.string.scanner_code_submit,
+    submitLabelRes: StringResource = Res.string.scanner_code_submit,
     searchQuery: String? = null,
     onSearchQueryChange: ((String) -> Unit)? = null,
-    @StringRes labelRes: Int = R.string.scanner_code_label,
-    @StringRes hintRes: Int = R.string.scanner_code_hint,
-    @StringRes supportingTextRes: Int? = null,
+    labelRes: StringResource = Res.string.scanner_code_label,
+    hintRes: StringResource = Res.string.scanner_code_hint,
+    supportingTextRes: StringResource? = null,
     isOtherTextInputFocused: Boolean = false,
     // Inventario muestra sólo el campo: el lector físico confirma con su Enter de fin de lectura.
     showActions: Boolean = true,
+    // Sin botón «Reiniciar lector» (Inventario): tras esta pausa se descarta una lectura del
+    // lector que llegó sin su Enter/Tab, para que no se mezcle con la siguiente.
+    unconfirmedScanResetMillis: Long? = null,
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val permission = LocalScannerInputPermission.current
     val currentEnabled by rememberUpdatedState(enabled)
@@ -75,70 +82,102 @@ fun ScannerCodeInput(
     val currentOnCode by rememberUpdatedState(onCode)
     val currentOnSearchQueryChange by rememberUpdatedState(onSearchQueryChange)
     val currentClearPhysicalInput by rememberUpdatedState(onClearPhysicalInput)
-    val input = remember(context) { ScannerCodeEditText(context) }
-    var resumed by remember(lifecycleOwner) {
-        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    val focusRequester = remember { FocusRequester() }
+    // STARTED y no RESUMED: cambiar a otra ventana de Windows no debe borrar lo escrito.
+    var started by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
     }
-    var hasText by remember { mutableStateOf(false) }
-    var invalid by remember { mutableStateOf(false) }
-    val active = enabled && resumed && permission()
+    val active = enabled && started && permission()
+    val searchEnabled = searchQuery != null && onSearchQueryChange != null
+    val field = remember { ScannerCodeFieldState() }
+    field.captureAllowed = {
+        currentEnabled && currentPermission() &&
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+    }
+    field.onCode = { currentOnCode(it) }
+    field.onSearchQueryChange = if (searchEnabled) {
+        { currentOnSearchQueryChange?.invoke(it) }
+    } else {
+        null
+    }
+    field.onClearPhysicalInput = { currentClearPhysicalInput() }
+    field.setSearchEnabled(searchEnabled)
+    field.setCaptureEnabled(active)
+    field.updatePhysicalInput(physicalInput)
+    field.syncSearchQuery(searchQuery)
 
-    DisposableEffect(lifecycleOwner, input) {
-        val observer =
-            LifecycleEventObserver { _, _ ->
-                resumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-                if (!resumed) input.setCaptureEnabled(false)
-            }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, _ ->
+            started = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            if (!started) field.setCaptureEnabled(false)
+        }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            input.setCaptureEnabled(false)
-            input.clearFocus()
+            field.setCaptureEnabled(false)
         }
     }
-    LaunchedEffect(active, input, isOtherTextInputFocused) {
-        if (active && !isOtherTextInputFocused) input.requestFocus()
+    if (unconfirmedScanResetMillis != null) {
+        val text = field.value.text
+        LaunchedEffect(text) {
+            if (!field.holdsUnconfirmedScan()) return@LaunchedEffect
+            delay(unconfirmedScanResetMillis)
+            if (field.value.text == text && field.holdsUnconfirmedScan()) field.reset()
+        }
+    }
+    LaunchedEffect(active, isOtherTextInputFocused) {
+        if (active && !isOtherTextInputFocused) runCatching { focusRequester.requestFocus() }
     }
 
     val colors = MaterialTheme.colorScheme
     val label = stringResource(labelRes)
     val hint = stringResource(hintRes)
-    val searchEnabled = searchQuery != null && onSearchQueryChange != null
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm),
     ) {
         Text(label, style = MaterialTheme.typography.labelLarge)
-        AndroidView(
-            factory = { input },
-            modifier = Modifier.fillMaxWidth().testTag(ScannerCodeInputTestTags.FIELD),
-            update = { view ->
-                view.captureAllowed = {
-                    currentEnabled && currentPermission() &&
-                        lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-                }
-                view.onCode = { currentOnCode(it) }
-                view.onSearchQueryChange =
-                    if (searchEnabled) {
-                        { currentOnSearchQueryChange?.invoke(it) }
-                    } else {
-                        null
+        OutlinedTextField(
+            value = field.value,
+            onValueChange = field::onValueChange,
+            enabled = active,
+            singleLine = true,
+            isError = field.invalid,
+            placeholder = { Text(hint) },
+            keyboardOptions = KeyboardOptions(
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Ascii,
+                imeAction = if (searchEnabled) ImeAction.Search else ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = { field.submit() },
+                onSearch = { field.handleSearchAction() },
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged { field.focused = it.isFocused }
+                .onPreviewKeyEvent { event ->
+                    // La ráfaga se mide con la hora de pulsación de AWT, no con la hora en que el
+                    // hilo de UI procesa la tecla: si una recomposición retrasa la cola de eventos,
+                    // una lectura del lector no debe parecer tecleo humano.
+                    field.onKeyEventTime(event.awtEventOrNull?.`when`)
+                    if (event.type != KeyEventType.KeyDown) {
+                        return@onPreviewKeyEvent event.key == Key.Enter || event.key == Key.NumPadEnter
                     }
-                view.setSearchEnabled(searchEnabled)
-                view.onClearPhysicalInput = { currentClearPhysicalInput() }
-                view.onContentChanged = { hasText = it.isNotEmpty() }
-                view.onInvalidChanged = { invalid = it }
-                view.applyAppearance(
-                    label = label,
-                    hint = hint,
-                    textColor = colors.onSurface.toArgb(),
-                    hintColor = colors.onSurfaceVariant.toArgb(),
-                    underlineColor = if (invalid) colors.error.toArgb() else colors.outline.toArgb(),
-                )
-                view.setCaptureEnabled(active)
-                view.updatePhysicalInput(physicalInput)
-                view.syncSearchQuery(searchQuery)
-            },
+                    when (event.key) {
+                        Key.Enter, Key.NumPadEnter -> {
+                            field.onTerminatorKey()
+                            true
+                        }
+                        // Tab tras una ráfaga del lector confirma la lectura; si lo pulsa una
+                        // persona sigue moviendo el foco normalmente.
+                        Key.Tab -> field.onTabKey()
+                        else -> false
+                    }
+                }
+                .semantics { contentDescription = label }
+                .testTag(ScannerCodeInputTestTags.FIELD),
         )
         supportingTextRes?.let { messageRes ->
             Text(
@@ -147,9 +186,9 @@ fun ScannerCodeInput(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        if (invalid) {
+        if (field.invalid) {
             Text(
-                text = stringResource(R.string.scanner_code_invalid),
+                text = stringResource(Res.string.scanner_code_invalid),
                 color = colors.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag(ScannerCodeInputTestTags.ERROR),
@@ -161,13 +200,21 @@ fun ScannerCodeInput(
         ) {
             FacturaStockPrimaryButton(
                 text = stringResource(submitLabelRes),
-                onClick = input::submit,
-                enabled = active && hasText,
+                onClick = {
+                    field.submit()
+                    // En escritorio el clic enfoca el botón; el foco vuelve al campo para la
+                    // siguiente lectura o búsqueda, como en la tablet (y como hace Reiniciar).
+                    runCatching { focusRequester.requestFocus() }
+                },
+                enabled = active && field.value.text.isNotEmpty(),
                 modifier = Modifier.weight(1f).testTag(ScannerCodeInputTestTags.SUBMIT),
             )
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.scanner_code_reset),
-                onClick = input::reset,
+                text = stringResource(Res.string.scanner_code_reset),
+                onClick = {
+                    field.reset()
+                    runCatching { focusRequester.requestFocus() }
+                },
                 enabled = active,
                 modifier = Modifier.weight(1f).testTag(ScannerCodeInputTestTags.RESET),
             )
@@ -176,124 +223,39 @@ fun ScannerCodeInput(
 }
 
 /**
- * EditText mantiene una InputConnection al recibir foco sin desplegar el teclado. El equivalente
- * Compose showKeyboardOnFocus=false aplaza también la conexión hasta que se toca el campo.
- * La Activity usa un tema framework; AndroidView aplica aquí los colores y el tinte de Compose,
- * sin inflado ni sustitución de widgets AppCompat (que requerirían Theme.AppCompat).
+ * Estado y reglas del campo, trasladadas del `EditText` Android: vista previa de la trama HID,
+ * sincronización de la búsqueda, validación con [BarcodeValue] y limpieza al desactivarse.
  */
-@SuppressLint("AppCompatCustomView")
-internal class ScannerCodeEditText(
-    context: Context,
-) : EditText(context) {
+internal class ScannerCodeFieldState(
+    private val clockMillis: () -> Long = System::currentTimeMillis,
+) {
     var captureAllowed: () -> Boolean = { false }
     var onCode: (String) -> Unit = {}
     var onClearPhysicalInput: () -> Unit = {}
-    var onContentChanged: (String) -> Unit = {}
-    var onInvalidChanged: (Boolean) -> Unit = {}
     var onSearchQueryChange: ((String) -> Unit)? = null
+    var focused: Boolean = false
+
+    var value by mutableStateOf(TextFieldValue(""))
+        private set
+    var invalid by mutableStateOf(false)
+        private set
+
     private var searchEnabled = false
+    private var captureEnabled = false
+    private var keyEventTimeMillis: Long? = null
     private var lastSearchQuery: String? = null
-    private var changingProgrammatically = false
     private var lastPhysicalInput = ""
     private var ignorePhysicalClear = false
-    private var connectionGeneration = 0L
-    private var changingComposition = false
     private var showingPhysicalPreview = false
-    private var creatingInputConnection = false
-
-    /** Solo tocar el campo abre el teclado; un escaneo nunca lo despliega por su cuenta. */
-    private var keyboardRequestedByUser = false
-    private val inputMethodManager: InputMethodManager?
-        get() = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-
-    init {
-        tag = ScannerCodeInputTestTags.FIELD
-        // El código es texto literal visible; el IME no debe tratarlo como una palabra a reconvertir.
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
-            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-        // No setSingleLine(): su filtro puede convertir saltos en espacios antes de validarlos.
-        maxLines = 1
-        setHorizontallyScrolling(true)
-        imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-        showSoftInputOnFocus = false
-        isFocusableInTouchMode = true
-        setOnClickListener { showKeyboardRequestedByUser() }
-        setOnEditorActionListener { _, action, event ->
-            if (event == null) handleEditorAction(action) else submit()
-            true
-        }
-        addTextChangedListener(
-            object : TextWatcher {
-                override fun beforeTextChanged(
-                    text: CharSequence?,
-                    start: Int,
-                    count: Int,
-                    after: Int,
-                ) = Unit
-
-                override fun onTextChanged(
-                    text: CharSequence?,
-                    start: Int,
-                    before: Int,
-                    count: Int,
-                ) = Unit
-
-                override fun afterTextChanged(text: Editable?) {
-                    if (changingProgrammatically) return
-                    val value = text?.toString().orEmpty()
-                    if (!captureAllowed()) {
-                        replaceContent("")
-                        return
-                    }
-                    // El IME puede volver a notificar el mismo espejo al preparar su conexión.
-                    // Solo un cambio de contenido entrega el control de esos dígitos al editor.
-                    if (showingPhysicalPreview && value == lastPhysicalInput) return
-                    showingPhysicalPreview = false
-                    clearPhysicalFrame()
-                    onContentChanged(value)
-                    onInvalidChanged(false)
-                    if (value.any(::isCodeTerminator)) {
-                        if (!changingComposition) submit()
-                    } else if (searchEnabled) {
-                        onSearchQueryChange?.invoke(value)
-                    }
-                }
-            },
-        )
-    }
-
-    private var appliedUnderlineColor: Int? = null
-
-    /**
-     * El bloque update de AndroidView corre en cada recomposición del campo, incluido cada carácter
-     * del lector. `setHint` fuerza `checkForRelayout` y los colores invalidan la vista: aplicarlos
-     * sólo cuando cambian evita remedir el EditText y regenerar su layout con cada tecla.
-     */
-    fun applyAppearance(
-        label: String,
-        hint: String,
-        textColor: Int,
-        hintColor: Int,
-        underlineColor: Int,
-    ) {
-        if (contentDescription?.toString() != label) contentDescription = label
-        if (this.hint?.toString() != hint) this.hint = hint
-        if (currentTextColor != textColor) setTextColor(textColor)
-        if (currentHintTextColor != hintColor) setHintTextColor(hintColor)
-        if (appliedUnderlineColor != underlineColor) {
-            appliedUnderlineColor = underlineColor
-            backgroundTintList = ColorStateList.valueOf(underlineColor)
-        }
-    }
+    private val burst = ScannerBurstDetector()
 
     fun setCaptureEnabled(enabled: Boolean) {
-        if (isEnabled == enabled) return
-        isEnabled = enabled
+        if (captureEnabled == enabled) return
+        captureEnabled = enabled
         if (!enabled) {
-            connectionGeneration += 1L
             lastSearchQuery = null
             replaceContent("")
-            onInvalidChanged(false)
+            invalid = false
         }
     }
 
@@ -302,40 +264,93 @@ internal class ScannerCodeEditText(
         if (searchEnabled == enabled) return
         searchEnabled = enabled
         lastSearchQuery = null
-        imeOptions = (if (enabled) EditorInfo.IME_ACTION_SEARCH else EditorInfo.IME_ACTION_DONE) or
-            EditorInfo.IME_FLAG_NO_EXTRACT_UI
     }
 
-    /** No reescribe una composición idéntica ni sustituye los dígitos de una trama HID activa. */
+    /** No reescribe una búsqueda idéntica ni sustituye los dígitos de una trama HID activa. */
     fun syncSearchQuery(query: String?) {
         if (!searchEnabled || query == null || !captureAllowed() || showingPhysicalPreview) return
-        // Una recomposición sin cambio externo no puede borrar una composición con sufijo ni
-        // el contenido inválido que se conserva para que la persona pueda corregirlo.
         if (lastSearchQuery == query) return
         lastSearchQuery = query
-        if (text?.toString() == query) return
+        if (value.text == query) return
         replaceContent(query)
-        onInvalidChanged(false)
+        invalid = false
     }
 
-    fun updatePhysicalInput(value: String) {
-        if (value == lastPhysicalInput) return
-        keepKeyboardClosedUnlessRequested()
-        lastPhysicalInput = value
-        if (value.isEmpty() && ignorePhysicalClear) {
+    fun updatePhysicalInput(input: String) {
+        if (input == lastPhysicalInput) return
+        lastPhysicalInput = input
+        if (input.isEmpty() && ignorePhysicalClear) {
             ignorePhysicalClear = false
             return
         }
         ignorePhysicalClear = false
         if (!captureAllowed()) return
         if (searchEnabled) lastSearchQuery = null
-        replaceContent(value, fromPhysicalScanner = value.isNotEmpty())
-        onInvalidChanged(false)
+        replaceContent(input, fromPhysicalScanner = input.isNotEmpty())
+        invalid = false
+    }
+
+    /** Hora de la tecla que el campo está procesando (null si el cambio no viene del teclado). */
+    fun onKeyEventTime(timeMillis: Long?) {
+        keyEventTimeMillis = timeMillis
+    }
+
+    /** Consume la hora de la tecla en curso; sin tecla (pegar, semántica) usa el reloj. */
+    private fun eventTimeMillis(): Long = (keyEventTimeMillis ?: clockMillis()).also { keyEventTimeMillis = null }
+
+    fun onValueChange(next: TextFieldValue) {
+        val changeTime = eventTimeMillis()
+        if (next.text == value.text) {
+            value = next
+            return
+        }
+        if (!captureAllowed()) {
+            replaceContent("")
+            return
+        }
+        burst.onTextChanged(previous = value.text, next = next.text, nowMillis = changeTime)
+        value = next
+        showingPhysicalPreview = false
+        clearPhysicalFrame()
+        invalid = false
+        if (next.text.any(::isCodeTerminator)) {
+            submit()
+        } else if (searchEnabled) {
+            onSearchQueryChange?.invoke(next.text)
+        }
+    }
+
+    /** Enter/Enter numérico: igual que la tecla física en Android, confirma la lectura. */
+    fun onTerminatorKey() {
+        if (searchEnabled && !burst.looksLikeScanner(value.text, eventTimeMillis())) {
+            handleSearchAction()
+        } else {
+            submit()
+        }
+    }
+
+    /** El texto es entero una ráfaga del lector que todavía no se confirmó con su sufijo. */
+    fun holdsUnconfirmedScan(): Boolean = value.text.isNotEmpty() && burst.isUnbrokenBurst(value.text)
+
+    fun onTabKey(): Boolean {
+        if (value.text.isEmpty() || !burst.looksLikeScanner(value.text, eventTimeMillis())) return false
+        submit()
+        return true
+    }
+
+    fun handleSearchAction() {
+        if (!searchEnabled) {
+            submit()
+            return
+        }
+        if (!captureAllowed() || showingPhysicalPreview) return
+        val query = value.text
+        if (query.none(::isCodeTerminator)) onSearchQueryChange?.invoke(query)
     }
 
     fun submit() {
         if (!captureAllowed()) return
-        val raw = text?.toString().orEmpty()
+        val raw = value.text
         clearPhysicalFrame()
         val candidate = raw.dropLastWhile(::isCodeTerminator)
         // Un CR/LF adicional no confirma otra lectura ni presenta un error vacío.
@@ -345,11 +360,11 @@ internal class ScannerCodeEditText(
         }
         val code = BarcodeValue.parse(candidate)
         if (code == null) {
-            onInvalidChanged(true)
+            invalid = true
             return
         }
         replaceContent("")
-        onInvalidChanged(false)
+        invalid = false
         if (searchEnabled) onSearchQueryChange?.invoke("")
         onCode(code.value)
     }
@@ -358,229 +373,8 @@ internal class ScannerCodeEditText(
         if (!captureAllowed()) return
         clearPhysicalFrame()
         replaceContent("")
-        onInvalidChanged(false)
+        invalid = false
         if (searchEnabled) onSearchQueryChange?.invoke("")
-        requestFocus()
-    }
-
-    private fun handleEditorAction(action: Int) {
-        if (searchEnabled && action == EditorInfo.IME_ACTION_SEARCH) {
-            if (!captureAllowed() || showingPhysicalPreview) return
-            val query = text?.toString().orEmpty()
-            if (query.none(::isCodeTerminator)) onSearchQueryChange?.invoke(query)
-        } else {
-            submit()
-        }
-    }
-
-    // ACTION_MULTIPLE sigue siendo necesario para lectores que envían un bloque de texto virtual.
-    @Suppress("DEPRECATION")
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Sólo el lector físico cierra el teclado. Borrar o escribir números con el teclado en
-        // pantalla también llega como tecla, y cerrarlo ahí cortaba lo que la persona escribía.
-        if ((event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_MULTIPLE) &&
-            event.device?.isVirtual == false
-        ) {
-            keepKeyboardClosedUnlessRequested()
-        }
-        if (event.keyCode in TERMINATOR_KEYS) {
-            if ((event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) ||
-                event.action == KeyEvent.ACTION_MULTIPLE
-            ) {
-                submit()
-            }
-            // También consume UP y repeticiones cuando enabled cambió durante el DOWN.
-            return true
-        }
-        if (!captureAllowed() && (event.unicodeChar != 0 || !event.characters.isNullOrEmpty())) return true
-        if (event.action == KeyEvent.ACTION_MULTIPLE && !event.characters.isNullOrEmpty()) {
-            val start = selectionStart.coerceAtLeast(0)
-            val end = selectionEnd.coerceAtLeast(0)
-            editableText.replace(minOf(start, end), maxOf(start, end), event.characters)
-            return true
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
-    override fun focusSearch(direction: Int): View? {
-        // TextView busca vecinos al preparar los flags de navegación del IME. Un restartInput
-        // desde AndroidView.update (setEnabled/setText) puede reentrar en el LazyColumn mientras
-        // Compose todavía aplica cambios. Este campo usa DONE/SEARCH: no necesita esa búsqueda.
-        // La navegación real por foco sigue delegándose fuera de la creación de la conexión.
-        return if (creatingInputConnection) null else super.focusSearch(direction)
-    }
-
-    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
-        val physicalPreview = showingPhysicalPreview
-        val previousText = text.toString()
-        val composingStart = BaseInputConnection.getComposingSpanStart(editableText)
-        val composingEnd = BaseInputConnection.getComposingSpanEnd(editableText)
-        val wasChangingProgrammatically = changingProgrammatically
-        val wasCreatingInputConnection = creatingInputConnection
-        changingProgrammatically = true
-        creatingInputConnection = true
-        val connection =
-            try {
-                super.onCreateInputConnection(outAttrs)?.also { created ->
-                    if (text.toString() == previousText) {
-                        if (physicalPreview) {
-                            // Huawei puede notificar texto y marcar el espejo como composición al abrir.
-                            // Sus dígitos ya se recibieron; se conserva la selección para la edición.
-                            BaseInputConnection.removeComposingSpans(editableText)
-                        } else if (composingStart >= 0 && composingEnd >= composingStart &&
-                            (
-                                BaseInputConnection.getComposingSpanStart(editableText) != composingStart ||
-                                    BaseInputConnection.getComposingSpanEnd(editableText) != composingEnd
-                            )
-                        ) {
-                            // Una composición real anterior conserva su rango al recrear la conexión.
-                            created.setComposingRegion(composingStart, composingEnd)
-                        }
-                    } else {
-                        showingPhysicalPreview = false
-                    }
-                }
-            } finally {
-                changingProgrammatically = wasChangingProgrammatically
-                creatingInputConnection = wasCreatingInputConnection
-            }
-        if (connection == null) return null
-        if (searchEnabled) {
-            // Conserva MULTI_LINE para aceptar CR/LF literales, pero permite que el teclado
-            // manual muestre Buscar en vez de forzar una tecla de salto de línea.
-            outAttrs.imeOptions = (
-                outAttrs.imeOptions and EditorInfo.IME_MASK_ACTION.inv() and
-                    EditorInfo.IME_FLAG_NO_ENTER_ACTION.inv()
-            ) or EditorInfo.IME_ACTION_SEARCH
-        }
-        val generation = connectionGeneration
-        return object : InputConnectionWrapper(connection, false) {
-            private fun canWrite() = generation == connectionGeneration && captureAllowed() && hasFocus()
-
-            override fun commitText(
-                text: CharSequence?,
-                newCursorPosition: Int,
-            ): Boolean {
-                if (!canWrite()) return true
-                return super.commitText(text, newCursorPosition)
-            }
-
-            override fun commitText(
-                text: CharSequence,
-                newCursorPosition: Int,
-                textAttribute: TextAttribute?,
-            ): Boolean = commitText(text, newCursorPosition)
-
-            override fun setComposingText(
-                text: CharSequence?,
-                newCursorPosition: Int,
-            ): Boolean {
-                if (!canWrite()) return true
-                changingComposition = true
-                return try {
-                    super.setComposingText(text, newCursorPosition)
-                } finally {
-                    changingComposition = false
-                }
-            }
-
-            override fun setComposingText(
-                text: CharSequence,
-                newCursorPosition: Int,
-                textAttribute: TextAttribute?,
-            ): Boolean = setComposingText(text, newCursorPosition)
-
-            override fun setComposingRegion(
-                start: Int,
-                end: Int,
-            ): Boolean {
-                if (!canWrite()) return true
-                return super.setComposingRegion(start, end)
-            }
-
-            override fun setComposingRegion(
-                start: Int,
-                end: Int,
-                textAttribute: TextAttribute?,
-            ): Boolean = setComposingRegion(start, end)
-
-            override fun finishComposingText(): Boolean {
-                if (!canWrite()) return true
-                val finished = super.finishComposingText()
-                // BaseInputConnection solo quita spans: no dispara otro cambio de contenido.
-                // Confirma el sufijo ahora, sin enviar borradores ni rehabilitar conexiones viejas.
-                if (finished && canWrite() && this@ScannerCodeEditText.text?.any(::isCodeTerminator) == true) {
-                    submit()
-                }
-                return finished
-            }
-
-            override fun sendKeyEvent(event: KeyEvent): Boolean = if (canWrite()) dispatchKeyEvent(event) else true
-
-            override fun performEditorAction(editorAction: Int): Boolean {
-                if (canWrite()) handleEditorAction(editorAction)
-                return true
-            }
-        }
-    }
-
-    override fun onFocusChanged(
-        gainFocus: Boolean,
-        direction: Int,
-        previouslyFocusedRect: Rect?,
-    ) {
-        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        if (!gainFocus) {
-            connectionGeneration += 1L
-            keyboardRequestedByUser = false
-        }
-    }
-
-    /**
-     * El primer toque sobre el campo sin foco sólo lo enfoca y Android no emite el clic: había que
-     * tocar dos veces para escribir. Cualquier toque terminado abre el teclado.
-     */
-    @SuppressLint("ClickableViewAccessibility") // El clic de accesibilidad sigue por el listener.
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        val handled = super.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP && isEnabled) showKeyboardRequestedByUser()
-        return handled
-    }
-
-    /** Tocar el campo es la única forma de abrir el teclado; un escaneo nunca lo despliega. */
-    private fun showKeyboardRequestedByUser() {
-        if (!captureAllowed()) return
-        keyboardRequestedByUser = true
-        // Tras el foco que acaba de tomar el toque. Sin SHOW_IMPLICIT: es un pedido directo de la
-        // persona, y Android puede omitir uno implícito con el lector conectado como teclado físico.
-        post {
-            if (keyboardRequestedByUser && hasFocus()) inputMethodManager?.showSoftInput(this, 0)
-        }
-    }
-
-    override fun onKeyPreIme(
-        keyCode: Int,
-        event: KeyEvent,
-    ): Boolean {
-        // Atrás con el teclado abierto lo cierra: el siguiente escaneo no debe reabrirlo.
-        if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) keyboardRequestedByUser = false
-        return super.onKeyPreIme(keyCode, event)
-    }
-
-    /**
-     * Reescribir el texto reinicia la conexión del IME y algunos teclados se despliegan al hacerlo.
-     * Mientras la persona no haya tocado el campo, cada escaneo o sincronización lo mantiene cerrado.
-     */
-    private fun keepKeyboardClosedUnlessRequested() {
-        val imeVisible = ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) == true
-        // Si la persona cerró el teclado con su propio botón, deja de contar como solicitado.
-        if (!imeVisible) keyboardRequestedByUser = false
-        if (keyboardRequestedByUser) return
-        post {
-            if (!keyboardRequestedByUser && hasFocus()) {
-                inputMethodManager?.hideSoftInputFromWindow(windowToken, 0)
-            }
-        }
     }
 
     private fun clearPhysicalFrame() {
@@ -588,24 +382,58 @@ internal class ScannerCodeEditText(
         onClearPhysicalInput()
     }
 
-    private fun replaceContent(
-        value: String,
-        fromPhysicalScanner: Boolean = false,
-    ) {
+    private fun replaceContent(text: String, fromPhysicalScanner: Boolean = false) {
         showingPhysicalPreview = fromPhysicalScanner
-        changingProgrammatically = true
-        try {
-            setText(value)
-            setSelection(value.length)
-        } finally {
-            changingProgrammatically = false
+        burst.reset()
+        value = TextFieldValue(text, selection = TextRange(text.length))
+    }
+}
+
+/**
+ * Distingue una lectura del lector (ráfaga) de lo que teclea una persona. Solo mira intervalos
+ * entre caracteres agregados al final; pegar o borrar deja de considerarse ráfaga.
+ */
+internal class ScannerBurstDetector(
+    private val maxGapMillis: Long = SCANNER_MAX_INTER_KEY_GAP_MILLIS,
+    private val maxTerminatorDelayMillis: Long = SCANNER_MAX_TERMINATOR_DELAY_MILLIS,
+) {
+    private var lastChangeMillis: Long? = null
+    private var burstLength = 0
+    private var broken = false
+
+    fun onTextChanged(previous: String, next: String, nowMillis: Long) {
+        val appendedOne = next.length == previous.length + 1 && next.startsWith(previous)
+        if (!appendedOne || previous.isEmpty()) {
+            broken = !appendedOne && next.isNotEmpty()
+            burstLength = if (appendedOne) 1 else 0
+            lastChangeMillis = nowMillis
+            return
         }
-        onContentChanged(value)
-        if (!keyboardRequestedByUser && hasFocus()) keepKeyboardClosedUnlessRequested()
+        val gap = nowMillis - (lastChangeMillis ?: nowMillis)
+        if (gap > maxGapMillis) broken = true
+        burstLength += 1
+        lastChangeMillis = nowMillis
     }
 
-    private companion object {
-        val TERMINATOR_KEYS = setOf(KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_TAB)
+    fun isUnbrokenBurst(text: String): Boolean =
+        lastChangeMillis != null && !broken && burstLength >= MIN_SCANNER_LENGTH && burstLength == text.length
+
+    fun looksLikeScanner(text: String, nowMillis: Long): Boolean {
+        val last = lastChangeMillis ?: return false
+        return !broken && burstLength >= MIN_SCANNER_LENGTH && burstLength == text.length &&
+            nowMillis - last <= maxTerminatorDelayMillis
+    }
+
+    fun reset() {
+        lastChangeMillis = null
+        burstLength = 0
+        broken = false
+    }
+
+    companion object {
+        const val SCANNER_MAX_INTER_KEY_GAP_MILLIS = 50L
+        const val SCANNER_MAX_TERMINATOR_DELAY_MILLIS = 100L
+        const val MIN_SCANNER_LENGTH = 3
     }
 }
 

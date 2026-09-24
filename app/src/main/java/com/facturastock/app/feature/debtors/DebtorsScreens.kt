@@ -1,6 +1,8 @@
 package com.facturastock.app.feature.debtors
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,8 +28,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.Role
@@ -35,7 +37,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.DebtDetail
 import com.facturastock.app.domain.model.DebtLine
 import com.facturastock.app.domain.model.DebtPayment
@@ -67,23 +68,23 @@ fun DebtorsListScreen(
     ) {
         item(key = "new_debt", contentType = "primary_action") {
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.action_new_debt),
+                text = stringResource(Res.string.action_new_debt),
                 onClick = { onAction(DebtorsContract.Action.NewDebtSelected) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(DebtorsTestTags.NEW_DEBT),
-                leadingIconRes = R.drawable.ic_debtors,
+                leadingIconRes = Res.drawable.ic_debtors,
             )
         }
 
         state.totalOpenBalance?.let { total ->
             item(key = "total_open_balance", contentType = "summary") {
                 StatusCard(
-                    statusLabel = stringResource(R.string.debtors_balance_status),
+                    statusLabel = stringResource(Res.string.debtors_balance_status),
                     title = total.formatForDisplay(),
-                    message = stringResource(R.string.debtors_balance_message),
+                    message = stringResource(Res.string.debtors_balance_message),
                     tone = if (total.minorUnits > 0L) StatusTone.WARNING else StatusTone.SUCCESS,
-                    iconRes = R.drawable.ic_debtors,
+                    iconRes = Res.drawable.ic_debtors,
                     modifier = Modifier.testTag(DebtorsTestTags.TOTAL_BALANCE),
                 )
             }
@@ -93,7 +94,7 @@ fun DebtorsListScreen(
             OutlinedTextField(
                 value = state.query,
                 onValueChange = { onAction(DebtorsContract.Action.SearchChanged(it)) },
-                label = { Text(stringResource(R.string.debtors_search_label)) },
+                label = { Text(stringResource(Res.string.debtors_search_label)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -115,19 +116,19 @@ fun DebtorsListScreen(
                 EmptyState(
                     title = stringResource(
                         if (hasFilters) {
-                            R.string.debtors_empty_filtered_title
+                            Res.string.debtors_empty_filtered_title
                         } else {
-                            R.string.debtors_empty_title
+                            Res.string.debtors_empty_title
                         },
                     ),
                     message = stringResource(
                         if (hasFilters) {
-                            R.string.debtors_empty_filtered_message
+                            Res.string.debtors_empty_filtered_message
                         } else {
-                            R.string.debtors_empty_message
+                            Res.string.debtors_empty_message
                         },
                     ),
-                    iconRes = R.drawable.ic_debtors,
+                    iconRes = Res.drawable.ic_debtors,
                     modifier = Modifier.testTag(DebtorsTestTags.EMPTY),
                 )
             }
@@ -202,7 +203,7 @@ private fun DebtSummaryCard(
             }
             Text(
                 text = stringResource(
-                    R.string.debtors_card_balance,
+                    Res.string.debtors_card_balance,
                     debt.balance.formatForDisplay(),
                 ),
                 color = if (debt.status == DebtStatus.OPEN) {
@@ -214,7 +215,7 @@ private fun DebtSummaryCard(
             )
             Text(
                 text = stringResource(
-                    R.string.debtors_card_original,
+                    Res.string.debtors_card_original,
                     debt.originalAmount.formatForDisplay(),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -222,7 +223,7 @@ private fun DebtSummaryCard(
             )
             Text(
                 text = pluralStringResource(
-                    R.plurals.debtors_card_products,
+                    Res.plurals.debtors_card_products,
                     debt.lineCount,
                     debt.lineCount,
                 ),
@@ -231,7 +232,7 @@ private fun DebtSummaryCard(
             )
             Text(
                 text = stringResource(
-                    R.string.debtors_card_updated,
+                    Res.string.debtors_card_updated,
                     debt.updatedAt.formatForDisplay(),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -265,13 +266,13 @@ fun DebtDetailScreen(
             item(key = "payment_action", contentType = "primary_action") {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                     FacturaStockPrimaryButton(
-                        text = stringResource(if (state.isSavingPayment) R.string.debt_payment_saving else R.string.debt_payment_action),
+                        text = stringResource(if (state.isSavingPayment) Res.string.debt_payment_saving else Res.string.debt_payment_action),
                         onClick = { onAction(DebtorsContract.Action.PaymentRequested) },
                         enabled = !state.isSavingPayment && state.paymentEditor == null && state.deleteTarget == null && !state.isDeletingDebt,
                         modifier = Modifier.fillMaxWidth().testTag(DebtorsTestTags.PAYMENT),
                     )
                     Text(
-                        stringResource(R.string.pago_directo_saldo_completo, debt.balance.formatForDisplay()),
+                        stringResource(Res.string.pago_directo_saldo_completo, debt.balance.formatForDisplay()),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.testTag(DebtorsTestTags.PAYMENT_FULL_BALANCE),
                     )
@@ -280,7 +281,7 @@ fun DebtDetailScreen(
                         enabled = !state.isSavingPayment && state.deleteTarget == null && !state.isDeletingDebt,
                         modifier = Modifier.testTag(DebtorsTestTags.PARTIAL_PAYMENT),
                     ) {
-                        Text(stringResource(R.string.pago_directo_registrar_abono))
+                        Text(stringResource(Res.string.pago_directo_registrar_abono))
                     }
                 }
             }
@@ -290,7 +291,7 @@ fun DebtDetailScreen(
             item(key = "payment_progress", contentType = "progress") {
                 Column(Modifier.testTag(DebtorsTestTags.PAYMENT_PROGRESS).semantics { liveRegion = LiveRegionMode.Polite }) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(stringResource(R.string.debt_payment_saving))
+                    Text(stringResource(Res.string.debt_payment_saving))
                 }
             }
         }
@@ -305,7 +306,7 @@ fun DebtDetailScreen(
 
         item(key = "delete_action", contentType = "secondary_action") {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.debt_delete_action),
+                text = stringResource(Res.string.debt_delete_action),
                 onClick = { onAction(DebtorsContract.Action.DeleteRequested) },
                 enabled = !state.isSavingPayment && state.paymentEditor == null && state.deleteTarget == null && !state.isDeletingDebt,
                 modifier = Modifier.fillMaxWidth().testTag(DebtorsTestTags.DELETE),
@@ -313,7 +314,7 @@ fun DebtDetailScreen(
         }
 
         item(key = "products_header", contentType = "section_header") {
-            SectionTitle(stringResource(R.string.debt_detail_products_title))
+            SectionTitle(stringResource(Res.string.debt_detail_products_title))
         }
         items(
             items = detail.lines,
@@ -324,12 +325,12 @@ fun DebtDetailScreen(
         }
 
         item(key = "payments_header", contentType = "section_header") {
-            SectionTitle(stringResource(R.string.debt_detail_payments_title))
+            SectionTitle(stringResource(Res.string.debt_detail_payments_title))
         }
         if (detail.payments.isEmpty()) {
             item(key = "payments_empty", contentType = "empty") {
                 Text(
-                    text = stringResource(R.string.debt_detail_payments_empty),
+                    text = stringResource(Res.string.debt_detail_payments_empty),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyLarge,
                 )
@@ -365,15 +366,15 @@ private fun DebtDeleteDialog(state: DebtorsContract.State, onAction: (DebtorsCon
     val busy = state.isDeletingDebt || state.isLoadingDeletePreview
     val spacing = FacturaStockDesign.spacing
     FacturaStockDialog(
-        title = stringResource(R.string.debt_delete_title),
-        message = stringResource(R.string.debt_delete_message),
+        title = stringResource(Res.string.debt_delete_title),
+        message = stringResource(Res.string.debt_delete_message),
         confirmLabel = stringResource(when {
-            state.isDeletingDebt -> R.string.debt_delete_saving
-            state.isLoadingDeletePreview -> R.string.debt_delete_loading
-            preview != null -> R.string.debt_delete_confirm
-            else -> R.string.debt_delete_review
+            state.isDeletingDebt -> Res.string.debt_delete_saving
+            state.isLoadingDeletePreview -> Res.string.debt_delete_loading
+            preview != null -> Res.string.debt_delete_confirm
+            else -> Res.string.debt_delete_review
         }),
-        dismissLabel = stringResource(R.string.debt_delete_cancel),
+        dismissLabel = stringResource(Res.string.debt_delete_cancel),
         onConfirm = {
             onAction(if (preview != null) DebtorsContract.Action.DeleteConfirmed else DebtorsContract.Action.DeletePreviewRetry)
         },
@@ -386,27 +387,27 @@ private fun DebtDeleteDialog(state: DebtorsContract.State, onAction: (DebtorsCon
             modifier = Modifier.testTag(DebtorsTestTags.DELETE_IMPACT),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
-            Text(stringResource(R.string.debt_delete_debtor, target.debtorName), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.debt_delete_identity, target.debtId.value), style = MaterialTheme.typography.bodySmall)
-            Text(stringResource(R.string.debt_delete_date, target.createdAt.formatForDisplay()))
-            Text(stringResource(R.string.debt_delete_original, target.originalAmount.formatForDisplay()))
-            Text(stringResource(R.string.debt_delete_balance, target.balance.formatForDisplay()))
-            Text(stringResource(R.string.debt_delete_payment_alternative))
+            Text(stringResource(Res.string.debt_delete_debtor, target.debtorName), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(Res.string.debt_delete_identity, target.debtId.value), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(Res.string.debt_delete_date, target.createdAt.formatForDisplay()))
+            Text(stringResource(Res.string.debt_delete_original, target.originalAmount.formatForDisplay()))
+            Text(stringResource(Res.string.debt_delete_balance, target.balance.formatForDisplay()))
+            Text(stringResource(Res.string.debt_delete_payment_alternative))
             if (busy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(stringResource(if (state.isDeletingDebt) R.string.debt_delete_saving else R.string.debt_delete_loading),
+                Text(stringResource(if (state.isDeletingDebt) Res.string.debt_delete_saving else Res.string.debt_delete_loading),
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
             if (preview != null) {
                 HorizontalDivider()
-                Text(stringResource(R.string.debt_delete_stock), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(Res.string.debt_delete_stock), style = MaterialTheme.typography.titleSmall)
                 preview.lines.forEach { line ->
-                    Text(stringResource(R.string.debt_delete_line, line.productName,
+                    Text(stringResource(Res.string.debt_delete_line, line.productName,
                         line.quantity.value.stripTrailingZeros().toPlainString(), line.unitCode, line.locationName))
                 }
                 HorizontalDivider()
-                Text(stringResource(R.string.debt_delete_refund, preview.refundAmount.formatForDisplay()))
-                Text(stringResource(R.string.debt_delete_history))
+                Text(stringResource(Res.string.debt_delete_refund, preview.refundAmount.formatForDisplay()))
+                Text(stringResource(Res.string.debt_delete_history))
             }
             state.deleteFailure?.let { failure ->
                 Text(stringResource(failure.messageRes()), color = MaterialTheme.colorScheme.error,
@@ -416,17 +417,16 @@ private fun DebtDeleteDialog(state: DebtorsContract.State, onAction: (DebtorsCon
     }
 }
 
-@StringRes
-private fun DebtorsContract.DeleteFailure.messageRes(): Int = when (this) {
-    DebtorsContract.DeleteFailure.LOAD_FAILED -> R.string.debt_delete_error_load
-    DebtorsContract.DeleteFailure.OPERATION_FAILED -> R.string.debt_delete_error_operation
-    DebtorsContract.DeleteFailure.STALE -> R.string.debt_delete_error_stale
-    DebtorsContract.DeleteFailure.CONTEXT_CHANGED -> R.string.debt_delete_error_context
-    DebtorsContract.DeleteFailure.NO_ACTIVE_BUSINESS -> R.string.debt_delete_error_business
-    DebtorsContract.DeleteFailure.NOT_FOUND -> R.string.debt_delete_error_not_found
-    DebtorsContract.DeleteFailure.UNAUTHORIZED -> R.string.debt_delete_error_unauthorized
-    DebtorsContract.DeleteFailure.SHARED_BUSINESS_UNSUPPORTED -> R.string.debt_delete_error_shared
-    DebtorsContract.DeleteFailure.INVALID_HISTORY -> R.string.debt_delete_error_history
+private fun DebtorsContract.DeleteFailure.messageRes(): StringResource = when (this) {
+    DebtorsContract.DeleteFailure.LOAD_FAILED -> Res.string.debt_delete_error_load
+    DebtorsContract.DeleteFailure.OPERATION_FAILED -> Res.string.debt_delete_error_operation
+    DebtorsContract.DeleteFailure.STALE -> Res.string.debt_delete_error_stale
+    DebtorsContract.DeleteFailure.CONTEXT_CHANGED -> Res.string.debt_delete_error_context
+    DebtorsContract.DeleteFailure.NO_ACTIVE_BUSINESS -> Res.string.debt_delete_error_business
+    DebtorsContract.DeleteFailure.NOT_FOUND -> Res.string.debt_delete_error_not_found
+    DebtorsContract.DeleteFailure.UNAUTHORIZED -> Res.string.debt_delete_error_unauthorized
+    DebtorsContract.DeleteFailure.SHARED_BUSINESS_UNSUPPORTED -> Res.string.debt_delete_error_shared
+    DebtorsContract.DeleteFailure.INVALID_HISTORY -> Res.string.debt_delete_error_history
 }
 
 @Composable
@@ -457,7 +457,7 @@ private fun DebtDetailSummary(debt: DebtSummary) {
             }
             Text(
                 text = stringResource(
-                    R.string.debt_detail_balance,
+                    Res.string.debt_detail_balance,
                     debt.balance.formatForDisplay(),
                 ),
                 color = if (debt.status == DebtStatus.OPEN) {
@@ -469,7 +469,7 @@ private fun DebtDetailSummary(debt: DebtSummary) {
             )
             Text(
                 text = stringResource(
-                    R.string.debt_detail_original,
+                    Res.string.debt_detail_original,
                     debt.originalAmount.formatForDisplay(),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -477,7 +477,7 @@ private fun DebtDetailSummary(debt: DebtSummary) {
             )
             Text(
                 text = stringResource(
-                    R.string.debt_detail_created,
+                    Res.string.debt_detail_created,
                     debt.createdAt.formatForDisplay(),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -502,7 +502,7 @@ private fun DebtLineCard(line: DebtLine) {
             Text(line.productName, style = MaterialTheme.typography.titleMedium)
             Text(
                 text = stringResource(
-                    R.string.debt_detail_line_quantity_price,
+                    Res.string.debt_detail_line_quantity_price,
                     line.quantity.value.stripTrailingZeros().toPlainString(),
                     line.unitPrice.formatForDisplay(),
                 ),
@@ -511,7 +511,7 @@ private fun DebtLineCard(line: DebtLine) {
             )
             Text(
                 text = stringResource(
-                    R.string.debt_detail_line_total,
+                    Res.string.debt_detail_line_total,
                     line.lineTotal.formatForDisplay(),
                 ),
                 style = MaterialTheme.typography.titleSmall,
@@ -555,7 +555,7 @@ private fun DebtPaymentCard(payment: DebtPayment) {
             )
             payment.reference?.let { reference ->
                 Text(
-                    text = stringResource(R.string.debt_payment_reference_value, reference),
+                    text = stringResource(Res.string.debt_payment_reference_value, reference),
                     color = FacturaStockDesign.semanticColors.onSuccessContainer,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -572,7 +572,7 @@ private fun DebtPaymentCard(payment: DebtPayment) {
             )
             Text(
                 text = stringResource(
-                    R.string.debt_payment_balance_after,
+                    Res.string.debt_payment_balance_after,
                     payment.balanceAfter.formatForDisplay(),
                 ),
                 color = FacturaStockDesign.semanticColors.onSuccessContainer,
@@ -591,15 +591,15 @@ private fun PaymentDialog(
 ) {
     val spacing = FacturaStockDesign.spacing
     FacturaStockDialog(
-        title = stringResource(R.string.debt_payment_dialog_title),
+        title = stringResource(Res.string.debt_payment_dialog_title),
         message = stringResource(
-            R.string.debt_payment_dialog_message,
+            Res.string.debt_payment_dialog_message,
             editor.balance.formatForDisplay(),
         ),
         confirmLabel = stringResource(
-            if (isSaving) R.string.debt_payment_saving else R.string.debt_payment_confirm,
+            if (isSaving) Res.string.debt_payment_saving else Res.string.debt_payment_confirm,
         ),
-        dismissLabel = stringResource(R.string.action_cancel),
+        dismissLabel = stringResource(Res.string.action_cancel),
         onConfirm = { onAction(DebtorsContract.Action.PaymentConfirmed) },
         onDismiss = { onAction(DebtorsContract.Action.PaymentDismissed) },
         confirmEnabled = !isSaving && editor.isValid,
@@ -610,9 +610,9 @@ private fun PaymentDialog(
             OutlinedTextField(
                 value = editor.amountInput,
                 onValueChange = { onAction(DebtorsContract.Action.PaymentAmountChanged(it)) },
-                label = { Text(stringResource(R.string.debt_payment_amount_label)) },
+                label = { Text(stringResource(Res.string.debt_payment_amount_label)) },
                 supportingText = if (editor.submitAttempted && editor.amount == null) {
-                    { Text(stringResource(R.string.debt_payment_amount_error)) }
+                    { Text(stringResource(Res.string.debt_payment_amount_error)) }
                 } else {
                     null
                 },
@@ -625,7 +625,7 @@ private fun PaymentDialog(
                     .testTag(DebtorsTestTags.PAYMENT_AMOUNT),
             )
             Text(
-                text = stringResource(R.string.debt_payment_method_label),
+                text = stringResource(Res.string.debt_payment_method_label),
                 modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleSmall,
             )
@@ -647,7 +647,7 @@ private fun PaymentDialog(
             OutlinedTextField(
                 value = editor.referenceInput,
                 onValueChange = { onAction(DebtorsContract.Action.PaymentReferenceChanged(it)) },
-                label = { Text(stringResource(R.string.debt_payment_reference_label)) },
+                label = { Text(stringResource(Res.string.debt_payment_reference_label)) },
                 singleLine = true,
                 enabled = !isSaving,
                 isError = editor.referenceInput.length > DebtorsContract.MAX_REFERENCE_LENGTH,
@@ -658,7 +658,7 @@ private fun PaymentDialog(
             OutlinedTextField(
                 value = editor.noteInput,
                 onValueChange = { onAction(DebtorsContract.Action.PaymentNoteChanged(it)) },
-                label = { Text(stringResource(R.string.debt_payment_note_label)) },
+                label = { Text(stringResource(Res.string.debt_payment_note_label)) },
                 enabled = !isSaving,
                 isError = editor.noteInput.length > DebtorsContract.MAX_NOTE_LENGTH,
                 modifier = Modifier
@@ -710,43 +710,38 @@ private fun SectionTitle(text: String) {
     )
 }
 
-@StringRes
-private fun DebtorsContract.StatusFilter.labelRes(): Int = when (this) {
-    DebtorsContract.StatusFilter.OPEN -> R.string.debtors_filter_open
-    DebtorsContract.StatusFilter.PAID -> R.string.debtors_filter_paid
-    DebtorsContract.StatusFilter.ALL -> R.string.debtors_filter_all
+private fun DebtorsContract.StatusFilter.labelRes(): StringResource = when (this) {
+    DebtorsContract.StatusFilter.OPEN -> Res.string.debtors_filter_open
+    DebtorsContract.StatusFilter.PAID -> Res.string.debtors_filter_paid
+    DebtorsContract.StatusFilter.ALL -> Res.string.debtors_filter_all
 }
 
-@StringRes
-private fun DebtStatus.labelRes(): Int = when (this) {
-    DebtStatus.OPEN -> R.string.debt_status_open
-    DebtStatus.PAID -> R.string.debt_status_paid
+private fun DebtStatus.labelRes(): StringResource = when (this) {
+    DebtStatus.OPEN -> Res.string.debt_status_open
+    DebtStatus.PAID -> Res.string.debt_status_paid
 }
 
-@StringRes
-private fun DebtPaymentMethod.labelRes(): Int = when (this) {
-    DebtPaymentMethod.CASH -> R.string.debt_payment_method_cash
-    DebtPaymentMethod.YAPE -> R.string.debt_payment_method_yape
-    DebtPaymentMethod.PLIN -> R.string.debt_payment_method_plin
-    DebtPaymentMethod.BANK_TRANSFER -> R.string.debt_payment_method_bank_transfer
-    DebtPaymentMethod.OTHER -> R.string.debt_payment_method_other
+private fun DebtPaymentMethod.labelRes(): StringResource = when (this) {
+    DebtPaymentMethod.CASH -> Res.string.debt_payment_method_cash
+    DebtPaymentMethod.YAPE -> Res.string.debt_payment_method_yape
+    DebtPaymentMethod.PLIN -> Res.string.debt_payment_method_plin
+    DebtPaymentMethod.BANK_TRANSFER -> Res.string.debt_payment_method_bank_transfer
+    DebtPaymentMethod.OTHER -> Res.string.debt_payment_method_other
 }
 
-@StringRes
-private fun paymentFailureMessage(failure: DebtorsContract.Failure?): Int? = when (failure) {
-    DebtorsContract.Failure.INVALID_PAYMENT -> R.string.debt_payment_error_invalid
-    DebtorsContract.Failure.STALE_DEBT -> R.string.debt_payment_error_stale
-    DebtorsContract.Failure.PAYMENT_EXCEEDS_BALANCE -> R.string.debt_payment_error_exceeds
-    DebtorsContract.Failure.ONLINE_REQUIRED -> R.string.debt_payment_error_online_required
-    DebtorsContract.Failure.REMOTE_REJECTED -> R.string.debt_payment_error_remote_rejected
-    DebtorsContract.Failure.SAVE_PAYMENT_FAILED -> R.string.debt_payment_error_save
+private fun paymentFailureMessage(failure: DebtorsContract.Failure?): StringResource? = when (failure) {
+    DebtorsContract.Failure.INVALID_PAYMENT -> Res.string.debt_payment_error_invalid
+    DebtorsContract.Failure.STALE_DEBT -> Res.string.debt_payment_error_stale
+    DebtorsContract.Failure.PAYMENT_EXCEEDS_BALANCE -> Res.string.debt_payment_error_exceeds
+    DebtorsContract.Failure.ONLINE_REQUIRED -> Res.string.debt_payment_error_online_required
+    DebtorsContract.Failure.REMOTE_REJECTED -> Res.string.debt_payment_error_remote_rejected
+    DebtorsContract.Failure.SAVE_PAYMENT_FAILED -> Res.string.debt_payment_error_save
     else -> null
 }
 
-@StringRes
-private fun fullPaymentFailureMessage(failure: DebtorsContract.Failure?): Int? = when (failure) {
-    DebtorsContract.Failure.STALE_DEBT -> R.string.pago_directo_error_actualizado
-    DebtorsContract.Failure.SAVE_PAYMENT_FAILED -> R.string.pago_directo_error_guardar
-    DebtorsContract.Failure.DEBT_NOT_FOUND -> R.string.debt_not_found_message
+private fun fullPaymentFailureMessage(failure: DebtorsContract.Failure?): StringResource? = when (failure) {
+    DebtorsContract.Failure.STALE_DEBT -> Res.string.pago_directo_error_actualizado
+    DebtorsContract.Failure.SAVE_PAYMENT_FAILED -> Res.string.pago_directo_error_guardar
+    DebtorsContract.Failure.DEBT_NOT_FOUND -> Res.string.debt_not_found_message
     else -> paymentFailureMessage(failure)
 }

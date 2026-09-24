@@ -1,13 +1,13 @@
 package com.facturastock.app.feature.purchases
 
+import com.facturastock.app.resources.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.facturastock.app.domain.model.id.PurchaseId
-import com.facturastock.app.R
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.FeatureLoadContent
 import com.facturastock.app.ui.components.RecoverableError
@@ -20,7 +20,7 @@ fun PurchasesRoute(
     modifier: Modifier = Modifier,
     onNewPurchase: () -> Unit = {},
     onVoidPurchase: (PurchaseId) -> Unit = {},
-    viewModel: PurchasesViewModel = hiltViewModel(),
+    viewModel: PurchasesViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -114,7 +114,7 @@ fun PurchaseVoidRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PurchaseVoidViewModel = hiltViewModel(),
+    viewModel: PurchaseVoidViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -140,7 +140,7 @@ fun PurchaseSuccessRoute(
     onViewInventory: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PurchasesViewModel = hiltViewModel(),
+    viewModel: PurchasesViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -182,9 +182,9 @@ private fun PurchaseNotFoundContent(
     modifier: Modifier = Modifier,
 ) {
     RecoverableError(
-        title = stringResource(R.string.purchase_not_found_title),
-        message = stringResource(R.string.purchase_not_found_message),
-        actionLabel = stringResource(R.string.action_return_purchases),
+        title = stringResource(Res.string.purchase_not_found_title),
+        message = stringResource(Res.string.purchase_not_found_message),
+        actionLabel = stringResource(Res.string.action_return_purchases),
         onAction = onReturnToPurchases,
         modifier = modifier,
     )

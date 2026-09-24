@@ -1,5 +1,8 @@
 package com.facturastock.app.feature.source
 
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,10 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import com.facturastock.app.R
 import com.facturastock.app.feature.purchase.PURCHASE_EDITABLE_STEP_COUNT
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
@@ -52,7 +54,7 @@ fun SourceScreen(
         item {
             Text(
                 text = stringResource(
-                    R.string.purchase_flow_step,
+                    Res.string.purchase_flow_step,
                     1,
                     PURCHASE_EDITABLE_STEP_COUNT,
                 ),
@@ -62,7 +64,7 @@ fun SourceScreen(
         }
         item {
             Text(
-                text = stringResource(R.string.purchase_source_title),
+                text = stringResource(Res.string.purchase_source_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.headlineLarge,
@@ -70,40 +72,40 @@ fun SourceScreen(
         }
         item {
             StatusCard(
-                statusLabel = stringResource(R.string.source_privacy_label),
-                title = stringResource(R.string.source_privacy_title),
-                message = stringResource(R.string.source_privacy_message),
+                statusLabel = stringResource(Res.string.source_privacy_label),
+                title = stringResource(Res.string.source_privacy_title),
+                message = stringResource(Res.string.source_privacy_message),
                 tone = StatusTone.INFO,
-                iconRes = R.drawable.ic_info,
+                iconRes = Res.drawable.ic_info,
                 modifier = Modifier.testTag(SourceTestTags.PRIVACY_CARD),
             )
         }
         item {
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.action_take_photo),
+                text = stringResource(Res.string.action_take_photo),
                 onClick = onTakePhoto,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(SourceTestTags.TAKE_PHOTO),
                 enabled = !state.isImporting,
-                leadingIconRes = R.drawable.ic_camera,
+                leadingIconRes = Res.drawable.ic_camera,
             )
         }
         item {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_pick_image),
+                text = stringResource(Res.string.action_pick_image),
                 onClick = onPickImage,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(SourceTestTags.PICK_IMAGE),
                 enabled = !state.isImporting,
-                leadingIconRes = R.drawable.ic_photo_library,
+                leadingIconRes = Res.drawable.ic_photo_library,
             )
         }
         if (state.isImporting) {
             item {
                 LoadingState(
-                    message = stringResource(R.string.source_importing),
+                    message = stringResource(Res.string.source_importing),
                     modifier = Modifier.testTag(SourceTestTags.IMPORTING),
                 )
             }
@@ -113,19 +115,19 @@ fun SourceScreen(
                 SourceActionCard(
                     card = {
                         StatusCard(
-                            statusLabel = stringResource(R.string.source_camera_denied_label),
-                            title = stringResource(R.string.source_camera_denied_title),
-                            message = stringResource(R.string.source_camera_denied_message),
+                            statusLabel = stringResource(Res.string.source_camera_denied_label),
+                            title = stringResource(Res.string.source_camera_denied_title),
+                            message = stringResource(Res.string.source_camera_denied_message),
                             tone = StatusTone.WARNING,
-                            iconRes = R.drawable.ic_camera,
+                            iconRes = Res.drawable.ic_camera,
                             modifier = Modifier.testTag(SourceTestTags.CAMERA_DENIED),
                         )
                     },
                     actionLabel = stringResource(
                         if (state.cameraPermissionPermanentlyDenied) {
-                            R.string.action_open_app_settings
+                            Res.string.action_open_app_settings
                         } else {
-                            R.string.action_retry
+                            Res.string.action_retry
                         },
                     ),
                     onAction = if (state.cameraPermissionPermanentlyDenied) {
@@ -142,17 +144,17 @@ fun SourceScreen(
                 SourceActionCard(
                     card = {
                         StatusCard(
-                            statusLabel = stringResource(R.string.source_invalid_image_label),
-                            title = stringResource(R.string.source_invalid_image_title),
+                            statusLabel = stringResource(Res.string.source_invalid_image_label),
+                            title = stringResource(Res.string.source_invalid_image_title),
                             message = stringResource(
                                 invalidImageMessageRes(state.invalidImage),
                             ),
                             tone = StatusTone.ERROR,
-                            iconRes = R.drawable.ic_warning,
+                            iconRes = Res.drawable.ic_warning,
                             modifier = Modifier.testTag(SourceTestTags.INVALID_IMAGE),
                         )
                     },
-                    actionLabel = stringResource(R.string.action_dismiss),
+                    actionLabel = stringResource(Res.string.action_dismiss),
                     onAction = onDismissInvalidImage,
                     actionTestTag = SourceTestTags.INVALID_IMAGE_DISMISS,
                 )
@@ -160,7 +162,7 @@ fun SourceScreen(
         }
         item {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_previous_step),
+                text = stringResource(Res.string.action_previous_step),
                 onClick = onBack,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -193,23 +195,23 @@ private fun SourceActionCard(
     }
 }
 
-private fun invalidImageMessageRes(reason: SourceContract.InvalidImageReason): Int =
+private fun invalidImageMessageRes(reason: SourceContract.InvalidImageReason): StringResource =
     when (reason) {
         SourceContract.InvalidImageReason.UNSUPPORTED_FORMAT ->
-            R.string.source_invalid_image_unsupported
+            Res.string.source_invalid_image_unsupported
 
         SourceContract.InvalidImageReason.TOO_LARGE ->
-            R.string.source_invalid_image_too_large
+            Res.string.source_invalid_image_too_large
 
         SourceContract.InvalidImageReason.CORRUPT ->
-            R.string.source_invalid_image_corrupt
+            Res.string.source_invalid_image_corrupt
 
         SourceContract.InvalidImageReason.NOT_FOUND ->
-            R.string.source_invalid_image_not_found
+            Res.string.source_invalid_image_not_found
 
         SourceContract.InvalidImageReason.STORAGE_FULL ->
-            R.string.source_invalid_image_storage_full
+            Res.string.source_invalid_image_storage_full
 
         SourceContract.InvalidImageReason.UNAVAILABLE ->
-            R.string.source_invalid_image_unavailable
+            Res.string.source_invalid_image_unavailable
     }

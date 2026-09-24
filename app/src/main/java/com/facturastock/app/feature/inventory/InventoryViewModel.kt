@@ -24,7 +24,6 @@ import com.facturastock.app.domain.usecase.ObserveProductProfitsUseCase
 import com.facturastock.app.domain.usecase.UpdateProductSalePriceUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -35,8 +34,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
-
-@HiltViewModel
 class InventoryViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observeInventory: ObserveInventoryUseCase,

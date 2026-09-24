@@ -1,6 +1,7 @@
 package com.facturastock.app.ui.components
 
-import androidx.annotation.DrawableRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,8 +27,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -37,7 +38,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import com.facturastock.app.R
 import com.facturastock.app.ui.theme.FacturaStockDesign
 
 enum class StatusTone {
@@ -94,7 +94,7 @@ fun StatusCard(
     title: String,
     message: String,
     tone: StatusTone,
-    @DrawableRes iconRes: Int,
+    iconRes: DrawableResource,
     modifier: Modifier = Modifier,
     /** Anuncio para resultados que aparecen tras una operación; null evita anunciar contenido inicial. */
     announcementMode: LiveRegionMode? = if (tone == StatusTone.ERROR) {
@@ -178,9 +178,9 @@ fun ConfidenceChip(
 
     val spacing = FacturaStockDesign.spacing
     val colors = statusColors(tone)
-    val visibleText = stringResource(R.string.confidence_value, label, percentage)
+    val visibleText = stringResource(Res.string.confidence_value, label, percentage)
     val spokenText = stringResource(
-        R.string.confidence_description,
+        Res.string.confidence_description,
         label,
         percentage.toString(),
     )
@@ -240,7 +240,7 @@ fun RecoverableError(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_warning),
+                            painter = painterResource(Res.drawable.ic_warning),
                             contentDescription = null,
                             modifier = Modifier.size(spacing.icon),
                         )
@@ -264,7 +264,7 @@ fun RecoverableError(
                 text = actionLabel,
                 onClick = onAction,
                 modifier = Modifier.fillMaxWidth(),
-                leadingIconRes = R.drawable.ic_refresh,
+                leadingIconRes = Res.drawable.ic_refresh,
             )
         }
     }
@@ -304,7 +304,7 @@ fun EmptyState(
     title: String,
     message: String,
     modifier: Modifier = Modifier,
-    @DrawableRes iconRes: Int = R.drawable.ic_info,
+    iconRes: DrawableResource = Res.drawable.ic_info,
     actionLabel: String? = null,
     actionEnabled: Boolean = true,
     onAction: (() -> Unit)? = null,

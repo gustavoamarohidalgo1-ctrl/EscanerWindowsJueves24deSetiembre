@@ -1,8 +1,11 @@
 package com.facturastock.app.data.restore
 
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteException
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
 import com.facturastock.app.data.local.expectedFacturaStockRoomIdentityHash
+import com.facturastock.app.data.local.sqlite.SQLiteException
+import com.facturastock.app.data.local.sqlite.translatingSQLite
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -45,7 +48,9 @@ enum class FullDeviceSnapshotSQLitePreflightFailureCode {
 }
 
 /**
- * Primera capa Android de validación SQLite, aislada y de solo lectura.
+ * Primera capa local de validación SQLite, aislada y de solo lectura. La base se abre con el
+ * driver SQLite embebido (`SQLITE_OPEN_READONLY`) en una conexión propia, fuera de Room; todo
+ * error del driver se traduce a la jerarquía tipada [SQLiteException].
  *
  * Vuelve a ligar el archivo extraído con el manifiesto, exige una imagen sin WAL/SHM/journal,
  * comprueba `user_version` y el identity hash exportado por Room, y ejecuta `integrity_check`,
@@ -87,11 +92,11 @@ class FullDeviceSnapshotSQLitePreflight {
             }
 
             val database = try {
-                SQLiteDatabase.openDatabase(
-                    path.toString(),
-                    null,
-                    SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS,
-                )
+                // Sin equivalente de NO_LOCALIZED_COLLATORS: el driver embebido nunca registra
+                // el collator LOCALIZED de Android.
+                translatingSQLite {
+                    BundledSQLiteDriver().open(path.toString(), SQLITE_OPEN_READONLY)
+                }
             } catch (_: SQLiteException) {
                 return rejected(FullDeviceSnapshotSQLitePreflightFailureCode.SQLITE_OPEN_FAILED)
             }
@@ -208,40 +213,57 @@ class FullDeviceSnapshotSQLitePreflight {
         return SnapshotDatabaseFingerprint(size, digest.digest().toHex())
     }
 
-    private fun singleLong(database: SQLiteDatabase, query: String): Long? =
-        database.rawQuery(query, EMPTY_ARGS).use { cursor ->
-            if (!cursor.moveToFirst() || cursor.columnCount != 1) null else cursor.getLong(0)
+    private fun singleLong(database: SQLiteConnection, query: String): Long? =
+        translatingSQLite {
+            database.prepare(query).use { statement ->
+                if (!statement.step() || statement.getColumnCount() != 1) {
+                    null
+                } else {
+                    statement.getLong(0)
+                }
+            }
         }
 
-    private fun singleText(database: SQLiteDatabase, query: String): String? = try {
-        database.rawQuery(query, EMPTY_ARGS).use { cursor ->
-            if (!cursor.moveToFirst() || cursor.columnCount != 1 || cursor.isNull(0)) null
-            else cursor.getString(0)
+    private fun singleText(database: SQLiteConnection, query: String): String? = try {
+        translatingSQLite {
+            database.prepare(query).use { statement ->
+                if (!statement.step() || statement.getColumnCount() != 1 || statement.isNull(0)) {
+                    null
+                } else {
+                    statement.getText(0)
+                }
+            }
         }
     } catch (_: SQLiteException) {
         null
     }
 
-    private fun textRows(database: SQLiteDatabase, query: String): List<String>? =
-        database.rawQuery(query, EMPTY_ARGS).use { cursor ->
-            buildList {
-                while (cursor.moveToNext()) {
-                    if (size >= MAX_DIAGNOSTIC_ROWS || cursor.columnCount != 1 || cursor.isNull(0)) {
-                        return null
+    private fun textRows(database: SQLiteConnection, query: String): List<String>? =
+        translatingSQLite {
+            database.prepare(query).use { statement ->
+                buildList {
+                    while (statement.step()) {
+                        if (size >= MAX_DIAGNOSTIC_ROWS || statement.getColumnCount() != 1 ||
+                            statement.isNull(0)
+                        ) {
+                            return@translatingSQLite null
+                        }
+                        add(statement.getText(0))
                     }
-                    add(cursor.getString(0))
                 }
             }
         }
 
-    private fun countRowsBounded(database: SQLiteDatabase, query: String): Long? =
-        database.rawQuery(query, EMPTY_ARGS).use { cursor ->
-            var count = 0L
-            while (cursor.moveToNext()) {
-                if (count >= MAX_DIAGNOSTIC_ROWS) return null
-                count++
+    private fun countRowsBounded(database: SQLiteConnection, query: String): Long? =
+        translatingSQLite {
+            database.prepare(query).use { statement ->
+                var count = 0L
+                while (statement.step()) {
+                    if (count >= MAX_DIAGNOSTIC_ROWS) return@translatingSQLite null
+                    count++
+                }
+                count
             }
-            count
         }
 
     private fun ByteArray.toHex(): String = joinToString(separator = "") { byte ->
@@ -253,7 +275,6 @@ class FullDeviceSnapshotSQLitePreflight {
         FullDeviceSnapshotSQLitePreflightResult.Rejected(code)
 
     private companion object {
-        val EMPTY_ARGS = emptyArray<String>()
         val SIDECAR_SUFFIXES = listOf("-wal", "-shm", "-journal")
         const val MAX_DIAGNOSTIC_ROWS = 10_000
         const val FINGERPRINT_BUFFER_BYTES = 64 * 1024

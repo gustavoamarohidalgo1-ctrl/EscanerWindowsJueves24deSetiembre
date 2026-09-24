@@ -46,7 +46,6 @@ import com.facturastock.app.ui.format.currencyLabelForDisplay
 import com.facturastock.app.ui.format.formatCurrencyAmountForDisplay
 import com.facturastock.app.ui.format.formatForDisplay
 import com.facturastock.app.ui.format.formatSignedForDisplay
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
@@ -58,8 +57,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-
-@HiltViewModel
 class InvoiceLineReviewViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val loadInvoiceLinesReviewUseCase: LoadInvoiceLinesReviewUseCase,

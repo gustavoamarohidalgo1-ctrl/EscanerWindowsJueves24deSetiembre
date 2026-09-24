@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.linking
 
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,7 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
@@ -51,7 +52,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.UnitOfMeasure
 import com.facturastock.app.domain.model.id.UnitId
 import com.facturastock.app.domain.usecase.ProductMatchCandidate
@@ -108,19 +108,19 @@ fun ProductLinkingScreen(
                     RecoverableError(
                         title = stringResource(
                             if (state.failure == Failure.SAVE_CONFLICT) {
-                                R.string.linking_conflict_title
+                                Res.string.linking_conflict_title
                             } else {
-                                R.string.save_error_title
+                                Res.string.save_error_title
                             },
                         ),
                         message = stringResource(
                             if (state.failure == Failure.SAVE_CONFLICT) {
-                                R.string.linking_conflict_message
+                                Res.string.linking_conflict_message
                             } else {
-                                R.string.save_error_message
+                                Res.string.save_error_message
                             },
                         ),
-                        actionLabel = stringResource(R.string.action_retry),
+                        actionLabel = stringResource(Res.string.action_retry),
                         onAction = { onAction(Action.Retry) },
                         modifier = Modifier.testTag(ProductLinkingTestTags.FAILURE_BANNER),
                     )
@@ -131,7 +131,7 @@ fun ProductLinkingScreen(
             }
             item(key = "linking_lines_header", contentType = "header") {
                 Text(
-                    text = stringResource(R.string.linking_lines_section),
+                    text = stringResource(Res.string.linking_lines_section),
                     modifier = Modifier.semantics { heading() },
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
@@ -184,7 +184,7 @@ private fun LinkingProgressHeader(state: State) {
     ) {
         Text(
             text = stringResource(
-                R.string.linking_line_progress,
+                Res.string.linking_line_progress,
                 state.currentLineIndex + 1,
                 state.lines.size,
             ),
@@ -194,7 +194,7 @@ private fun LinkingProgressHeader(state: State) {
         )
         Text(
             text = stringResource(
-                R.string.linking_resolved_count,
+                Res.string.linking_resolved_count,
                 state.resolvedCount,
                 state.lines.size,
             ),
@@ -226,27 +226,27 @@ private fun CurrentLineCard(
         ) {
             if (line == null) {
                 Text(
-                    text = stringResource(R.string.linking_empty_lines),
+                    text = stringResource(Res.string.linking_empty_lines),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 return@Column
             }
             Text(
-                text = stringResource(R.string.linking_current_section),
+                text = stringResource(Res.string.linking_current_section),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge,
             )
             Text(
                 text = line.description.ifBlank {
-                    stringResource(R.string.linking_description_pending)
+                    stringResource(Res.string.linking_description_pending)
                 },
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
             )
             line.code?.let { code ->
                 Text(
-                    text = stringResource(R.string.linking_line_code, code),
+                    text = stringResource(Res.string.linking_line_code, code),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -256,14 +256,14 @@ private fun CurrentLineCard(
                 (line.status == LinkStatus.CONFIRMED || line.status == LinkStatus.AUTO_LINKED)
             ) {
                 Text(
-                    text = stringResource(R.string.linking_linked_to, line.linkedProductName),
+                    text = stringResource(Res.string.linking_linked_to, line.linkedProductName),
                     color = FacturaStockDesign.semanticColors.success,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (line.requiresSalePrice) {
                 Text(
-                    text = stringResource(R.string.linking_sale_price_required_legacy),
+                    text = stringResource(Res.string.linking_sale_price_required_legacy),
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
@@ -276,7 +276,7 @@ private fun CurrentLineCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(ProductLinkingTestTags.SEARCH),
-                label = { Text(stringResource(R.string.linking_search_label)) },
+                label = { Text(stringResource(Res.string.linking_search_label)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Sentences,
@@ -286,13 +286,13 @@ private fun CurrentLineCard(
             )
 
             Text(
-                text = stringResource(R.string.linking_candidates_section),
+                text = stringResource(Res.string.linking_candidates_section),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge,
             )
             when (state.searchStatus) {
                 SearchStatus.SEARCHING -> Text(
-                    text = stringResource(R.string.linking_searching),
+                    text = stringResource(Res.string.linking_searching),
                     modifier = Modifier
                         .testTag(ProductLinkingTestTags.SEARCH_PROGRESS)
                         .semantics { liveRegion = LiveRegionMode.Polite },
@@ -301,16 +301,16 @@ private fun CurrentLineCard(
                 )
 
                 SearchStatus.FAILED -> RecoverableError(
-                    title = stringResource(R.string.linking_search_error_title),
-                    message = stringResource(R.string.linking_search_error_message),
-                    actionLabel = stringResource(R.string.action_retry),
+                    title = stringResource(Res.string.linking_search_error_title),
+                    message = stringResource(Res.string.linking_search_error_message),
+                    actionLabel = stringResource(Res.string.action_retry),
                     onAction = { onAction(Action.RetrySearch) },
                     modifier = Modifier.testTag(ProductLinkingTestTags.SEARCH_FAILURE),
                 )
 
                 SearchStatus.IDLE -> if (state.candidates.isEmpty()) {
                     Text(
-                        text = stringResource(R.string.linking_no_candidates),
+                        text = stringResource(Res.string.linking_no_candidates),
                         modifier = Modifier.testTag(ProductLinkingTestTags.NO_CANDIDATES),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
@@ -336,7 +336,7 @@ private fun CurrentLineCard(
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.linking_action_create),
+                    text = stringResource(Res.string.linking_action_create),
                     onClick = { onAction(Action.OpenCreateForm) },
                     modifier = Modifier
                         .weight(1f)
@@ -344,7 +344,7 @@ private fun CurrentLineCard(
                     enabled = !state.isBusy,
                 )
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.linking_action_skip),
+                    text = stringResource(Res.string.linking_action_skip),
                     onClick = { onAction(Action.SkipLine) },
                     modifier = Modifier
                         .weight(1f)
@@ -370,9 +370,9 @@ private fun CandidateRow(
 ) {
     val spacing = FacturaStockDesign.spacing
     val secondary = listOfNotNull(
-        candidate.product.sku?.let { sku -> stringResource(R.string.linking_candidate_sku, sku) },
+        candidate.product.sku?.let { sku -> stringResource(Res.string.linking_candidate_sku, sku) },
         candidate.product.barcode?.let { barcode ->
-            stringResource(R.string.linking_candidate_barcode, barcode)
+            stringResource(Res.string.linking_candidate_barcode, barcode)
         },
     ).joinToString(separator = " · ")
 
@@ -408,11 +408,11 @@ private fun CandidateRow(
                             ?.takeIf { it.currency == configuredCurrency }
                             ?.let { price ->
                                 stringResource(
-                                    R.string.linking_candidate_sale_price,
+                                    Res.string.linking_candidate_sale_price,
                                     price.formatForDisplay(),
                                 )
                             }
-                            ?: stringResource(R.string.linking_candidate_sale_price_missing),
+                            ?: stringResource(Res.string.linking_candidate_sale_price_missing),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -424,9 +424,9 @@ private fun CandidateRow(
             FacturaStockPrimaryButton(
                 text = stringResource(
                     if (candidate.product.salePrice?.currency == configuredCurrency) {
-                        R.string.linking_action_link
+                        Res.string.linking_action_link
                     } else {
-                        R.string.linking_action_set_price_and_link
+                        Res.string.linking_action_set_price_and_link
                     },
                 ),
                 onClick = onConfirm,
@@ -487,13 +487,13 @@ private fun LinkingLineRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.linking_line_number, line.position + 1),
+                    text = stringResource(Res.string.linking_line_number, line.position + 1),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text(
                     text = line.description.ifBlank {
-                        stringResource(R.string.linking_description_pending)
+                        stringResource(Res.string.linking_description_pending)
                     },
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyLarge,
@@ -502,7 +502,7 @@ private fun LinkingLineRow(
                 )
                 line.linkedProductName?.let { productName ->
                     Text(
-                        text = stringResource(R.string.linking_linked_to, productName),
+                        text = stringResource(Res.string.linking_linked_to, productName),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -518,7 +518,7 @@ private fun LinkingLineRow(
                         onClick = { onAction(Action.ChangeLink(line.lineId)) },
                         modifier = Modifier.testTag(ProductLinkingTestTags.changeLink(line.lineId)),
                     ) {
-                        Text(stringResource(R.string.linking_action_change))
+                        Text(stringResource(Res.string.linking_action_change))
                     }
                 }
             }
@@ -575,7 +575,7 @@ private fun ContinueBar(
         ) {
             Text(
                 text = stringResource(
-                    R.string.linking_resolved_count,
+                    Res.string.linking_resolved_count,
                     state.resolvedCount,
                     state.lines.size,
                 ),
@@ -583,7 +583,7 @@ private fun ContinueBar(
                 style = MaterialTheme.typography.bodyMedium,
             )
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.action_continue),
+                text = stringResource(Res.string.action_continue),
                 onClick = { onAction(Action.ContinueSelected) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -604,7 +604,7 @@ private fun CreateProductDialog(
     onAction: (Action) -> Unit,
 ) {
     val spacing = FacturaStockDesign.spacing
-    val title = stringResource(R.string.linking_create_title)
+    val title = stringResource(Res.string.linking_create_title)
 
     Dialog(
         onDismissRequest = { onAction(Action.CreateFormDismissed) },
@@ -641,7 +641,7 @@ private fun CreateProductDialog(
                         onClick = { onAction(Action.CreateFormDismissed) },
                         modifier = Modifier.testTag(ProductLinkingTestTags.CREATE_DISMISS),
                     ) {
-                        Text(stringResource(R.string.action_cancel))
+                        Text(stringResource(Res.string.action_cancel))
                     }
                 }
 
@@ -676,11 +676,11 @@ private fun CreateProductDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag(ProductLinkingTestTags.CREATE_NAME),
-                            label = { Text(stringResource(R.string.linking_create_name_label)) },
+                            label = { Text(stringResource(Res.string.linking_create_name_label)) },
                             singleLine = true,
                             isError = form.submitAttempted && form.name.isBlank(),
                             supportingText = if (form.submitAttempted && form.name.isBlank()) {
-                                { Text(stringResource(R.string.linking_create_error_name)) }
+                                { Text(stringResource(Res.string.linking_create_error_name)) }
                             } else {
                                 null
                             },
@@ -693,12 +693,12 @@ private fun CreateProductDialog(
                     }
                     item(key = "create_unit", contentType = "field") {
                         UnitDropdown(
-                            labelRes = R.string.linking_create_unit_label,
+                            labelRes = Res.string.linking_create_unit_label,
                             selectedUnitId = form.unitId,
                             units = units,
                             includeEmptyOption = false,
                             isError = form.submitAttempted && form.unitId == null,
-                            errorRes = R.string.linking_create_error_unit,
+                            errorRes = Res.string.linking_create_error_unit,
                             testTag = ProductLinkingTestTags.CREATE_UNIT,
                             onSelected = { unitId ->
                                 onAction(Action.CreateFormChanged(form.copy(unitId = unitId)))
@@ -718,7 +718,7 @@ private fun CreateProductDialog(
                                 label = {
                                     Text(
                                         stringResource(
-                                            R.string.linking_create_sale_price_label,
+                                            Res.string.linking_create_sale_price_label,
                                             form.salePriceCurrency.value,
                                         ),
                                     )
@@ -729,9 +729,9 @@ private fun CreateProductDialog(
                                     Text(
                                         stringResource(
                                             if (form.submitAttempted && !form.isSalePriceValid) {
-                                                R.string.linking_sale_price_invalid
+                                                Res.string.linking_sale_price_invalid
                                             } else {
-                                                R.string.linking_sale_price_help
+                                                Res.string.linking_sale_price_help
                                             },
                                         ),
                                     )
@@ -762,7 +762,7 @@ private fun CreateProductDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag(ProductLinkingTestTags.CREATE_SKU),
-                            label = { Text(stringResource(R.string.linking_create_sku_label)) },
+                            label = { Text(stringResource(Res.string.linking_create_sku_label)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
@@ -781,11 +781,11 @@ private fun CreateProductDialog(
                                 .fillMaxWidth()
                                 .testTag(ProductLinkingTestTags.CREATE_BARCODE),
                             label = {
-                                Text(stringResource(R.string.linking_create_barcode_label))
+                                Text(stringResource(Res.string.linking_create_barcode_label))
                             },
                             isError = form.submitAttempted && !form.isBarcodeValid,
                             supportingText = if (form.submitAttempted && !form.isBarcodeValid) {
-                                { Text(stringResource(R.string.linking_create_error_barcode)) }
+                                { Text(stringResource(Res.string.linking_create_error_barcode)) }
                             } else {
                                 null
                             },
@@ -798,7 +798,7 @@ private fun CreateProductDialog(
                     }
                     item(key = "create_purchase_unit", contentType = "field") {
                         UnitDropdown(
-                            labelRes = R.string.linking_create_purchase_unit_label,
+                            labelRes = Res.string.linking_create_purchase_unit_label,
                             selectedUnitId = form.purchaseUnitId,
                             units = units,
                             includeEmptyOption = true,
@@ -836,12 +836,12 @@ private fun CreateProductDialog(
                                     .fillMaxWidth()
                                     .testTag(ProductLinkingTestTags.CREATE_FACTOR),
                                 label = {
-                                    Text(stringResource(R.string.linking_create_factor_label))
+                                    Text(stringResource(Res.string.linking_create_factor_label))
                                 },
                                 singleLine = true,
                                 isError = form.submitAttempted && !form.isFactorValid,
                                 supportingText = if (form.submitAttempted && !form.isFactorValid) {
-                                    { Text(stringResource(R.string.linking_create_error_factor)) }
+                                    { Text(stringResource(Res.string.linking_create_error_factor)) }
                                 } else {
                                     null
                                 },
@@ -875,7 +875,7 @@ private fun CreateProductDialog(
                         ),
                     ) {
                         FacturaStockPrimaryButton(
-                            text = stringResource(R.string.linking_create_submit),
+                            text = stringResource(Res.string.linking_create_submit),
                             onClick = { onAction(Action.CreateSubmitted) },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -897,18 +897,18 @@ private fun SalePriceDialog(
     onAction: (Action) -> Unit,
 ) {
     FacturaStockDialog(
-        title = stringResource(R.string.linking_sale_price_title),
+        title = stringResource(Res.string.linking_sale_price_title),
         message = stringResource(
-            R.string.linking_sale_price_message,
+            Res.string.linking_sale_price_message,
             form.productName,
             form.currency.value,
         ),
         confirmLabel = if (isBusy) {
-            stringResource(R.string.linking_sale_price_saving)
+            stringResource(Res.string.linking_sale_price_saving)
         } else {
-            stringResource(R.string.linking_sale_price_confirm)
+            stringResource(Res.string.linking_sale_price_confirm)
         },
-        dismissLabel = stringResource(R.string.action_cancel),
+        dismissLabel = stringResource(Res.string.action_cancel),
         onConfirm = { onAction(Action.SalePriceSubmitted) },
         onDismiss = { onAction(Action.SalePriceDismissed) },
         confirmEnabled = !isBusy,
@@ -925,7 +925,7 @@ private fun SalePriceDialog(
                 label = {
                     Text(
                         stringResource(
-                            R.string.linking_create_sale_price_label,
+                            Res.string.linking_create_sale_price_label,
                             form.currency.value,
                         ),
                     )
@@ -936,9 +936,9 @@ private fun SalePriceDialog(
                     Text(
                         stringResource(
                             if (form.submitAttempted && !form.isValid) {
-                                R.string.linking_sale_price_invalid
+                                Res.string.linking_sale_price_invalid
                             } else {
-                                R.string.linking_sale_price_help
+                                Res.string.linking_sale_price_help
                             },
                         ),
                     )
@@ -981,20 +981,20 @@ private fun DuplicateBanner(
     ) {
         Column(modifier = Modifier.padding(spacing.md)) {
             Text(
-                text = stringResource(R.string.linking_create_duplicate_title),
+                text = stringResource(Res.string.linking_create_duplicate_title),
                 modifier = Modifier.semantics { heading() },
                 color = FacturaStockDesign.semanticColors.onWarningContainer,
                 style = MaterialTheme.typography.titleSmall,
             )
             Spacer(modifier = Modifier.height(spacing.xs))
             Text(
-                text = stringResource(R.string.linking_create_duplicate_message, productName),
+                text = stringResource(Res.string.linking_create_duplicate_message, productName),
                 color = FacturaStockDesign.semanticColors.onWarningContainer,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(modifier = Modifier.height(spacing.sm))
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.linking_create_duplicate_link),
+                text = stringResource(Res.string.linking_create_duplicate_link),
                 onClick = onLinkExisting,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1008,12 +1008,12 @@ private fun DuplicateBanner(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UnitDropdown(
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     selectedUnitId: UnitId?,
     units: List<UnitOfMeasure>,
     includeEmptyOption: Boolean,
     isError: Boolean,
-    @StringRes errorRes: Int?,
+    errorRes: StringResource?,
     testTag: String,
     onSelected: (UnitId?) -> Unit,
 ) {
@@ -1021,12 +1021,12 @@ private fun UnitDropdown(
     val selected = units.firstOrNull { unit -> unit.unitId == selectedUnitId }
     val shownValue = when {
         selected != null -> stringResource(
-            R.string.linking_unit_option,
+            Res.string.linking_unit_option,
             selected.name,
             selected.code,
         )
 
-        includeEmptyOption -> stringResource(R.string.linking_create_no_purchase_unit)
+        includeEmptyOption -> stringResource(Res.string.linking_create_no_purchase_unit)
 
         else -> ""
     }
@@ -1059,7 +1059,7 @@ private fun UnitDropdown(
         ) {
             if (includeEmptyOption) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.linking_create_no_purchase_unit)) },
+                    text = { Text(stringResource(Res.string.linking_create_no_purchase_unit)) },
                     onClick = {
                         expanded = false
                         onSelected(null)
@@ -1069,7 +1069,7 @@ private fun UnitDropdown(
             units.forEach { unit ->
                 DropdownMenuItem(
                     text = {
-                        Text(stringResource(R.string.linking_unit_option, unit.name, unit.code))
+                        Text(stringResource(Res.string.linking_unit_option, unit.name, unit.code))
                     },
                     onClick = {
                         expanded = false
@@ -1092,14 +1092,14 @@ private fun EquivalenceText(
     Text(
         text = if (purchaseUnitName != null && inventoryUnitName != null) {
             stringResource(
-                R.string.linking_equivalence_full,
+                Res.string.linking_equivalence_full,
                 "1",
                 purchaseUnitName,
                 equivalence,
                 inventoryUnitName,
             )
         } else {
-            stringResource(R.string.linking_equivalence_plain, equivalence)
+            stringResource(Res.string.linking_equivalence_plain, equivalence)
         },
         modifier = Modifier
             .fillMaxWidth()
@@ -1109,35 +1109,32 @@ private fun EquivalenceText(
     )
 }
 
-@StringRes
-private fun reasonLabelRes(reason: ProductMatchReason): Int = when (reason) {
-    ProductMatchReason.BARCODE -> R.string.linking_reason_barcode
-    ProductMatchReason.SUPPLIER_CODE -> R.string.linking_reason_supplier_code
-    ProductMatchReason.CONFIRMED_ALIAS -> R.string.linking_reason_confirmed_alias
-    ProductMatchReason.SKU -> R.string.linking_reason_sku
-    ProductMatchReason.EXACT_NAME -> R.string.linking_reason_exact_name
-    ProductMatchReason.SIMILAR_NAME -> R.string.linking_reason_similar_name
+private fun reasonLabelRes(reason: ProductMatchReason): StringResource = when (reason) {
+    ProductMatchReason.BARCODE -> Res.string.linking_reason_barcode
+    ProductMatchReason.SUPPLIER_CODE -> Res.string.linking_reason_supplier_code
+    ProductMatchReason.CONFIRMED_ALIAS -> Res.string.linking_reason_confirmed_alias
+    ProductMatchReason.SKU -> Res.string.linking_reason_sku
+    ProductMatchReason.EXACT_NAME -> Res.string.linking_reason_exact_name
+    ProductMatchReason.SIMILAR_NAME -> Res.string.linking_reason_similar_name
 }
 
-@StringRes
-private fun statusLabelRes(status: LinkStatus): Int = when (status) {
-    LinkStatus.AUTO_LINKED -> R.string.linking_status_auto_linked
-    LinkStatus.CONFIRMED -> R.string.linking_status_confirmed
-    LinkStatus.NEEDS_CHOICE -> R.string.linking_status_needs_choice
-    LinkStatus.NO_MATCH -> R.string.linking_status_no_match
-    LinkStatus.SKIPPED -> R.string.linking_status_skipped
+private fun statusLabelRes(status: LinkStatus): StringResource = when (status) {
+    LinkStatus.AUTO_LINKED -> Res.string.linking_status_auto_linked
+    LinkStatus.CONFIRMED -> Res.string.linking_status_confirmed
+    LinkStatus.NEEDS_CHOICE -> Res.string.linking_status_needs_choice
+    LinkStatus.NO_MATCH -> Res.string.linking_status_no_match
+    LinkStatus.SKIPPED -> Res.string.linking_status_skipped
 }
 
-@StringRes
-private fun ProductLinkingContract.SalePriceFailure.messageRes(): Int = when (this) {
-    ProductLinkingContract.SalePriceFailure.INVALID_PRICE -> R.string.linking_sale_price_invalid
-    ProductLinkingContract.SalePriceFailure.STALE -> R.string.linking_sale_price_stale
+private fun ProductLinkingContract.SalePriceFailure.messageRes(): StringResource = when (this) {
+    ProductLinkingContract.SalePriceFailure.INVALID_PRICE -> Res.string.linking_sale_price_invalid
+    ProductLinkingContract.SalePriceFailure.STALE -> Res.string.linking_sale_price_stale
     ProductLinkingContract.SalePriceFailure.CURRENCY_MISMATCH ->
-        R.string.linking_sale_price_currency
+        Res.string.linking_sale_price_currency
     ProductLinkingContract.SalePriceFailure.PRODUCT_UNAVAILABLE ->
-        R.string.linking_sale_price_unavailable
+        Res.string.linking_sale_price_unavailable
     ProductLinkingContract.SalePriceFailure.CONFIGURATION_CHANGED ->
-        R.string.linking_sale_price_configuration_changed
+        Res.string.linking_sale_price_configuration_changed
     ProductLinkingContract.SalePriceFailure.SAVE_FAILED ->
-        R.string.linking_sale_price_save_failed
+        Res.string.linking_sale_price_save_failed
 }

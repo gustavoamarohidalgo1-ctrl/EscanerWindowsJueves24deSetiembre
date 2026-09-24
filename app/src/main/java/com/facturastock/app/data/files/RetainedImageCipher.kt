@@ -1,25 +1,43 @@
 package com.facturastock.app.data.files
 
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
+import com.facturastock.app.core.platform.AppDirectories
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.OutputStream
-import java.security.KeyStore
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.FileSystemException
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.PosixFilePermissions
+import java.security.SecureRandom
 import java.util.concurrent.locks.ReentrantLock
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Cifrado en reposo de las imágenes retenidas (fotos de compras confirmadas). AES/GCM de 256
- * bits con clave no exportable generada en AndroidKeyStore (alias [KEY_ALIAS]). La clave nunca
- * sale del Keystore; que esté respaldada por hardware/TEE depende de las capacidades concretas
- * del dispositivo y no se presupone. Solo `javax.crypto` interviene, sin dependencias nuevas.
+ * bits. En escritorio no existe un equivalente portable de AndroidKeyStore sin dependencias
+ * nuevas, así que la clave es un secreto aleatorio de 256 bits guardado en
+ * `noBackupFilesDir/keys/retained-image.key` ([KEY_ALIAS] queda solo como identificador). El
+ * archivo se crea una sola vez de forma atómica (temporal sincronizado + enlace sin reemplazo)
+ * y solo el propietario puede leerlo: permisos POSIX `rw-------` donde el sistema los admite y,
+ * en Windows, la ACL por usuario de `%LOCALAPPDATA%`. A diferencia del Keystore, la clave es
+ * exportable por cualquier proceso del mismo usuario; protege las copias de las imágenes que
+ * salen de esa carpeta (respaldos, sincronización de otras carpetas), no frente al propio
+ * usuario. Solo `javax.crypto` interviene, sin dependencias nuevas.
  *
  * Formato del archivo cifrado: `[4B magic "FSE1"][12B IV][ciphertext + tag GCM de 128 bits]`.
  * La cabecera identifica la versión, pero no basta para declarar un archivo protegido: la
@@ -32,9 +50,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class RetainedImageCipher @Inject constructor(
+    private val directories: AppDirectories,
     private val publicationDurability: PrivatePublicationDurability,
 ) {
-    constructor() : this(PrivatePublicationDurability())
+    constructor(directories: AppDirectories) : this(directories, PrivatePublicationDurability())
 
     enum class EnvelopeState {
         PLAINTEXT,
@@ -386,34 +405,147 @@ class RetainedImageCipher @Inject constructor(
     }
 
     /**
-     * Clave AES-256 del AndroidKeyStore: se reutiliza la existente o se genera una nueva no
-     * exportable, solo utilizable con GCM sin padding. Se busca en cada operación: si el
-     * almacén pierde la entrada, la siguiente escritura crea una clave nueva sin estado
-     * obsoleto en memoria.
+     * Clave AES-256 del archivo privado: se reutiliza la existente o se genera una nueva. Se
+     * lee en cada operación: si el archivo desaparece, la siguiente escritura crea una clave
+     * nueva sin estado obsoleto en memoria (lo cifrado con la anterior deja de autenticar, igual
+     * que al perder la entrada del Keystore). Un archivo presente pero con tamaño inválido
+     * tampoco sirve para descifrar nada y se reemplaza atómicamente.
      */
     private fun secretKey(): SecretKey = synchronized(KEY_LOCK) {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { entry ->
-            return@synchronized entry.secretKey
+        val keyFile = keyFile()
+        readKeyOrNull(keyFile)?.let { return@synchronized it }
+        val keyDirectory = keyFile.parent
+        ensurePrivateDirectory(keyDirectory)
+        val material = ByteArray(KEY_SIZE_BITS / 8).also(SECURE_RANDOM::nextBytes)
+        val temporary = createPrivateTempFile(keyDirectory)
+        try {
+            FileChannel.open(temporary, StandardOpenOption.WRITE).use { channel ->
+                val buffer = ByteBuffer.wrap(material)
+                while (buffer.hasRemaining()) channel.write(buffer)
+                channel.force(true)
+            }
+            publishKeyFile(temporary, keyFile)
+            DurablePrivateFilePublication.syncParentAfterRename(keyFile.toFile())
+        } finally {
+            material.fill(0)
+            Files.deleteIfExists(temporary)
         }
-        val generator = KeyGenerator.getInstance(
-            KeyProperties.KEY_ALGORITHM_AES,
-            ANDROID_KEYSTORE,
-        )
-        generator.init(
-            KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(KEY_SIZE_BITS)
-                .build(),
-        )
-        generator.generateKey()
+        // Se relee lo publicado: si otro proceso ganó la carrera, su clave es la vigente.
+        readKeyOrNull(keyFile) ?: throw IOException("La clave privada no quedó disponible")
     }
 
-    /** Rename POSIX atómico seguido por las barreras que ejecuta [encryptToFile]. */
+    private fun keyFile(): Path =
+        directories.noBackupFilesDir.toPath()
+            .resolve(KEY_DIRECTORY)
+            .resolve(KEY_FILE_NAME)
+            .toAbsolutePath()
+            .normalize()
+
+    /** `null` si no existe o su tamaño no es el de una clave; un fallo de E/S se propaga. */
+    private fun readKeyOrNull(keyFile: Path): SecretKey? {
+        val attributes = try {
+            Files.readAttributes(keyFile, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        } catch (_: NoSuchFileException) {
+            return null
+        }
+        if (!attributes.isRegularFile) throw IOException("La clave privada no es un archivo regular")
+        if (attributes.size() != (KEY_SIZE_BITS / 8).toLong()) return null
+        val material = ByteArray(KEY_SIZE_BITS / 8)
+        return try {
+            FileChannel.open(keyFile, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+                .use { channel ->
+                    val buffer = ByteBuffer.wrap(material)
+                    while (buffer.hasRemaining()) {
+                        if (channel.read(buffer) < 0) return null
+                    }
+                }
+            SecretKeySpec(material, KEY_ALGORITHM)
+        } finally {
+            material.fill(0)
+        }
+    }
+
+    private fun ensurePrivateDirectory(directory: Path) {
+        if (Files.isSymbolicLink(directory)) {
+            throw IOException("El directorio de claves no es seguro")
+        }
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                if (supportsPosixPermissions(directory.parent)) {
+                    Files.createDirectory(
+                        directory,
+                        PosixFilePermissions.asFileAttribute(OWNER_ONLY_DIRECTORY),
+                    )
+                } else {
+                    Files.createDirectory(directory)
+                }
+            } catch (_: FileAlreadyExistsException) {
+                // Otro hilo/proceso lo creó; se revalida abajo.
+            }
+            if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS) ||
+                Files.isSymbolicLink(directory)
+            ) {
+                throw IOException("El directorio de claves no es seguro")
+            }
+            DurablePrivateFilePublication.syncDirectoryAfterMutation(directory.parent.toFile())
+        }
+    }
+
+    private fun createPrivateTempFile(directory: Path): Path =
+        if (supportsPosixPermissions(directory)) {
+            Files.createTempFile(
+                directory,
+                KEY_TEMP_PREFIX,
+                KEY_TEMP_SUFFIX,
+                PosixFilePermissions.asFileAttribute(OWNER_ONLY_FILE),
+            )
+        } else {
+            // Windows: el archivo hereda la ACL de %LOCALAPPDATA%, accesible solo al usuario.
+            Files.createTempFile(directory, KEY_TEMP_PREFIX, KEY_TEMP_SUFFIX)
+        }
+
+    /**
+     * Publica la clave sin reemplazar una ya existente (`link(2)` es atómico y falla si el nombre
+     * existe). Sin hard-links se recurre a `Files.move` sin reemplazo. Solo un archivo previo con
+     * tamaño inválido, ya inservible, se sustituye con un rename atómico.
+     */
+    private fun publishKeyFile(temporary: Path, keyFile: Path) {
+        if (Files.exists(keyFile, LinkOption.NOFOLLOW_LINKS)) {
+            // Revalida justo antes: si entretanto otro proceso publicó una clave válida, manda.
+            if (readKeyOrNull(keyFile) != null) return
+            Files.move(
+                temporary,
+                keyFile,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            return
+        }
+        try {
+            Files.createLink(keyFile, temporary)
+        } catch (_: FileAlreadyExistsException) {
+            // Otro proceso publicó primero; su clave se relee y la nuestra se descarta.
+        } catch (_: UnsupportedOperationException) {
+            moveWithoutReplacing(temporary, keyFile)
+        } catch (failure: FileSystemException) {
+            if (failure is NoSuchFileException) throw failure
+            moveWithoutReplacing(temporary, keyFile)
+        }
+    }
+
+    private fun moveWithoutReplacing(temporary: Path, keyFile: Path) {
+        try {
+            Files.move(temporary, keyFile)
+        } catch (_: FileAlreadyExistsException) {
+            // Otro proceso publicó primero.
+        }
+    }
+
+    private fun supportsPosixPermissions(path: Path): Boolean =
+        runCatching { path.fileSystem.supportedFileAttributeViews().contains("posix") }
+            .getOrDefault(false)
+
+    /** Rename atómico seguido por las barreras que ejecuta [encryptToFile]. */
     private fun moveReplacing(source: File, destination: File) {
         DurablePrivateFilePublication.replaceByRename(source, destination)
     }
@@ -422,7 +554,11 @@ class RetainedImageCipher @Inject constructor(
         const val KEY_ALIAS = "facturastock-retained-images"
         /** Bytes fijos añadidos al plaintext: magic/version, IV y tag GCM. */
         internal const val ENVELOPE_OVERHEAD_BYTES = 4 + 12 + 16
-        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEY_ALGORITHM = "AES"
+        private const val KEY_DIRECTORY = "keys"
+        private const val KEY_FILE_NAME = "retained-image.key"
+        private const val KEY_TEMP_PREFIX = "retained-image-key-"
+        private const val KEY_TEMP_SUFFIX = ".tmp"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val KEY_SIZE_BITS = 256
         private const val GCM_TAG_BITS = 128
@@ -440,6 +576,9 @@ class RetainedImageCipher @Inject constructor(
         private val MAGIC = byteArrayOf(0x46, 0x53, 0x45, 0x31)
         private val FORMAT_PREFIX = byteArrayOf(0x46, 0x53, 0x45)
         private val KEY_LOCK = Any()
+        private val SECURE_RANDOM = SecureRandom()
+        private val OWNER_ONLY_DIRECTORY = PosixFilePermissions.fromString("rwx------")
+        private val OWNER_ONLY_FILE = PosixFilePermissions.fromString("rw-------")
         private val FILE_LOCKS_GUARD = Any()
         private val FILE_LOCKS = mutableMapOf<String, FileLockEntry>()
     }

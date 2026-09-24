@@ -137,4 +137,4 @@ data class DebtDetail(
 }
 
 // Compilada una vez: antes se creaba una expresión regular nueva en cada normalización.
-private val WhitespaceRun = Regex("\\s+")
+private val WhitespaceRun = Regex("(?U)\\s+")

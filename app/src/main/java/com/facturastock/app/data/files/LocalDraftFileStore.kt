@@ -1,10 +1,9 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.domain.model.PrivateImageDeletionResult
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.repository.DraftFileStore
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -20,12 +19,12 @@ import javax.inject.Singleton
  */
 @Singleton
 class LocalDraftFileStore @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val mutationCoordinator: PrivateImageMutationCoordinator =
         PrivateImageMutationCoordinator(),
     private val deletionDurability: PrivateDeletionDurability = PrivateDeletionDurability(),
 ) : DraftFileStore {
-    private val rootDirectory: File = context.filesDir
+    private val rootDirectory: File = directories.filesDir
 
     override suspend fun deleteFiles(
         relativePaths: List<String>,

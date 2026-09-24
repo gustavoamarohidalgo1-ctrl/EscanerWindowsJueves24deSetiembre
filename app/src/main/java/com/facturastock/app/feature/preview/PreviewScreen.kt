@@ -1,5 +1,8 @@
 package com.facturastock.app.feature.preview
 
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -33,10 +36,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import com.facturastock.app.core.platform.LocalAppDirectories
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -49,7 +52,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.facturastock.app.feature.common.sensitiveImageRequest
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.ImageCrop
 import com.facturastock.app.domain.model.ImageQualityWarning
 import com.facturastock.app.ui.components.FacturaStockDialog
@@ -97,7 +99,7 @@ fun PreviewScreen(
                 }
                 if (state.isBusy) {
                     Text(
-                        text = stringResource(R.string.preview_working),
+                        text = stringResource(Res.string.preview_working),
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -124,13 +126,13 @@ fun PreviewScreen(
 
     if (state.showDeleteConfirm) {
         FacturaStockDialog(
-            title = stringResource(R.string.preview_delete_title),
+            title = stringResource(Res.string.preview_delete_title),
             message = stringResource(
-                R.string.preview_delete_message,
+                Res.string.preview_delete_message,
                 state.currentIndex + 1,
             ),
-            confirmLabel = stringResource(R.string.preview_delete_confirm),
-            dismissLabel = stringResource(R.string.action_keep_editing),
+            confirmLabel = stringResource(Res.string.preview_delete_confirm),
+            dismissLabel = stringResource(Res.string.action_keep_editing),
             onConfirm = { onAction(PreviewContract.Action.DeleteConfirmed) },
             onDismiss = { onAction(PreviewContract.Action.DeleteDismissed) },
             modifier = Modifier.testTag(PreviewTestTags.DELETE_DIALOG),
@@ -139,10 +141,10 @@ fun PreviewScreen(
 
     if (state.qualityWarnings.isNotEmpty()) {
         FacturaStockDialog(
-            title = stringResource(R.string.preview_quality_warning_title),
+            title = stringResource(Res.string.preview_quality_warning_title),
             message = qualityWarningMessage(state),
-            confirmLabel = stringResource(R.string.preview_quality_continue),
-            dismissLabel = stringResource(R.string.preview_quality_retake),
+            confirmLabel = stringResource(Res.string.preview_quality_continue),
+            dismissLabel = stringResource(Res.string.preview_quality_retake),
             onConfirm = {
                 onAction(PreviewContract.Action.ContinueWithWarningsClicked)
             },
@@ -159,7 +161,7 @@ fun PreviewScreen(
 /** Convierte cada heurística en una explicación medible y evita lenguaje de certeza. */
 @Composable
 private fun qualityWarningMessage(state: PreviewContract.State): String {
-    val intro = stringResource(R.string.preview_quality_warning_intro)
+    val intro = stringResource(Res.string.preview_quality_warning_intro)
     val lines = state.qualityWarnings.flatMap { report ->
         val pageNumber = state.pages.firstOrNull { it.imageId == report.imageId }
             ?.pageIndex
@@ -167,7 +169,7 @@ private fun qualityWarningMessage(state: PreviewContract.State): String {
             ?: 1
         report.warnings.map { warning ->
             stringResource(
-                R.string.preview_quality_warning_page,
+                Res.string.preview_quality_warning_page,
                 pageNumber,
                 qualityWarningDetail(warning),
             )
@@ -187,34 +189,34 @@ private fun qualityWarningDetail(
     warning: ImageQualityWarning,
 ): String = when (warning) {
     is ImageQualityWarning.LowResolution -> stringResource(
-        R.string.preview_quality_low_resolution,
+        Res.string.preview_quality_low_resolution,
         warning.widthPx,
         warning.heightPx,
         warning.minimumShortSidePx,
         warning.minimumLongSidePx,
     )
     is ImageQualityWarning.PossibleBlur -> stringResource(
-        R.string.preview_quality_blur,
+        Res.string.preview_quality_blur,
         warning.sharpnessScore,
         warning.recommendedMinimum,
     )
     is ImageQualityWarning.PossibleUnderexposure -> stringResource(
-        R.string.preview_quality_underexposed,
+        Res.string.preview_quality_underexposed,
         warning.meanLuminance,
         formatPermille(warning.darkPixelsPermille),
     )
     is ImageQualityWarning.PossibleOverexposure -> stringResource(
-        R.string.preview_quality_overexposed,
+        Res.string.preview_quality_overexposed,
         warning.meanLuminance,
         formatPermille(warning.brightPixelsPermille),
     )
     is ImageQualityWarning.PossibleSkew -> stringResource(
-        R.string.preview_quality_skew,
+        Res.string.preview_quality_skew,
         formatTenths(warning.estimatedDegreesTenths, suffix = "°"),
         formatPermille(warning.confidencePermille),
     )
     is ImageQualityWarning.PossibleIncompleteCrop -> stringResource(
-        R.string.preview_quality_incomplete_crop,
+        Res.string.preview_quality_incomplete_crop,
         formatPermille(warning.borderContentPermille),
         formatPermille(warning.warningThresholdPermille),
     )
@@ -236,7 +238,7 @@ private fun PageCanvas(
     onAction: (PreviewContract.Action) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
+    val directories = LocalAppDirectories.current
     val density = LocalDensity.current
     BoxWithConstraints(modifier) {
         val containerWidthPx = with(density) { maxWidth.toPx() }
@@ -289,9 +291,9 @@ private fun PageCanvas(
                 .then(imageModifier),
         ) {
             AsyncImage(
-                model = sensitiveImageRequest(File(context.filesDir, page.filePath)),
+                model = sensitiveImageRequest(File(directories.filesDir, page.filePath)),
                 contentDescription = stringResource(
-                    R.string.preview_page_image_description,
+                    Res.string.preview_page_image_description,
                     page.pageIndex + 1,
                 ),
                 contentScale = ContentScale.Fit,
@@ -394,10 +396,10 @@ private fun CropOverlay(
         )
     }
 
-    val moveLeft = stringResource(R.string.preview_crop_move_left)
-    val moveRight = stringResource(R.string.preview_crop_move_right)
-    val moveUp = stringResource(R.string.preview_crop_move_up)
-    val moveDown = stringResource(R.string.preview_crop_move_down)
+    val moveLeft = stringResource(Res.string.preview_crop_move_left)
+    val moveRight = stringResource(Res.string.preview_crop_move_right)
+    val moveUp = stringResource(Res.string.preview_crop_move_up)
+    val moveDown = stringResource(Res.string.preview_crop_move_down)
     PreviewContract.CropCorner.entries.forEach { corner ->
         val position = cornerPosition(corner)
         val handleSizePx = with(density) { handleTouch.toPx() }
@@ -419,7 +421,7 @@ private fun CropOverlay(
         }
         val handleDescription = stringResource(cropCornerDescription(corner))
         val positionDescription = stringResource(
-            R.string.preview_crop_handle_position,
+            Res.string.preview_crop_handle_position,
             xFraction / FRACTION_PER_PERCENT,
             yFraction / FRACTION_PER_PERCENT,
         )
@@ -500,11 +502,11 @@ private fun CropOverlay(
     }
 }
 
-private fun cropCornerDescription(corner: PreviewContract.CropCorner): Int = when (corner) {
-    PreviewContract.CropCorner.TOP_LEFT -> R.string.preview_crop_handle_top_left
-    PreviewContract.CropCorner.TOP_RIGHT -> R.string.preview_crop_handle_top_right
-    PreviewContract.CropCorner.BOTTOM_LEFT -> R.string.preview_crop_handle_bottom_left
-    PreviewContract.CropCorner.BOTTOM_RIGHT -> R.string.preview_crop_handle_bottom_right
+private fun cropCornerDescription(corner: PreviewContract.CropCorner): StringResource = when (corner) {
+    PreviewContract.CropCorner.TOP_LEFT -> Res.string.preview_crop_handle_top_left
+    PreviewContract.CropCorner.TOP_RIGHT -> Res.string.preview_crop_handle_top_right
+    PreviewContract.CropCorner.BOTTOM_LEFT -> Res.string.preview_crop_handle_bottom_left
+    PreviewContract.CropCorner.BOTTOM_RIGHT -> Res.string.preview_crop_handle_bottom_right
 }
 
 @Composable
@@ -514,19 +516,19 @@ private fun PreviewErrorCards(
 ) {
     if (state.processFailed && state.mode == PreviewContract.Mode.VIEWING) {
         RecoverableError(
-            title = stringResource(R.string.preview_process_error_title),
-            message = stringResource(R.string.preview_process_error_message),
-            actionLabel = stringResource(R.string.action_retry),
+            title = stringResource(Res.string.preview_process_error_title),
+            message = stringResource(Res.string.preview_process_error_message),
+            actionLabel = stringResource(Res.string.action_retry),
             onAction = { onAction(PreviewContract.Action.ProcessClicked) },
         )
     }
     if (state.failure == PreviewContract.Failure.MUTATION_FAILED) {
         StatusCard(
-            statusLabel = stringResource(R.string.preview_edit_error_status),
-            title = stringResource(R.string.preview_edit_error_title),
-            message = stringResource(R.string.preview_edit_error_message),
+            statusLabel = stringResource(Res.string.preview_edit_error_status),
+            title = stringResource(Res.string.preview_edit_error_title),
+            message = stringResource(Res.string.preview_edit_error_message),
             tone = StatusTone.ERROR,
-            iconRes = R.drawable.ic_warning,
+            iconRes = Res.drawable.ic_warning,
         )
     }
 }
@@ -549,7 +551,7 @@ private fun ViewingControls(
         PreviewErrorCards(state = state, onAction = onAction)
         Text(
             text = stringResource(
-                R.string.preview_page_indicator,
+                Res.string.preview_page_indicator,
                 state.currentIndex + 1,
                 state.pages.size,
             ),
@@ -566,7 +568,7 @@ private fun ViewingControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_previous_page),
+                text = stringResource(Res.string.preview_previous_page),
                 onClick = { onAction(PreviewContract.Action.PreviousPageClicked) },
                 enabled = !state.isBusy && state.currentIndex > 0,
                 modifier = Modifier
@@ -574,7 +576,7 @@ private fun ViewingControls(
                     .testTag(PreviewTestTags.PREVIOUS_PAGE),
             )
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_next_page),
+                text = stringResource(Res.string.preview_next_page),
                 onClick = { onAction(PreviewContract.Action.NextPageClicked) },
                 enabled = !state.isBusy && state.currentIndex < state.pages.lastIndex,
                 modifier = Modifier
@@ -585,7 +587,7 @@ private fun ViewingControls(
 
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_action_retake),
+                text = stringResource(Res.string.preview_action_retake),
                 onClick = { onAction(PreviewContract.Action.RetakeClicked) },
                 enabled = !state.isBusy,
                 modifier = Modifier
@@ -593,7 +595,7 @@ private fun ViewingControls(
                     .testTag(PreviewTestTags.ACTION_RETAKE),
             )
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_action_rotate),
+                text = stringResource(Res.string.preview_action_rotate),
                 onClick = { onAction(PreviewContract.Action.RotateClicked) },
                 enabled = !state.isBusy,
                 modifier = Modifier
@@ -602,7 +604,7 @@ private fun ViewingControls(
             )
         }
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.preview_action_crop),
+            text = stringResource(Res.string.preview_action_crop),
             onClick = { onAction(PreviewContract.Action.CropClicked) },
             enabled = !state.isBusy,
             modifier = Modifier
@@ -612,7 +614,7 @@ private fun ViewingControls(
 
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_action_add_page),
+                text = stringResource(Res.string.preview_action_add_page),
                 onClick = { onAction(PreviewContract.Action.AddPageClicked) },
                 enabled = !state.isBusy,
                 modifier = Modifier
@@ -620,7 +622,7 @@ private fun ViewingControls(
                     .testTag(PreviewTestTags.ACTION_ADD_PAGE),
             )
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_action_move_up),
+                text = stringResource(Res.string.preview_action_move_up),
                 onClick = { onAction(PreviewContract.Action.MoveUpClicked) },
                 enabled = !state.isBusy && state.currentIndex > 0,
                 modifier = Modifier
@@ -631,7 +633,7 @@ private fun ViewingControls(
 
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_action_move_down),
+                text = stringResource(Res.string.preview_action_move_down),
                 onClick = { onAction(PreviewContract.Action.MoveDownClicked) },
                 enabled = !state.isBusy && state.currentIndex < state.pages.lastIndex,
                 modifier = Modifier
@@ -639,7 +641,7 @@ private fun ViewingControls(
                     .testTag(PreviewTestTags.ACTION_MOVE_DOWN),
             )
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_action_delete),
+                text = stringResource(Res.string.preview_action_delete),
                 onClick = { onAction(PreviewContract.Action.DeleteClicked) },
                 enabled = !state.isBusy,
                 modifier = Modifier
@@ -649,7 +651,7 @@ private fun ViewingControls(
         }
 
         FacturaStockPrimaryButton(
-            text = stringResource(R.string.preview_action_process),
+            text = stringResource(Res.string.preview_action_process),
             onClick = { onAction(PreviewContract.Action.ProcessClicked) },
             enabled = !state.isBusy && state.pages.isNotEmpty(),
             modifier = Modifier
@@ -677,12 +679,12 @@ private fun CroppingControls(
     ) {
         PreviewErrorCards(state = state, onAction = onAction)
         Text(
-            text = stringResource(R.string.preview_crop_hint),
+            text = stringResource(Res.string.preview_crop_hint),
             style = MaterialTheme.typography.bodyMedium,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.preview_crop_cancel),
+                text = stringResource(Res.string.preview_crop_cancel),
                 onClick = { onAction(PreviewContract.Action.CropCancelled) },
                 enabled = enabled,
                 modifier = Modifier
@@ -690,7 +692,7 @@ private fun CroppingControls(
                     .testTag(PreviewTestTags.CROP_CANCEL),
             )
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.preview_crop_apply),
+                text = stringResource(Res.string.preview_crop_apply),
                 onClick = { onAction(PreviewContract.Action.CropConfirmed) },
                 enabled = enabled,
                 modifier = Modifier

@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.summary
 
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,14 +30,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.InvoiceHeaderEditField
 import com.facturastock.app.domain.model.InvoiceLineEditField
 import com.facturastock.app.domain.model.Money
@@ -91,15 +91,15 @@ fun PurchaseSummaryScreen(
             if (state.failure == Failure.ACTION_FAILED || state.failure == Failure.STORAGE_FULL) {
                 item(key = "summary_failure", contentType = "failure") {
                     RecoverableError(
-                        title = stringResource(R.string.summary_action_failed_title),
+                        title = stringResource(Res.string.summary_action_failed_title),
                         message = stringResource(
                             if (state.failure == Failure.STORAGE_FULL) {
-                                R.string.storage_full_recoverable_message
+                                Res.string.storage_full_recoverable_message
                             } else {
-                                R.string.summary_action_failed_message
+                                Res.string.summary_action_failed_message
                             },
                         ),
-                        actionLabel = stringResource(R.string.action_retry),
+                        actionLabel = stringResource(Res.string.action_retry),
                         onAction = { onAction(Action.Retry) },
                         modifier = Modifier.testTag(PurchaseSummaryTestTags.FAILURE_BANNER),
                     )
@@ -123,7 +123,7 @@ private fun SummaryHeader(mode: Mode) {
         verticalArrangement = Arrangement.spacedBy(spacing.xxs),
     ) {
         Text(
-            text = stringResource(R.string.summary_title),
+            text = stringResource(Res.string.summary_title),
             modifier = Modifier.semantics { heading() },
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleLarge,
@@ -131,9 +131,9 @@ private fun SummaryHeader(mode: Mode) {
         Text(
             text = stringResource(
                 if (mode == Mode.PREPARED) {
-                    R.string.summary_prepared_message
+                    Res.string.summary_prepared_message
                 } else {
-                    R.string.summary_edit_message
+                    Res.string.summary_edit_message
                 },
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -150,7 +150,7 @@ private fun LazyListScope.editingContent(
     if (visibleBlockers.isEmpty()) {
         item(key = "summary_all_clear", contentType = "status") {
             Text(
-                text = stringResource(R.string.summary_all_clear),
+                text = stringResource(Res.string.summary_all_clear),
                 color = FacturaStockDesign.semanticColors.success,
                 style = MaterialTheme.typography.bodyLarge,
             )
@@ -158,7 +158,7 @@ private fun LazyListScope.editingContent(
     } else {
         item(key = "summary_blockers_title", contentType = "header") {
             Text(
-                text = stringResource(R.string.summary_blockers_title),
+                text = stringResource(Res.string.summary_blockers_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
@@ -219,7 +219,7 @@ private fun BlockerRow(
 @Composable
 private fun FinanceCard(finance: FinanceSummary) {
     val spacing = FacturaStockDesign.spacing
-    val pending = stringResource(R.string.line_review_summary_pending)
+    val pending = stringResource(Res.string.line_review_summary_pending)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -234,21 +234,21 @@ private fun FinanceCard(finance: FinanceSummary) {
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             Text(
-                text = stringResource(R.string.summary_finance_title),
+                text = stringResource(Res.string.summary_finance_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
             )
             FinanceRow(
-                labelRes = R.string.line_review_summary_sum_label,
+                labelRes = Res.string.line_review_summary_sum_label,
                 value = finance.lineSum.ifBlank { pending },
             )
             FinanceRow(
-                labelRes = R.string.line_review_summary_invoice_label,
+                labelRes = Res.string.line_review_summary_invoice_label,
                 value = finance.invoiceTotal.ifBlank { pending },
             )
             FinanceRow(
-                labelRes = R.string.line_review_summary_difference_label,
+                labelRes = Res.string.line_review_summary_difference_label,
                 value = finance.difference.ifBlank { pending },
                 emphasize = finance.hasDifference,
             )
@@ -258,7 +258,7 @@ private fun FinanceCard(finance: FinanceSummary) {
 
 @Composable
 private fun FinanceRow(
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     value: String,
     emphasize: Boolean = false,
 ) {
@@ -327,7 +327,7 @@ private fun RoundingAcceptanceRow(
                 )
                 Spacer(modifier = Modifier.width(spacing.xs))
                 Text(
-                    text = stringResource(R.string.summary_rounding_accept, difference),
+                    text = stringResource(Res.string.summary_rounding_accept, difference),
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyLarge,
@@ -342,18 +342,18 @@ private fun RoundingAcceptanceRow(
                         .fillMaxWidth()
                         .testTag(PurchaseSummaryTestTags.ADJUSTMENT_REASON),
                     enabled = enabled,
-                    label = { Text(stringResource(R.string.summary_adjustment_reason_label)) },
+                    label = { Text(stringResource(Res.string.summary_adjustment_reason_label)) },
                     supportingText = {
                         Text(
                             if (reasonIsValid) {
                                 stringResource(
-                                    R.string.summary_adjustment_reason_count,
+                                    Res.string.summary_adjustment_reason_count,
                                     reason.length,
                                     PurchaseReconciliationAdjustment.MAX_REASON_LENGTH,
                                 )
                             } else {
                                 stringResource(
-                                    R.string.summary_adjustment_reason_requirement,
+                                    Res.string.summary_adjustment_reason_requirement,
                                     PurchaseReconciliationAdjustment.MIN_REASON_LENGTH,
                                     PurchaseReconciliationAdjustment.MAX_REASON_LENGTH,
                                 )
@@ -376,7 +376,7 @@ private fun LazyListScope.preparedContent(state: State) {
     }
     item(key = "summary_lines_title", contentType = "header") {
         Text(
-            text = stringResource(R.string.summary_lines_title),
+            text = stringResource(Res.string.summary_lines_title),
             modifier = Modifier.semantics { heading() },
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleMedium,
@@ -395,7 +395,7 @@ private fun LazyListScope.preparedContent(state: State) {
     if (purchase.acceptedWarnings.isNotEmpty()) {
         item(key = "summary_warnings_title", contentType = "header") {
             Text(
-                text = stringResource(R.string.summary_warnings_title),
+                text = stringResource(Res.string.summary_warnings_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
@@ -428,30 +428,30 @@ private fun SnapshotCard(purchase: PreparedPurchase) {
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             SnapshotRow(
-                labelRes = R.string.summary_supplier_label,
+                labelRes = Res.string.summary_supplier_label,
                 value = purchase.supplierLegalName ?: purchase.supplierRuc,
             )
             SnapshotRow(
-                labelRes = R.string.header_review_ruc_label,
+                labelRes = Res.string.header_review_ruc_label,
                 value = purchase.supplierRuc,
             )
             SnapshotRow(
-                labelRes = R.string.summary_document_label,
+                labelRes = Res.string.summary_document_label,
                 value = listOfNotNull(
                     purchase.documentType?.let { type -> stringResource(documentTypeLabelRes(type)) },
                     purchase.documentNumber,
                 ).joinToString(separator = " · "),
             )
             SnapshotRow(
-                labelRes = R.string.header_review_issue_date_label,
+                labelRes = Res.string.header_review_issue_date_label,
                 value = purchase.issueDate.formatForDisplay(),
             )
             SnapshotRow(
-                labelRes = R.string.header_review_currency_label,
+                labelRes = Res.string.header_review_currency_label,
                 value = purchase.currency.value,
             )
             SnapshotRow(
-                labelRes = R.string.summary_hash_label,
+                labelRes = Res.string.summary_hash_label,
                 value = purchase.logicalHash.take(HASH_VISIBLE_CHARS),
                 valueTestTag = PurchaseSummaryTestTags.HASH,
             )
@@ -461,7 +461,7 @@ private fun SnapshotCard(purchase: PreparedPurchase) {
 
 @Composable
 private fun SnapshotRow(
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     value: String,
     valueTestTag: String? = null,
 ) {
@@ -486,7 +486,7 @@ private fun SnapshotRow(
 @Composable
 private fun PreparedLineRow(line: PreparedPurchaseLine) {
     val spacing = FacturaStockDesign.spacing
-    val pending = stringResource(R.string.line_review_summary_pending)
+    val pending = stringResource(Res.string.line_review_summary_pending)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -508,7 +508,7 @@ private fun PreparedLineRow(line: PreparedPurchaseLine) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = stringResource(
-                        R.string.summary_line_quantity,
+                        Res.string.summary_line_quantity,
                         line.quantity.value.toPlainString(),
                     ),
                     modifier = Modifier.weight(1f),
@@ -528,7 +528,7 @@ private fun PreparedLineRow(line: PreparedPurchaseLine) {
 @Composable
 private fun PreparedTotalsCard(purchase: PreparedPurchase) {
     val spacing = FacturaStockDesign.spacing
-    val pending = stringResource(R.string.line_review_summary_pending)
+    val pending = stringResource(Res.string.line_review_summary_pending)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -543,36 +543,36 @@ private fun PreparedTotalsCard(purchase: PreparedPurchase) {
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             Text(
-                text = stringResource(R.string.summary_finance_title),
+                text = stringResource(Res.string.summary_finance_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
             )
             FinanceRow(
-                labelRes = R.string.header_review_subtotal_label,
+                labelRes = Res.string.header_review_subtotal_label,
                 value = purchase.subtotal.displayOr(pending),
             )
             FinanceRow(
-                labelRes = R.string.header_review_igv_label,
+                labelRes = Res.string.header_review_igv_label,
                 value = purchase.tax.displayOr(pending),
             )
             FinanceRow(
-                labelRes = R.string.header_review_other_charges_label,
+                labelRes = Res.string.header_review_other_charges_label,
                 value = purchase.otherCharges.displayOr(pending),
             )
             purchase.reconciliationAdjustment?.let { adjustment ->
                 FinanceRow(
-                    labelRes = R.string.purchase_detail_adjustment,
+                    labelRes = Res.string.purchase_detail_adjustment,
                     value = adjustment.amount.formatSignedForDisplay(),
                     emphasize = true,
                 )
                 FinanceRow(
-                    labelRes = R.string.purchase_detail_adjustment_reason,
+                    labelRes = Res.string.purchase_detail_adjustment_reason,
                     value = adjustment.reason,
                 )
             }
             FinanceRow(
-                labelRes = R.string.header_review_total_label,
+                labelRes = Res.string.header_review_total_label,
                 value = purchase.total.formatForDisplay(),
                 emphasize = true,
             )
@@ -595,12 +595,12 @@ private fun WarningRow(warning: String) {
         Text(
             text = when (warning) {
                 WARNING_TOTAL_DIFFERENCE ->
-                    stringResource(R.string.summary_warning_total_difference)
+                    stringResource(Res.string.summary_warning_total_difference)
 
                 WARNING_LINES_TOTAL_DIFFERENCE ->
-                    stringResource(R.string.summary_warning_lines_total_difference)
+                    stringResource(Res.string.summary_warning_lines_total_difference)
 
-                else -> stringResource(R.string.summary_warning_generic, warning)
+                else -> stringResource(Res.string.summary_warning_generic, warning)
             },
             modifier = Modifier.padding(spacing.sm),
             color = FacturaStockDesign.semanticColors.onWarningContainer,
@@ -628,7 +628,7 @@ private fun BottomBar(
         ) {
             when (state.mode) {
                 Mode.EDITING -> FacturaStockPrimaryButton(
-                    text = stringResource(R.string.summary_action_prepare),
+                    text = stringResource(Res.string.summary_action_prepare),
                     onClick = { onAction(Action.PrepareSelected) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -638,7 +638,7 @@ private fun BottomBar(
 
                 Mode.PREPARED -> {
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.summary_action_register),
+                        text = stringResource(Res.string.summary_action_register),
                         onClick = { onAction(Action.RegisterSelected) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -646,7 +646,7 @@ private fun BottomBar(
                         enabled = !state.isBusy,
                     )
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.summary_action_reopen),
+                        text = stringResource(Res.string.summary_action_reopen),
                         onClick = { onAction(Action.ReopenSelected) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -662,65 +662,65 @@ private fun BottomBar(
 @Composable
 private fun blockerText(blocker: BlockerItem): String = when (blocker.code) {
     PrepareBlockerCode.HEADER_MISSING ->
-        stringResource(R.string.summary_blocker_header_missing)
+        stringResource(Res.string.summary_blocker_header_missing)
 
     PrepareBlockerCode.HEADER_INVALID ->
-        stringResource(R.string.summary_blocker_header_invalid, headerFieldLabel(blocker.detail))
+        stringResource(Res.string.summary_blocker_header_invalid, headerFieldLabel(blocker.detail))
 
     PrepareBlockerCode.CREDIT_NOTE_UNSUPPORTED ->
-        stringResource(R.string.summary_blocker_credit_note_unsupported)
+        stringResource(Res.string.summary_blocker_credit_note_unsupported)
 
     PrepareBlockerCode.NO_LINES ->
-        stringResource(R.string.summary_blocker_no_lines)
+        stringResource(Res.string.summary_blocker_no_lines)
 
     PrepareBlockerCode.LINE_DESCRIPTION_MISSING ->
-        lineBlockerText(R.string.summary_blocker_line_description_missing, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_description_missing, blocker.linePosition)
 
     PrepareBlockerCode.LINE_QUANTITY_INVALID ->
-        lineBlockerText(R.string.summary_blocker_line_quantity_invalid, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_quantity_invalid, blocker.linePosition)
 
     PrepareBlockerCode.LINE_AMOUNT_INVALID ->
         if (blocker.linePosition != null) {
             stringResource(
-                R.string.summary_blocker_line_amount_invalid,
+                Res.string.summary_blocker_line_amount_invalid,
                 blocker.linePosition,
                 lineFieldLabel(blocker.detail),
             )
         } else {
-            stringResource(R.string.summary_blocker_generic)
+            stringResource(Res.string.summary_blocker_generic)
         }
 
     PrepareBlockerCode.LINE_REVIEW_PENDING ->
-        lineBlockerText(R.string.summary_blocker_line_review_pending, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_review_pending, blocker.linePosition)
 
     PrepareBlockerCode.LINE_TAX_DECISION_REQUIRED ->
-        lineBlockerText(R.string.summary_blocker_line_tax_required, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_tax_required, blocker.linePosition)
 
     PrepareBlockerCode.LINE_PRODUCT_MISSING ->
-        lineBlockerText(R.string.summary_blocker_line_product_missing, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_product_missing, blocker.linePosition)
 
     PrepareBlockerCode.LINE_PRODUCT_INVALID ->
-        lineBlockerText(R.string.summary_blocker_line_product_invalid, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_product_invalid, blocker.linePosition)
 
     PrepareBlockerCode.LINE_PRODUCT_PROVENANCE_REQUIRED ->
-        lineBlockerText(R.string.summary_blocker_line_product_provenance, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_product_provenance, blocker.linePosition)
 
     PrepareBlockerCode.LINE_SALE_PRICE_REQUIRED ->
-        lineBlockerText(R.string.summary_blocker_line_sale_price_required, blocker.linePosition)
+        lineBlockerText(Res.string.summary_blocker_line_sale_price_required, blocker.linePosition)
 
     PrepareBlockerCode.ROUNDING_ACCEPTANCE_REQUIRED ->
-        stringResource(R.string.summary_blocker_rounding)
+        stringResource(Res.string.summary_blocker_rounding)
 
     PrepareBlockerCode.ADJUSTMENT_REASON_REQUIRED ->
-        stringResource(R.string.summary_blocker_adjustment_reason)
+        stringResource(Res.string.summary_blocker_adjustment_reason)
 }
 
 @Composable
-private fun lineBlockerText(@StringRes res: Int, linePosition: Int?): String =
+private fun lineBlockerText(res: StringResource, linePosition: Int?): String =
     if (linePosition != null) {
         stringResource(res, linePosition)
     } else {
-        stringResource(R.string.summary_blocker_generic)
+        stringResource(Res.string.summary_blocker_generic)
     }
 
 @Composable
@@ -729,21 +729,21 @@ private fun headerFieldLabel(detail: String?): String {
         runCatching { InvoiceHeaderEditField.valueOf(name) }.getOrNull()
     }
     val labelRes = when (field) {
-        InvoiceHeaderEditField.SUPPLIER_RUC -> R.string.header_review_ruc_label
-        InvoiceHeaderEditField.SUPPLIER_LEGAL_NAME -> R.string.header_review_supplier_label
-        InvoiceHeaderEditField.DOCUMENT_TYPE -> R.string.header_review_document_type_label
-        InvoiceHeaderEditField.DOCUMENT_SERIES -> R.string.header_review_series_label
-        InvoiceHeaderEditField.DOCUMENT_NUMBER -> R.string.header_review_number_label
-        InvoiceHeaderEditField.ISSUE_DATE -> R.string.header_review_issue_date_label
-        InvoiceHeaderEditField.CURRENCY -> R.string.header_review_currency_label
-        InvoiceHeaderEditField.SUBTOTAL -> R.string.header_review_subtotal_label
-        InvoiceHeaderEditField.IGV -> R.string.header_review_igv_label
-        InvoiceHeaderEditField.OTHER_CHARGES -> R.string.header_review_other_charges_label
-        InvoiceHeaderEditField.TOTAL -> R.string.header_review_total_label
+        InvoiceHeaderEditField.SUPPLIER_RUC -> Res.string.header_review_ruc_label
+        InvoiceHeaderEditField.SUPPLIER_LEGAL_NAME -> Res.string.header_review_supplier_label
+        InvoiceHeaderEditField.DOCUMENT_TYPE -> Res.string.header_review_document_type_label
+        InvoiceHeaderEditField.DOCUMENT_SERIES -> Res.string.header_review_series_label
+        InvoiceHeaderEditField.DOCUMENT_NUMBER -> Res.string.header_review_number_label
+        InvoiceHeaderEditField.ISSUE_DATE -> Res.string.header_review_issue_date_label
+        InvoiceHeaderEditField.CURRENCY -> Res.string.header_review_currency_label
+        InvoiceHeaderEditField.SUBTOTAL -> Res.string.header_review_subtotal_label
+        InvoiceHeaderEditField.IGV -> Res.string.header_review_igv_label
+        InvoiceHeaderEditField.OTHER_CHARGES -> Res.string.header_review_other_charges_label
+        InvoiceHeaderEditField.TOTAL -> Res.string.header_review_total_label
         null -> null
     }
     return labelRes?.let { stringResource(it) }
-        ?: stringResource(R.string.summary_field_unknown)
+        ?: stringResource(Res.string.summary_field_unknown)
 }
 
 @Composable
@@ -752,26 +752,25 @@ private fun lineFieldLabel(detail: String?): String {
         runCatching { InvoiceLineEditField.valueOf(name) }.getOrNull()
     }
     val labelRes = when (field) {
-        InvoiceLineEditField.DESCRIPTION -> R.string.line_review_description_label
-        InvoiceLineEditField.CODE -> R.string.line_review_code_label
-        InvoiceLineEditField.QUANTITY -> R.string.line_review_quantity_label
-        InvoiceLineEditField.UNIT -> R.string.line_review_unit_label
-        InvoiceLineEditField.UNIT_COST -> R.string.line_review_unit_cost_label
-        InvoiceLineEditField.DISCOUNT -> R.string.line_review_discount_label
-        InvoiceLineEditField.IGV -> R.string.line_review_igv_label
-        InvoiceLineEditField.TOTAL -> R.string.line_review_total_label
+        InvoiceLineEditField.DESCRIPTION -> Res.string.line_review_description_label
+        InvoiceLineEditField.CODE -> Res.string.line_review_code_label
+        InvoiceLineEditField.QUANTITY -> Res.string.line_review_quantity_label
+        InvoiceLineEditField.UNIT -> Res.string.line_review_unit_label
+        InvoiceLineEditField.UNIT_COST -> Res.string.line_review_unit_cost_label
+        InvoiceLineEditField.DISCOUNT -> Res.string.line_review_discount_label
+        InvoiceLineEditField.IGV -> Res.string.line_review_igv_label
+        InvoiceLineEditField.TOTAL -> Res.string.line_review_total_label
         null -> null
     }
     return labelRes?.let { stringResource(it) }
-        ?: stringResource(R.string.summary_field_unknown)
+        ?: stringResource(Res.string.summary_field_unknown)
 }
 
-@StringRes
-private fun documentTypeLabelRes(type: PurchaseDocumentType): Int = when (type) {
-    PurchaseDocumentType.INVOICE -> R.string.header_review_document_type_invoice
-    PurchaseDocumentType.SALES_RECEIPT -> R.string.header_review_document_type_sales_receipt
-    PurchaseDocumentType.CREDIT_NOTE -> R.string.header_review_document_type_credit_note
-    PurchaseDocumentType.DEBIT_NOTE -> R.string.header_review_document_type_debit_note
+private fun documentTypeLabelRes(type: PurchaseDocumentType): StringResource = when (type) {
+    PurchaseDocumentType.INVOICE -> Res.string.header_review_document_type_invoice
+    PurchaseDocumentType.SALES_RECEIPT -> Res.string.header_review_document_type_sales_receipt
+    PurchaseDocumentType.CREDIT_NOTE -> Res.string.header_review_document_type_credit_note
+    PurchaseDocumentType.DEBIT_NOTE -> Res.string.header_review_document_type_debit_note
 }
 
 private fun Money?.displayOr(pending: String): String =

@@ -1,11 +1,10 @@
 package com.facturastock.app.di
 
-import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.preferencesDataStoreFile
-import com.facturastock.app.data.local.FailClosedSQLiteOpenHelperFactory
+import com.facturastock.app.core.platform.AppDirectories
+import okio.Path.Companion.toOkioPath
 import com.facturastock.app.data.local.FacturaStockDatabase
 import com.facturastock.app.data.local.dao.AuditEventDao
 import com.facturastock.app.data.local.dao.BusinessDao
@@ -34,20 +33,17 @@ import com.facturastock.app.data.local.dao.SupplierProductAliasDao
 import com.facturastock.app.data.local.dao.UnitDao
 import dagger.Module
 import dagger.Provides
-import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 @Module
-@InstallIn(SingletonComponent::class)
 object PersistenceModule {
     @Provides
     @Singleton
     fun provideDatabase(
-        @ApplicationContext context: Context,
-        openHelperFactory: FailClosedSQLiteOpenHelperFactory,
-    ): FacturaStockDatabase = FacturaStockDatabase.build(context, openHelperFactory)
+        directories: AppDirectories,
+    ): FacturaStockDatabase = FacturaStockDatabase.build(
+        directories.databaseFile(FacturaStockDatabase.NAME),
+    )
 
     @Provides
     fun provideBusinessDao(database: FacturaStockDatabase): BusinessDao = database.businessDao()
@@ -145,8 +141,8 @@ object PersistenceModule {
 
     @Provides
     @Singleton
-    fun provideAppSettingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
-        PreferenceDataStoreFactory.create(
-            produceFile = { context.preferencesDataStoreFile("app_settings") },
+    fun provideAppSettingsDataStore(directories: AppDirectories): DataStore<Preferences> =
+        PreferenceDataStoreFactory.createWithPath(
+            produceFile = { directories.preferencesDataStoreFile("app_settings").toOkioPath() },
         )
 }

@@ -1,9 +1,8 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.core.time.AppClock
 import com.facturastock.app.domain.model.PrivateFileSweepReport
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -29,11 +28,11 @@ import javax.inject.Singleton
  */
 @Singleton
 class StaleImportCleanup @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val appClock: AppClock,
     private val deletionDurability: PrivateDeletionDurability = PrivateDeletionDurability(),
 ) {
-    private val rootDirectory: File = context.filesDir
+    private val rootDirectory: File = directories.filesDir
 
     /** Borra los temporales huérfanos y devuelve cuántos se eliminaron. */
     fun cleanOrphanedImportTemps(): Int = cleanOrphanedImportTemps(appClock.now())

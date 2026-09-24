@@ -3,11 +3,8 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, windows]
   workflow_dispatch:
-  schedule:
-    # GitHub schedules use UTC: 07:17 is 02:17 in America/Lima.
-    - cron: "17 7 * * 1-5"
 
 permissions:
   contents: read
@@ -17,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Format, static analysis, lint, unit, and Room policy
+  tests:
+    name: Pruebas y política de esquema Room
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -29,163 +26,32 @@ jobs:
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
           validate-wrappers: true
-
-      - name: Validate CI scripts
-        id: ci_scripts
-        run: |
-          for script in scripts/*.rb; do ruby -c "$script"; done
-          bash -n scripts/*.sh
-          bash scripts/run-actionlint.sh
-          ruby scripts/test-prepare-ci-artifacts.rb
-          ruby scripts/test-release-contracts.rb
-          bash scripts/test-resolve-spotless-base.sh
-          ruby scripts/test-summarize-macrobenchmark.rb
-      - name: Resolve the event-specific Spotless baseline
-        id: spotless_base
+      - name: Historial de esquemas Room (solo se agregan versiones)
         env:
-          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
-          PUSH_BEFORE_SHA: ${{ github.event.before || '' }}
-        run: bash scripts/resolve-spotless-base.sh
-      - name: Check formatting and architectural static gates
-        id: static_analysis
-        env:
-          SPOTLESS_BASE_SHA: ${{ steps.spotless_base.outputs.base_sha }}
-        run: ./gradlew --no-daemon ciStaticAnalysis
-
-      # KSP writes Room's canonical export to app/schemas. A dirty tree means entities changed
-      # without committing the matching versioned schema.
-      - name: Generate Room schemas
-        id: room_schema_generate
-        run: ./gradlew --no-daemon :app:kspLocalDebugKotlin
-      - name: Enforce append-only Room schema history
-        id: room_schema_history
-        env:
-          ROOM_SCHEMA_BASE: ${{ steps.spotless_base.outputs.base_sha }}
+          ROOM_SCHEMA_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bash scripts/verify-room-schema-history.sh "$ROOM_SCHEMA_BASE"
-      - name: Reject Room schema drift, including untracked exports
-        id: room_schema_drift
-        run: test -z "$(git status --porcelain --untracked-files=all -- app/schemas)"
-
-      - name: Run unit tests, Android Lint, and coverage gate
-        id: quality_tests
-        run: >-
-          ./gradlew --no-daemon
-          :app:testLocalDebugUnitTest
-          :app:lintLocalDebug
-          :app:koverVerifyLocalDebug
-
-      - name: Create closed quality evidence
+      - name: Búsqueda de secretos
+        run: ruby scripts/scan-repository-secrets.rb
+      - name: Pruebas
+        run: ./gradlew --no-daemon :app:test
+      - name: Resultados de pruebas
         if: always()
-        env:
-          CI_SCRIPTS_OUTCOME: ${{ steps.ci_scripts.outcome }}
-          STATIC_OUTCOME: ${{ steps.static_analysis.outcome }}
-          SCHEMA_GENERATE_OUTCOME: ${{ steps.room_schema_generate.outcome }}
-          SCHEMA_HISTORY_OUTCOME: ${{ steps.room_schema_history.outcome }}
-          SCHEMA_DRIFT_OUTCOME: ${{ steps.room_schema_drift.outcome }}
-          TESTS_OUTCOME: ${{ steps.quality_tests.outcome }}
-        run: |
-          mkdir -p ci-summaries/android-quality
-          printf 'gate,status\nci_scripts,%s\nstatic_analysis,%s\nschema_generate,%s\nschema_history,%s\nschema_drift,%s\ntests_lint_coverage,%s\n' \
-            "$CI_SCRIPTS_OUTCOME" "$STATIC_OUTCOME" "$SCHEMA_GENERATE_OUTCOME" \
-            "$SCHEMA_HISTORY_OUTCOME" "$SCHEMA_DRIFT_OUTCOME" "$TESTS_OUTCOME" \
-            > ci-summaries/android-quality/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/android-quality/junit.csv \
-            app/build/test-results
-
-      - name: Sanitize quality evidence
-        id: stage_quality
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/android-quality
-          ci-summaries/android-quality
-      - name: Upload sanitized quality evidence
-        if: ${{ always() && steps.stage_quality.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v5
         with:
-          name: android-quality-${{ github.run_attempt }}
-          path: ci-artifacts/android-quality/
-          retention-days: 14
-          if-no-files-found: error
+          name: resultados-pruebas
+          path: app/build/reports/tests/test
+          if-no-files-found: ignore
 
-  security:
-    name: Secret and dependency review
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      # The scanner uses git ls-files in CI and a deterministic find fallback locally.
-      - name: Reject committed credentials and private keys
-        id: secret_scan
-        run: |
-          mkdir -p security-results
-          ruby scripts/scan-repository-secrets.rb 2>&1 | tee security-results/secret-scan.txt
-      - name: Review dependency changes in pull requests
-        id: dependency_review
-        if: ${{ always() && github.event_name == 'pull_request' }}
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          fail-on-severity: high
-          fail-on-scopes: runtime, development, unknown
-          license-check: true
-      - name: Preserve dependency review JSON
-        if: >-
-          ${{ always() && github.event_name == 'pull_request' &&
-          steps.dependency_review.outputs.dependency-changes != '' }}
-        env:
-          DEPENDENCY_CHANGES: ${{ steps.dependency_review.outputs.dependency-changes }}
-        run: >-
-          ruby -rjson -e
-          'data = JSON.parse(ENV.fetch("DEPENDENCY_CHANGES"));
-          File.write("security-results/dependency-review.json", JSON.pretty_generate(data) + "\n")'
-
-      - name: Create closed security evidence
-        if: always()
-        env:
-          SECRET_SCAN_OUTCOME: ${{ steps.secret_scan.outcome }}
-          DEPENDENCY_REVIEW_OUTCOME: ${{ steps.dependency_review.outcome }}
-        run: |
-          mkdir -p ci-summaries/security
-          printf 'gate,status\nsecret_scan,%s\ndependency_review,%s\n' \
-            "$SECRET_SCAN_OUTCOME" "$DEPENDENCY_REVIEW_OUTCOME" > ci-summaries/security/gates.csv
-          ruby scripts/summarize-security-results.rb \
-            ci-summaries/security/dependencies.csv \
-            security-results/dependency-review.json
-
-      - name: Sanitize security evidence
-        id: stage_security
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/security
-          ci-summaries/security
-      - name: Upload sanitized security evidence
-        if: ${{ always() && steps.stage_security.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: security-${{ github.run_attempt }}
-          path: ci-artifacts/security/
-          retention-days: 14
-          if-no-files-found: error
-
-  gradle-dependency-graph:
-    name: Submit Gradle dependency graph
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
+  windows-installer:
+    name: Instalador de Windows (MSI)
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -193,380 +59,18 @@ jobs:
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
-          java-version: "17"
-      # Submission enables Dependabot alerts without retaining an unredacted graph artifact.
-      - name: Generate and submit dependency graph
-        uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-          dependency-graph: generate-and-submit
-          dependency-graph-continue-on-failure: false
-
-  room-migrations:
-    name: Room migration and persistence instrumentation
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "17"
+          java-version: "21"
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Run all data-layer instrumentation gates
-        id: room_tests
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+      - name: Pruebas en Windows
+        run: ./gradlew --no-daemon :app:test
+      - name: Construir instalador MSI
+        run: ./gradlew --no-daemon :app:packageReleaseMsi
+      - name: Publicar instalador
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v5
         with:
-          api-level: 35
-          arch: x86_64
-          disable-animations: true
-          script: >-
-            ./gradlew --no-daemon :app:connectedLocalDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.package=com.facturastock.app.data
-
-      - name: Create closed Room evidence
-        if: always()
-        env:
-          ROOM_TESTS_OUTCOME: ${{ steps.room_tests.outcome }}
-        run: |
-          mkdir -p ci-summaries/room-migrations
-          printf 'gate,status\nroom_instrumentation,%s\n' "$ROOM_TESTS_OUTCOME" \
-            > ci-summaries/room-migrations/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/room-migrations/junit.csv \
-            app/build/outputs/androidTest-results/connected
-
-      - name: Sanitize Room instrumentation evidence
-        id: stage_room
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/room-migrations
-          ci-summaries/room-migrations
-      - name: Upload sanitized Room instrumentation evidence
-        if: ${{ always() && steps.stage_room.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: room-migrations-${{ github.run_attempt }}
-          path: ci-artifacts/room-migrations/
-          retention-days: 14
-          if-no-files-found: error
-
-  android-ui-e2e:
-    name: Compose, navigation, and 38-line E2E
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      # This job complements room-migrations: every non-data instrumentation class runs once.
-      - name: Run all non-data Android journeys
-        id: ui_e2e_tests
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: 35
-          arch: x86_64
-          disable-animations: true
-          emulator-options: >-
-            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-            -camera-back virtualscene
-          script: >-
-            ./gradlew --no-daemon :app:connectedLocalDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.notPackage=com.facturastock.app.data
-
-      - name: Create closed Compose and E2E evidence
-        if: always()
-        env:
-          UI_E2E_OUTCOME: ${{ steps.ui_e2e_tests.outcome }}
-        run: |
-          mkdir -p ci-summaries/android-ui-e2e
-          printf 'gate,status\nandroid_ui_e2e,%s\n' "$UI_E2E_OUTCOME" \
-            > ci-summaries/android-ui-e2e/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/android-ui-e2e/junit.csv \
-            app/build/outputs/androidTest-results/connected
-
-      - name: Sanitize Compose and E2E evidence
-        id: stage_e2e
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/android-ui-e2e
-          ci-summaries/android-ui-e2e
-      - name: Upload sanitized Compose and E2E evidence
-        if: ${{ always() && steps.stage_e2e.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-ui-e2e-${{ github.run_attempt }}
-          path: ci-artifacts/android-ui-e2e/
-          retention-days: 14
-          if-no-files-found: error
-
-  android-sdk-smoke:
-    name: SDK ${{ matrix.api-level }} smoke — ${{ matrix.label }}
-    needs: quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - api-level: 26
-            label: minSdk file durability
-            instrumentation: com.facturastock.app.data.files.DurablePrivateFilePublicationTest
-          - api-level: 36
-            label: targetSdk app launch
-            instrumentation: com.facturastock.app.feature.HiltUdfRuntimeTest#mainActivityProtectsSensitiveScreensFromScreenshots
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      # Las suites exhaustivas siguen en API 35. Esta matriz ejecuta solo la regresión del minSdk
-      # y un arranque Hilt del targetSdk para cubrir los extremos sin duplicar cientos de pruebas.
-      - name: Run minSdk and targetSdk smoke
-        id: sdk_smoke
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: ${{ matrix.api-level }}
-          arch: x86_64
-          disable-animations: true
-          emulator-options: >-
-            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: >-
-            ./gradlew --no-daemon :app:connectedLocalDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=${{ matrix.instrumentation }}
-
-      - name: Create closed SDK smoke evidence
-        if: always()
-        env:
-          SDK_SMOKE_OUTCOME: ${{ steps.sdk_smoke.outcome }}
-        run: |
-          mkdir -p ci-summaries/android-sdk-smoke
-          printf 'gate,status\nsdk_%s_smoke,%s\n' '${{ matrix.api-level }}' "$SDK_SMOKE_OUTCOME" \
-            > ci-summaries/android-sdk-smoke/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/android-sdk-smoke/junit.csv \
-            app/build/outputs/androidTest-results/connected
-      - name: Sanitize SDK smoke evidence
-        id: stage_sdk_smoke
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/android-sdk-smoke
-          ci-summaries/android-sdk-smoke
-      - name: Upload sanitized SDK smoke evidence
-        if: ${{ always() && steps.stage_sdk_smoke.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-sdk-${{ matrix.api-level }}-smoke-${{ github.run_attempt }}
-          path: ci-artifacts/android-sdk-smoke/
-          retention-days: 14
-          if-no-files-found: error
-
-  android-performance:
-    name: Macrobenchmark and StrictMode regression (${{ matrix.backend }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - backend: local
-            variant-prefix: Local
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Enable KVM acceleration
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      # Emulator values are regression signals; physical-device measurements remain acceptance.
-      - name: Measure camera, OCR/parser/sync, startup, and 100-line list
-        id: performance_tests
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          emulator-options: >-
-            -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-            -camera-back virtualscene
-          script: >-
-            ./gradlew --no-daemon --max-workers=1
-            :benchmark:connected${{ matrix.variant-prefix }}BenchmarkAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.facturastock.app.benchmark.FacturaStockMacrobenchmark
-            -Pandroid.testInstrumentationRunnerArguments.iterations=10
-      - name: Enforce measured p95 budgets
-        id: p95_summary
-        if: always()
-        shell: bash
-        env:
-          FACTURASTOCK_MIN_BENCHMARK_SAMPLES: "10"
-          PERFORMANCE_TESTS_OUTCOME: ${{ steps.performance_tests.outcome }}
-        run: |
-          # AndroidX antepone el applicationId en algunas versiones
-          # (`com.facturastock.app.benchmark-benchmarkData.json`). El sufijo es el contrato
-          # estable; exigir el nombre literal descartaría una medición válida.
-          benchmark_json="$(find benchmark/build/outputs/connected_android_test_additional_output -name '*benchmarkData.json' -print -quit 2>/dev/null || true)"
-          if [[ -n "$benchmark_json" ]]; then
-            mkdir -p ci-summaries/android-performance
-            ./scripts/summarize-macrobenchmark.rb \
-              "$benchmark_json" scripts/macrobenchmark-budgets.json \
-              | tee ci-summaries/android-performance/p95.md >> "$GITHUB_STEP_SUMMARY"
-          elif [[ "$PERFORMANCE_TESTS_OUTCOME" == "success" ]]; then
-            echo 'Macrobenchmark terminó sin benchmarkData.json; no hay p95 medible.' >&2
-            exit 1
-          fi
-
-      - name: Create closed performance evidence
-        if: always()
-        env:
-          PERFORMANCE_TESTS_OUTCOME: ${{ steps.performance_tests.outcome }}
-          P95_SUMMARY_OUTCOME: ${{ steps.p95_summary.outcome }}
-        run: |
-          mkdir -p ci-summaries/android-performance
-          printf 'gate,status\nmacrobenchmark,%s\np95_summary,%s\n' \
-            "$PERFORMANCE_TESTS_OUTCOME" "$P95_SUMMARY_OUTCOME" \
-            > ci-summaries/android-performance/gates.csv
-          ruby scripts/summarize-junit.rb \
-            ci-summaries/android-performance/junit.csv \
-            benchmark/build/outputs/androidTest-results/connected
-
-      - name: Sanitize Macrobenchmark evidence
-        id: stage_performance
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/android-performance
-          ci-summaries/android-performance
-      - name: Upload sanitized Macrobenchmark evidence
-        if: ${{ always() && steps.stage_performance.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-performance-${{ matrix.backend }}-${{ github.run_attempt }}
-          path: ci-artifacts/android-performance/
-          retention-days: 14
-          compression-level: 0
-          if-no-files-found: error
-
-  package-validation:
-    name: Debug, release, profile tooling, and unsigned AAB validation
-    needs:
-      - quality
-      - security
-      - room-migrations
-      - android-ui-e2e
-      - android-sdk-smoke
-      - android-performance
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-        with:
-          cache-provider: basic
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      # No signing secrets exist: these unsigned artifacts validate packaging only.
-      - name: Build all packaging modes
-        id: validation_build
-        run: >-
-          ./gradlew --no-daemon
-          :app:assembleLocalDebug
-          :app:assembleLocalRelease
-          :app:assembleLocalProfile
-          :benchmark:assembleLocalProfile
-          :app:bundleLocalRelease
-          :app:verifyLocalReleaseBundleOptimization
-      - name: Require the unsigned validation bundle
-        id: validation_outputs
-        run: |
-          test -s app/build/outputs/bundle/localRelease/app-local-release.aab
-
-      - name: Create closed package validation evidence
-        if: always()
-        env:
-          BUILD_OUTCOME: ${{ steps.validation_build.outcome }}
-          OUTPUTS_OUTCOME: ${{ steps.validation_outputs.outcome }}
-        run: |
-          mkdir -p ci-summaries/package-validation
-          printf 'gate,status\npackage_build,%s\nrequired_outputs,%s\n' \
-            "$BUILD_OUTCOME" "$OUTPUTS_OUTCOME" \
-            > ci-summaries/package-validation/gates.csv
-
-      - name: Sanitize validation packages
-        id: stage_packages
-        if: always()
-        run: >-
-          ruby scripts/prepare-ci-artifacts.rb
-          ci-artifacts/package-validation
-          app/build/outputs/apk
-          app/build/outputs/bundle
-          ci-summaries/package-validation
-      - name: Upload unsigned validation packages
-        if: ${{ always() && steps.stage_packages.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-package-validation-${{ github.run_attempt }}
-          path: ci-artifacts/package-validation/
-          retention-days: 14
-          compression-level: 0
+          name: FacturaStock-Windows-MSI
+          path: app/build/compose/binaries/main-release/msi/*.msi
           if-no-files-found: error

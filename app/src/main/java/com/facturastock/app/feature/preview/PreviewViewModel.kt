@@ -14,7 +14,6 @@ import com.facturastock.app.domain.usecase.ReorderDraftImagesUseCase
 import com.facturastock.app.domain.usecase.RotateDraftImageUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -29,7 +28,6 @@ import kotlinx.coroutines.Job
  * analiza calidad y, con aceptación explícita de cualquier advertencia, abre el orquestador
  * OCR. Ese destino es el único dueño del preprocesado y del reconocimiento recuperable.
  */
-@HiltViewModel
 class PreviewViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observeDraftImagesUseCase: ObserveDraftImagesUseCase,

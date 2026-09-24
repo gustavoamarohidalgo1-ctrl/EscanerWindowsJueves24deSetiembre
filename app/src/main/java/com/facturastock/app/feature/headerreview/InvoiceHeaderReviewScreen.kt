@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.headerreview
 
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -55,11 +56,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import com.facturastock.app.core.platform.LocalAppDirectories
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -76,7 +77,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.facturastock.app.feature.common.sensitiveImageRequest
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.PurchaseDocumentType
 import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewContract.Action
 import com.facturastock.app.feature.headerreview.InvoiceHeaderReviewContract.AdvanceBlockReason
@@ -153,15 +153,15 @@ fun InvoiceHeaderReviewScreen(
                     )
                     if (state.saveFailure) {
                         RecoverableError(
-                            title = stringResource(R.string.header_review_save_error_title),
+                            title = stringResource(Res.string.header_review_save_error_title),
                             message = stringResource(
                                 if (state.failure == InvoiceHeaderReviewContract.Failure.STORAGE_FULL) {
-                                    R.string.storage_full_recoverable_message
+                                    Res.string.storage_full_recoverable_message
                                 } else {
-                                    R.string.header_review_save_error_message
+                                    Res.string.header_review_save_error_message
                                 },
                             ),
-                            actionLabel = stringResource(R.string.header_review_retry_save),
+                            actionLabel = stringResource(Res.string.header_review_retry_save),
                             onAction = { onAction(Action.RetrySave) },
                         )
                     }
@@ -170,7 +170,7 @@ fun InvoiceHeaderReviewScreen(
             }
 
             item(key = "supplier_heading", contentType = "section_header") {
-                SectionHeading(R.string.header_review_supplier_section)
+                SectionHeading(Res.string.header_review_supplier_section)
             }
             item(key = FieldId.RUC, contentType = "text_field") {
                 EditableField(
@@ -197,7 +197,7 @@ fun InvoiceHeaderReviewScreen(
             }
 
             item(key = "document_heading", contentType = "section_header") {
-                SectionHeading(R.string.header_review_document_section)
+                SectionHeading(Res.string.header_review_document_section)
             }
             item(key = FieldId.DOCUMENT_TYPE, contentType = "document_type_field") {
                 DocumentTypeField(
@@ -255,7 +255,7 @@ fun InvoiceHeaderReviewScreen(
             }
 
             item(key = "totals_heading", contentType = "section_header") {
-                SectionHeading(R.string.header_review_totals_section)
+                SectionHeading(Res.string.header_review_totals_section)
             }
             item(key = FieldId.SUBTOTAL, contentType = "text_field") {
                 EditableField(
@@ -348,10 +348,10 @@ private fun HeaderReviewWarnings(warnings: List<ReviewWarning>) {
         warnings.forEach { warning ->
             val message = when (warning.code) {
                 ReviewWarningCode.RUC_CHECKSUM_MISMATCH -> stringResource(
-                    R.string.header_review_warning_ruc_checksum,
+                    Res.string.header_review_warning_ruc_checksum,
                 )
                 ReviewWarningCode.TOTAL_DIFFERENCE -> stringResource(
-                    R.string.header_review_warning_total_difference,
+                    Res.string.header_review_warning_total_difference,
                     warning.currency.orEmpty(),
                     warning.difference.orEmpty(),
                 )
@@ -371,7 +371,7 @@ private fun HeaderReviewWarnings(warnings: List<ReviewWarning>) {
                     verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_warning),
+                        painter = painterResource(Res.drawable.ic_warning),
                         contentDescription = null,
                         modifier = Modifier.size(spacing.icon),
                     )
@@ -384,7 +384,7 @@ private fun HeaderReviewWarnings(warnings: List<ReviewWarning>) {
 }
 
 @Composable
-private fun SectionHeading(@StringRes titleRes: Int) {
+private fun SectionHeading(titleRes: StringResource) {
     Text(
         text = stringResource(titleRes),
         modifier = Modifier.semantics { heading() },
@@ -406,7 +406,7 @@ private fun DocumentThumbnail(
             color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
             Text(
-                text = stringResource(R.string.header_review_no_document_image),
+                text = stringResource(Res.string.header_review_no_document_image),
                 modifier = Modifier.padding(spacing.md),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge,
@@ -415,9 +415,9 @@ private fun DocumentThumbnail(
         return
     }
 
-    val context = LocalContext.current
+    val directories = LocalAppDirectories.current
     val description = stringResource(
-        R.string.header_review_expand_page_description,
+        Res.string.header_review_expand_page_description,
         page.pageIndex + 1,
     )
     Card(
@@ -441,7 +441,7 @@ private fun DocumentThumbnail(
                 .height(THUMBNAIL_HEIGHT),
         ) {
             AsyncImage(
-                model = sensitiveImageRequest(File(context.filesDir, page.relativePath)),
+                model = sensitiveImageRequest(File(directories.filesDir, page.relativePath)),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
@@ -458,7 +458,7 @@ private fun DocumentThumbnail(
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
                 Text(
-                    text = stringResource(R.string.header_review_expand_document),
+                    text = stringResource(Res.string.header_review_expand_document),
                     modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xs),
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -511,7 +511,7 @@ private fun EditableField(
             trailingIcon = if (field.isUncertain) {
                 {
                     Icon(
-                        painter = painterResource(R.drawable.ic_warning),
+                        painter = painterResource(Res.drawable.ic_warning),
                         contentDescription = null,
                         tint = warningColor,
                     )
@@ -586,7 +586,7 @@ private fun DocumentTypeField(
                 onValueChange = {},
                 readOnly = true,
                 singleLine = true,
-                label = { Text(stringResource(R.string.header_review_document_type_label)) },
+                label = { Text(stringResource(Res.string.header_review_document_type_label)) },
                 isError = showError,
                 supportingText = errorText?.let { message ->
                     { Text(message) }
@@ -594,7 +594,7 @@ private fun DocumentTypeField(
                 leadingIcon = if (field.isUncertain) {
                     {
                         Icon(
-                            painter = painterResource(R.drawable.ic_warning),
+                            painter = painterResource(Res.drawable.ic_warning),
                             contentDescription = null,
                             tint = warningColor,
                         )
@@ -665,7 +665,7 @@ private fun FieldReviewSupport(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_warning),
+                painter = painterResource(Res.drawable.ic_warning),
                 contentDescription = null,
                 tint = FacturaStockDesign.semanticColors.warning,
                 modifier = Modifier.size(spacing.iconSmall),
@@ -686,12 +686,12 @@ private fun FieldReviewSupport(
                 .testTag(InvoiceHeaderReviewTestTags.evidence(field.id)),
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_info),
+                painter = painterResource(Res.drawable.ic_info),
                 contentDescription = null,
                 modifier = Modifier.size(spacing.iconSmall),
             )
             Spacer(modifier = Modifier.width(spacing.xs))
-            Text(stringResource(R.string.header_review_view_ocr_text))
+            Text(stringResource(Res.string.header_review_view_ocr_text))
         }
     }
     if (field.canExplicitlyConfirm) {
@@ -702,17 +702,17 @@ private fun FieldReviewSupport(
                 .testTag(InvoiceHeaderReviewTestTags.confirmation(field.id)),
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_check_circle),
+                painter = painterResource(Res.drawable.ic_check_circle),
                 contentDescription = null,
                 modifier = Modifier.size(spacing.iconSmall),
             )
             Spacer(modifier = Modifier.width(spacing.xs))
-            Text(stringResource(R.string.header_review_confirm_verified_value))
+            Text(stringResource(Res.string.header_review_confirm_verified_value))
         }
     }
     if (field.isPersisting) {
         Text(
-            text = stringResource(R.string.header_review_saving_field),
+            text = stringResource(Res.string.header_review_saving_field),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -727,7 +727,7 @@ private fun ReviewProductsBar(
 ) {
     val spacing = FacturaStockDesign.spacing
     val total = state.field(FieldId.TOTAL).value.ifBlank {
-        stringResource(R.string.header_review_total_pending)
+        stringResource(Res.string.header_review_total_pending)
     }
     val currency = state.field(FieldId.CURRENCY).value
 
@@ -745,13 +745,13 @@ private fun ReviewProductsBar(
                 val firstBlocking = state.blockingFields.first()
                 val blockMessage = when (state.blockingReason(firstBlocking)) {
                     AdvanceBlockReason.UNCONFIRMED_UNCERTAIN_VALUE -> stringResource(
-                        R.string.header_review_unconfirmed_message,
+                        Res.string.header_review_unconfirmed_message,
                         stringResource(fieldLabelRes(firstBlocking)),
                     )
                     AdvanceBlockReason.MISSING_OR_INVALID,
                     null,
                     -> stringResource(
-                        R.string.header_review_blocking_message,
+                        Res.string.header_review_blocking_message,
                         stringResource(fieldLabelRes(firstBlocking)),
                     )
                 }
@@ -766,7 +766,7 @@ private fun ReviewProductsBar(
                     verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_warning),
+                        painter = painterResource(Res.drawable.ic_warning),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(spacing.icon),
@@ -780,13 +780,13 @@ private fun ReviewProductsBar(
                 }
             }
             Text(
-                text = stringResource(R.string.header_review_total_summary_label),
+                text = stringResource(Res.string.header_review_total_summary_label),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge,
             )
             Text(
                 text = stringResource(
-                    R.string.header_review_total_summary_value,
+                    Res.string.header_review_total_summary_value,
                     currency,
                     total,
                 ).trim(),
@@ -796,9 +796,9 @@ private fun ReviewProductsBar(
             Spacer(modifier = Modifier.height(spacing.sm))
             FacturaStockPrimaryButton(
                 text = if (state.isSaving) {
-                    stringResource(R.string.header_review_saving_changes)
+                    stringResource(Res.string.header_review_saving_changes)
                 } else {
-                    stringResource(R.string.header_review_review_products)
+                    stringResource(Res.string.header_review_review_products)
                 },
                 onClick = onReviewProducts,
                 modifier = Modifier
@@ -816,7 +816,7 @@ private fun EvidenceDialog(
     onDismiss: () -> Unit,
 ) {
     val spacing = FacturaStockDesign.spacing
-    val title = stringResource(R.string.header_review_evidence_title)
+    val title = stringResource(Res.string.header_review_evidence_title)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -856,7 +856,7 @@ private fun EvidenceDialog(
                             .verticalScroll(rememberScrollState()),
                     ) {
                         Text(
-                            text = stringResource(R.string.header_review_ocr_original_label),
+                            text = stringResource(Res.string.header_review_ocr_original_label),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelLarge,
                         )
@@ -869,7 +869,7 @@ private fun EvidenceDialog(
                             Spacer(modifier = Modifier.height(spacing.md))
                             Text(
                                 text = stringResource(
-                                    R.string.header_review_evidence_page,
+                                    Res.string.header_review_evidence_page,
                                     pageIndex + 1,
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -879,14 +879,14 @@ private fun EvidenceDialog(
                         if (evidence.alternatives.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(spacing.md))
                             Text(
-                                text = stringResource(R.string.header_review_alternatives_label),
+                                text = stringResource(Res.string.header_review_alternatives_label),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             evidence.alternatives.forEach { alternative ->
                                 Text(
                                     text = stringResource(
-                                        R.string.header_review_alternative_value,
+                                        Res.string.header_review_alternative_value,
                                         alternative,
                                     ),
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -897,7 +897,7 @@ private fun EvidenceDialog(
                     }
                     Spacer(modifier = Modifier.height(spacing.lg))
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.header_review_close),
+                        text = stringResource(Res.string.header_review_close),
                         onClick = onDismiss,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -913,9 +913,9 @@ private fun ExpandedDocumentDialog(
     onDismiss: () -> Unit,
 ) {
     val spacing = FacturaStockDesign.spacing
-    val context = LocalContext.current
+    val directories = LocalAppDirectories.current
     val title = stringResource(
-        R.string.header_review_expanded_page_title,
+        Res.string.header_review_expanded_page_title,
         page.pageIndex + 1,
     )
     var zoom by remember(page.imageId) { mutableFloatStateOf(MIN_ZOOM) }
@@ -948,7 +948,7 @@ private fun ExpandedDocumentDialog(
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Text(
-                    text = stringResource(R.string.header_review_zoom_hint),
+                    text = stringResource(Res.string.header_review_zoom_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -976,9 +976,9 @@ private fun ExpandedDocumentDialog(
                     contentAlignment = Alignment.Center,
                 ) {
                     AsyncImage(
-                        model = sensitiveImageRequest(File(context.filesDir, page.relativePath)),
+                        model = sensitiveImageRequest(File(directories.filesDir, page.relativePath)),
                         contentDescription = stringResource(
-                            R.string.header_review_expanded_page_description,
+                            Res.string.header_review_expanded_page_description,
                             page.pageIndex + 1,
                         ),
                         contentScale = ContentScale.Fit,
@@ -999,7 +999,7 @@ private fun ExpandedDocumentDialog(
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.header_review_zoom_out),
+                        text = stringResource(Res.string.header_review_zoom_out),
                         onClick = {
                             zoom = (zoom - ZOOM_STEP).coerceAtLeast(MIN_ZOOM)
                             if (zoom == MIN_ZOOM) pan = Offset.Zero
@@ -1008,7 +1008,7 @@ private fun ExpandedDocumentDialog(
                         enabled = zoom > MIN_ZOOM,
                     )
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.header_review_zoom_in),
+                        text = stringResource(Res.string.header_review_zoom_in),
                         onClick = {
                             zoom = (zoom + ZOOM_STEP).coerceAtMost(MAX_ZOOM)
                         },
@@ -1018,7 +1018,7 @@ private fun ExpandedDocumentDialog(
                 }
                 Spacer(modifier = Modifier.height(spacing.xs))
                 FacturaStockPrimaryButton(
-                    text = stringResource(R.string.header_review_close),
+                    text = stringResource(Res.string.header_review_close),
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -1031,14 +1031,14 @@ private fun ExpandedDocumentDialog(
 private fun confidenceText(field: Field): String? {
     if (!field.isUncertain) return null
     val confidence = when (field.confidence) {
-        Confidence.LOW -> stringResource(R.string.header_review_low_confidence)
-        Confidence.UNKNOWN -> stringResource(R.string.header_review_unknown_confidence)
+        Confidence.LOW -> stringResource(Res.string.header_review_low_confidence)
+        Confidence.UNKNOWN -> stringResource(Res.string.header_review_unknown_confidence)
         Confidence.MEDIUM,
         Confidence.HIGH,
-        -> stringResource(R.string.header_review_manual_review_required)
+        -> stringResource(Res.string.header_review_manual_review_required)
     }
     return if (field.confirmedByUser) {
-        stringResource(R.string.header_review_confirmed_confidence, confidence)
+        stringResource(Res.string.header_review_confirmed_confidence, confidence)
     } else {
         confidence
     }
@@ -1047,15 +1047,15 @@ private fun confidenceText(field: Field): String? {
 @Composable
 private fun fieldErrorText(error: FieldError): String = stringResource(
     when (error) {
-        FieldError.REQUIRED -> R.string.header_review_error_required
-        FieldError.INVALID_RUC -> R.string.header_review_error_ruc
-        FieldError.INVALID_DOCUMENT_TYPE -> R.string.header_review_error_document_type
-        FieldError.INVALID_SERIES -> R.string.header_review_error_series
-        FieldError.INVALID_NUMBER -> R.string.header_review_error_number
-        FieldError.INVALID_DATE -> R.string.header_review_error_date
-        FieldError.INVALID_CURRENCY -> R.string.header_review_error_currency
-        FieldError.INVALID_AMOUNT -> R.string.header_review_error_amount
-        FieldError.NEGATIVE_AMOUNT -> R.string.header_review_error_negative_amount
+        FieldError.REQUIRED -> Res.string.header_review_error_required
+        FieldError.INVALID_RUC -> Res.string.header_review_error_ruc
+        FieldError.INVALID_DOCUMENT_TYPE -> Res.string.header_review_error_document_type
+        FieldError.INVALID_SERIES -> Res.string.header_review_error_series
+        FieldError.INVALID_NUMBER -> Res.string.header_review_error_number
+        FieldError.INVALID_DATE -> Res.string.header_review_error_date
+        FieldError.INVALID_CURRENCY -> Res.string.header_review_error_currency
+        FieldError.INVALID_AMOUNT -> Res.string.header_review_error_amount
+        FieldError.NEGATIVE_AMOUNT -> Res.string.header_review_error_negative_amount
     },
 )
 
@@ -1076,27 +1076,25 @@ private fun effectiveFieldError(field: Field): FieldError? = field.error ?: when
     -> null
 }
 
-@StringRes
-private fun fieldLabelRes(field: FieldId): Int = when (field) {
-    FieldId.RUC -> R.string.header_review_ruc_label
-    FieldId.SUPPLIER -> R.string.header_review_supplier_label
-    FieldId.DOCUMENT_TYPE -> R.string.header_review_document_type_label
-    FieldId.SERIES -> R.string.header_review_series_label
-    FieldId.NUMBER -> R.string.header_review_number_label
-    FieldId.ISSUE_DATE -> R.string.header_review_issue_date_label
-    FieldId.CURRENCY -> R.string.header_review_currency_label
-    FieldId.SUBTOTAL -> R.string.header_review_subtotal_label
-    FieldId.IGV -> R.string.header_review_igv_label
-    FieldId.OTHER_CHARGES -> R.string.header_review_other_charges_label
-    FieldId.TOTAL -> R.string.header_review_total_label
+private fun fieldLabelRes(field: FieldId): StringResource = when (field) {
+    FieldId.RUC -> Res.string.header_review_ruc_label
+    FieldId.SUPPLIER -> Res.string.header_review_supplier_label
+    FieldId.DOCUMENT_TYPE -> Res.string.header_review_document_type_label
+    FieldId.SERIES -> Res.string.header_review_series_label
+    FieldId.NUMBER -> Res.string.header_review_number_label
+    FieldId.ISSUE_DATE -> Res.string.header_review_issue_date_label
+    FieldId.CURRENCY -> Res.string.header_review_currency_label
+    FieldId.SUBTOTAL -> Res.string.header_review_subtotal_label
+    FieldId.IGV -> Res.string.header_review_igv_label
+    FieldId.OTHER_CHARGES -> Res.string.header_review_other_charges_label
+    FieldId.TOTAL -> Res.string.header_review_total_label
 }
 
-@StringRes
-private fun documentTypeLabelRes(type: PurchaseDocumentType): Int = when (type) {
-    PurchaseDocumentType.INVOICE -> R.string.header_review_document_type_invoice
-    PurchaseDocumentType.SALES_RECEIPT -> R.string.header_review_document_type_sales_receipt
-    PurchaseDocumentType.CREDIT_NOTE -> R.string.header_review_document_type_credit_note
-    PurchaseDocumentType.DEBIT_NOTE -> R.string.header_review_document_type_debit_note
+private fun documentTypeLabelRes(type: PurchaseDocumentType): StringResource = when (type) {
+    PurchaseDocumentType.INVOICE -> Res.string.header_review_document_type_invoice
+    PurchaseDocumentType.SALES_RECEIPT -> Res.string.header_review_document_type_sales_receipt
+    PurchaseDocumentType.CREDIT_NOTE -> Res.string.header_review_document_type_credit_note
+    PurchaseDocumentType.DEBIT_NOTE -> Res.string.header_review_document_type_debit_note
 }
 
 private fun fieldLazyIndex(field: FieldId): Int = when (field) {

@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.debtors
 
-import androidx.activity.compose.BackHandler
+import com.facturastock.app.resources.*
+import com.facturastock.app.ui.navigation.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHost
@@ -11,10 +12,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.DebtId
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.FeatureLoadContent
@@ -28,14 +28,14 @@ fun DebtorsRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: DebtorsViewModel = hiltViewModel(),
+    viewModel: DebtorsViewModel = appViewModel(),
     onDebtDeleted: () -> Unit = onCloseInvalidRoute,
     onFullPaymentSaved: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val paymentSaved = stringResource(R.string.debt_payment_saved)
+    val paymentSaved = stringResource(Res.string.debt_payment_saved)
 
     CollectUiEffects(viewModel.effects) { effect ->
         when (effect) {
@@ -57,9 +57,9 @@ fun DebtorsRoute(
 
     if (state.failure == DebtorsContract.Failure.DEBT_NOT_FOUND && state.detail == null) {
         RecoverableError(
-            title = stringResource(R.string.debt_not_found_title),
-            message = stringResource(R.string.debt_not_found_message),
-            actionLabel = stringResource(R.string.action_return_debtors),
+            title = stringResource(Res.string.debt_not_found_title),
+            message = stringResource(Res.string.debt_not_found_message),
+            actionLabel = stringResource(Res.string.action_return_debtors),
             onAction = onCloseInvalidRoute,
             modifier = modifier,
         )

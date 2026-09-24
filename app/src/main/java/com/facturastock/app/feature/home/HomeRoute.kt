@@ -1,5 +1,6 @@
 package com.facturastock.app.feature.home
 
+import com.facturastock.app.resources.*
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -11,10 +12,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.model.id.ImageId
 import com.facturastock.app.domain.model.id.PurchaseId
@@ -39,16 +39,16 @@ fun HomeRoute(
     onOpenInventory: () -> Unit,
     modifier: Modifier = Modifier,
     onContentReady: () -> Unit = {},
-    viewModel: HomeViewModel = hiltViewModel(),
+    viewModel: HomeViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
-    val draftDeletedMessage = stringResource(R.string.home_draft_deleted)
-    val deleteErrorMessage = stringResource(R.string.home_draft_delete_error)
-    val createDraftErrorMessage = stringResource(R.string.home_draft_create_error)
-    val ocrRecoveryErrorMessage = stringResource(R.string.home_ocr_recovery_error)
-    val retryLabel = stringResource(R.string.action_retry)
+    val draftDeletedMessage = stringResource(Res.string.home_draft_deleted)
+    val deleteErrorMessage = stringResource(Res.string.home_draft_delete_error)
+    val createDraftErrorMessage = stringResource(Res.string.home_draft_create_error)
+    val ocrRecoveryErrorMessage = stringResource(Res.string.home_ocr_recovery_error)
+    val retryLabel = stringResource(Res.string.action_retry)
     val currentOnContentReady by rememberUpdatedState(onContentReady)
     val contentSettled = shouldSignalHomeContentReady(
         hasDashboard = state.dashboard != null,

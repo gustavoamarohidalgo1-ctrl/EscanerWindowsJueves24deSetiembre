@@ -1,7 +1,7 @@
 package com.facturastock.app.data.repository
 
-import android.database.sqlite.SQLiteConstraintException
-import androidx.room.withTransaction
+import com.facturastock.app.data.local.sqlite.SQLiteConstraintException
+import com.facturastock.app.data.local.withTransaction
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.data.local.FacturaStockDatabase

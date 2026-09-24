@@ -1,5 +1,8 @@
 package com.facturastock.app.feature.preparation
 
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,12 +14,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
-import androidx.annotation.StringRes
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.PurchaseDuplicateKind
 import com.facturastock.app.domain.model.PurchaseDuplicateMatch
 import com.facturastock.app.domain.model.PurchaseDuplicateOverride
@@ -47,7 +48,7 @@ internal fun PreparationScreen(
     ) {
         item {
             Text(
-                text = stringResource(R.string.purchase_confirmation_title),
+                text = stringResource(Res.string.purchase_confirmation_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.headlineLarge,
@@ -61,11 +62,11 @@ internal fun PreparationScreen(
         state.failure?.let { failure ->
             item {
                 StatusCard(
-                    statusLabel = stringResource(R.string.purchase_duplicate_status),
+                    statusLabel = stringResource(Res.string.purchase_duplicate_status),
                     title = failure.title(),
                     message = failure.message(),
                     tone = StatusTone.ERROR,
-                    iconRes = R.drawable.ic_warning,
+                    iconRes = Res.drawable.ic_warning,
                 )
             }
         }
@@ -73,16 +74,16 @@ internal fun PreparationScreen(
         if (match == null && state.failure == null) {
             item {
                 StatusCard(
-                    statusLabel = stringResource(R.string.purchase_duplicate_status_clear),
-                    title = stringResource(R.string.purchase_confirmation_title),
-                    message = stringResource(R.string.purchase_confirmation_message),
+                    statusLabel = stringResource(Res.string.purchase_duplicate_status_clear),
+                    title = stringResource(Res.string.purchase_confirmation_title),
+                    message = stringResource(Res.string.purchase_confirmation_message),
                     tone = StatusTone.SUCCESS,
-                    iconRes = R.drawable.ic_receipt,
+                    iconRes = Res.drawable.ic_receipt,
                 )
             }
             item {
                 FacturaStockPrimaryButton(
-                    text = stringResource(R.string.action_confirm_purchase),
+                    text = stringResource(Res.string.action_confirm_purchase),
                     onClick = { onAction(PreparationContract.Action.Confirm) },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -93,7 +94,7 @@ internal fun PreparationScreen(
             item { DuplicateMatchCard(match) }
             item {
                 FacturaStockPrimaryButton(
-                    text = stringResource(R.string.purchase_duplicate_open_existing),
+                    text = stringResource(Res.string.purchase_duplicate_open_existing),
                     onClick = { onAction(PreparationContract.Action.OpenExistingSelected) },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -101,7 +102,7 @@ internal fun PreparationScreen(
             if (!retryableFailure && match.kind == PurchaseDuplicateKind.EXACT) {
                 item {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.purchase_duplicate_override_action),
+                        text = stringResource(Res.string.purchase_duplicate_override_action),
                         onClick = { onAction(PreparationContract.Action.RequestOverride) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -111,7 +112,7 @@ internal fun PreparationScreen(
             } else if (!retryableFailure) {
                 item {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.action_confirm_purchase),
+                        text = stringResource(Res.string.action_confirm_purchase),
                         onClick = { onAction(PreparationContract.Action.Confirm) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -122,7 +123,7 @@ internal fun PreparationScreen(
         if (retryableFailure) {
             item {
                 FacturaStockPrimaryButton(
-                    text = stringResource(R.string.action_retry),
+                    text = stringResource(Res.string.action_retry),
                     onClick = { onAction(PreparationContract.Action.Retry) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -133,7 +134,7 @@ internal fun PreparationScreen(
 
         item {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_previous_step),
+                text = stringResource(Res.string.action_previous_step),
                 onClick = { onAction(PreparationContract.Action.BackSelected) },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -148,29 +149,29 @@ internal fun PreparationScreen(
 @Composable
 private fun PreparedSnapshotCard(probe: PurchaseDuplicateProbe) {
     StatusCard(
-        statusLabel = stringResource(R.string.purchase_confirmation_snapshot_status),
-        title = stringResource(R.string.purchase_confirmation_snapshot_title),
-        message = stringResource(R.string.purchase_confirmation_snapshot_message),
+        statusLabel = stringResource(Res.string.purchase_confirmation_snapshot_status),
+        title = stringResource(Res.string.purchase_confirmation_snapshot_title),
+        message = stringResource(Res.string.purchase_confirmation_snapshot_message),
         tone = StatusTone.INFO,
-        iconRes = R.drawable.ic_receipt,
+        iconRes = Res.drawable.ic_receipt,
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.xxs)) {
                 Text(
                     stringResource(
-                        R.string.purchase_confirmation_snapshot_total,
+                        Res.string.purchase_confirmation_snapshot_total,
                         probe.total.formatForDisplay(),
                     ),
                 )
                 probe.reconciliationAdjustment?.let { adjustment ->
                     Text(
                         stringResource(
-                            R.string.purchase_confirmation_snapshot_adjustment,
+                            Res.string.purchase_confirmation_snapshot_adjustment,
                             adjustment.amount.formatSignedForDisplay(),
                         ),
                     )
                     Text(
                         stringResource(
-                            R.string.purchase_confirmation_snapshot_reason,
+                            Res.string.purchase_confirmation_snapshot_reason,
                             adjustment.reason,
                         ),
                     )
@@ -189,38 +190,38 @@ private fun DuplicateMatchCard(match: PurchaseDuplicateMatch) {
         .joinToString()
     StatusCard(
         statusLabel = stringResource(
-            if (exact) R.string.purchase_duplicate_exact_label
-            else R.string.purchase_duplicate_probable_label,
+            if (exact) Res.string.purchase_duplicate_exact_label
+            else Res.string.purchase_duplicate_probable_label,
         ),
         title = stringResource(
-            if (exact) R.string.purchase_duplicate_exact_title
-            else R.string.purchase_duplicate_probable_title,
+            if (exact) Res.string.purchase_duplicate_exact_title
+            else Res.string.purchase_duplicate_probable_title,
         ),
         message = stringResource(
-            if (exact) R.string.purchase_duplicate_exact_message
-            else R.string.purchase_duplicate_probable_message,
+            if (exact) Res.string.purchase_duplicate_exact_message
+            else Res.string.purchase_duplicate_probable_message,
         ),
         tone = if (exact) StatusTone.ERROR else StatusTone.WARNING,
-        iconRes = R.drawable.ic_warning,
+        iconRes = Res.drawable.ic_warning,
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.xxs)) {
-                Text(stringResource(R.string.purchase_duplicate_supplier, purchase.supplierLegalName))
-                Text(stringResource(R.string.purchase_duplicate_document, purchase.canonicalDocumentNumber))
+                Text(stringResource(Res.string.purchase_duplicate_supplier, purchase.supplierLegalName))
+                Text(stringResource(Res.string.purchase_duplicate_document, purchase.canonicalDocumentNumber))
                 Text(
                     stringResource(
-                        R.string.purchase_duplicate_date,
+                        Res.string.purchase_duplicate_date,
                         purchase.issueDate.formatForDisplay(),
                     ),
                 )
                 Text(
                     stringResource(
-                        R.string.purchase_duplicate_total,
+                        Res.string.purchase_duplicate_total,
                         purchase.total.formatForDisplay(),
                     ),
                 )
                 Text(
                     stringResource(
-                        R.string.purchase_duplicate_signals,
+                        Res.string.purchase_duplicate_signals,
                         signalLabels,
                     ),
                 )
@@ -239,10 +240,10 @@ private fun DuplicateOverrideDialog(
     AlertDialog(
         onDismissRequest = { onAction(PreparationContract.Action.DismissOverride) },
         modifier = Modifier.testTag(PreparationTestTags.OVERRIDE_DIALOG),
-        title = { Text(stringResource(R.string.purchase_duplicate_override_title)) },
+        title = { Text(stringResource(Res.string.purchase_duplicate_override_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
-                Text(stringResource(R.string.purchase_duplicate_override_message))
+                Text(stringResource(Res.string.purchase_duplicate_override_message))
                 OutlinedTextField(
                     value = state.overrideReason,
                     onValueChange = {
@@ -251,14 +252,14 @@ private fun DuplicateOverrideDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(PreparationTestTags.OVERRIDE_REASON),
-                    label = { Text(stringResource(R.string.purchase_duplicate_override_reason)) },
+                    label = { Text(stringResource(Res.string.purchase_duplicate_override_reason)) },
                     supportingText = {
                         Text(
                             if (reasonInvalid) {
-                                stringResource(R.string.purchase_duplicate_override_reason_error)
+                                stringResource(Res.string.purchase_duplicate_override_reason_error)
                             } else {
                                 stringResource(
-                                    R.string.purchase_duplicate_override_counter,
+                                    Res.string.purchase_duplicate_override_counter,
                                     state.overrideReason.length,
                                     PurchaseDuplicateOverride.MAX_REASON_LENGTH,
                                 )
@@ -273,7 +274,7 @@ private fun DuplicateOverrideDialog(
         },
         confirmButton = {
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.purchase_duplicate_override_confirm),
+                text = stringResource(Res.string.purchase_duplicate_override_confirm),
                 onClick = { onAction(PreparationContract.Action.ConfirmOverride) },
                 modifier = Modifier.testTag(PreparationTestTags.OVERRIDE_CONFIRM),
                 enabled = trimmedLength >= PurchaseDuplicateOverride.MIN_REASON_LENGTH,
@@ -281,7 +282,7 @@ private fun DuplicateOverrideDialog(
         },
         dismissButton = {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_cancel),
+                text = stringResource(Res.string.action_cancel),
                 onClick = { onAction(PreparationContract.Action.DismissOverride) },
             )
         },
@@ -291,38 +292,38 @@ private fun DuplicateOverrideDialog(
 @Composable
 private fun PreparationContract.Failure.title(): String = stringResource(
     when (this) {
-        PreparationContract.Failure.INVALID_DRAFT_ID -> R.string.ocr_invalid_route_title
+        PreparationContract.Failure.INVALID_DRAFT_ID -> Res.string.ocr_invalid_route_title
         PreparationContract.Failure.DUPLICATE_CHECK_FAILED,
         PreparationContract.Failure.OVERRIDE_REASON_REQUIRED,
         PreparationContract.Failure.OVERRIDE_NOT_AUTHORIZED,
         PreparationContract.Failure.OVERRIDE_FAILED,
         PreparationContract.Failure.DUPLICATE_CHANGED,
-        -> R.string.purchase_duplicate_error_title
+        -> Res.string.purchase_duplicate_error_title
         PreparationContract.Failure.PREPARATION_FAILED,
         PreparationContract.Failure.STORAGE_FULL,
         PreparationContract.Failure.CONFIRMATION_BLOCKED,
         PreparationContract.Failure.PREPARED_PURCHASE_CHANGED,
         PreparationContract.Failure.RETRYABLE_CONFLICT,
-        -> R.string.purchase_confirmation_error_title
+        -> Res.string.purchase_confirmation_error_title
     },
 )
 
 @Composable
 private fun PreparationContract.Failure.message(): String = stringResource(
     when (this) {
-        PreparationContract.Failure.INVALID_DRAFT_ID -> R.string.ocr_invalid_route_message
-        PreparationContract.Failure.DUPLICATE_CHECK_FAILED -> R.string.purchase_duplicate_check_error
-        PreparationContract.Failure.OVERRIDE_REASON_REQUIRED -> R.string.purchase_duplicate_override_reason_error
-        PreparationContract.Failure.OVERRIDE_NOT_AUTHORIZED -> R.string.purchase_duplicate_override_unauthorized
-        PreparationContract.Failure.OVERRIDE_FAILED -> R.string.purchase_duplicate_publish_error
-        PreparationContract.Failure.DUPLICATE_CHANGED -> R.string.purchase_duplicate_changed
-        PreparationContract.Failure.PREPARATION_FAILED -> R.string.purchase_confirmation_publish_error
-        PreparationContract.Failure.STORAGE_FULL -> R.string.storage_full_recoverable_message
-        PreparationContract.Failure.CONFIRMATION_BLOCKED -> R.string.purchase_confirmation_blocked
+        PreparationContract.Failure.INVALID_DRAFT_ID -> Res.string.ocr_invalid_route_message
+        PreparationContract.Failure.DUPLICATE_CHECK_FAILED -> Res.string.purchase_duplicate_check_error
+        PreparationContract.Failure.OVERRIDE_REASON_REQUIRED -> Res.string.purchase_duplicate_override_reason_error
+        PreparationContract.Failure.OVERRIDE_NOT_AUTHORIZED -> Res.string.purchase_duplicate_override_unauthorized
+        PreparationContract.Failure.OVERRIDE_FAILED -> Res.string.purchase_duplicate_publish_error
+        PreparationContract.Failure.DUPLICATE_CHANGED -> Res.string.purchase_duplicate_changed
+        PreparationContract.Failure.PREPARATION_FAILED -> Res.string.purchase_confirmation_publish_error
+        PreparationContract.Failure.STORAGE_FULL -> Res.string.storage_full_recoverable_message
+        PreparationContract.Failure.CONFIRMATION_BLOCKED -> Res.string.purchase_confirmation_blocked
         PreparationContract.Failure.PREPARED_PURCHASE_CHANGED ->
-            R.string.purchase_confirmation_prepared_changed
+            Res.string.purchase_confirmation_prepared_changed
         PreparationContract.Failure.RETRYABLE_CONFLICT ->
-            R.string.purchase_confirmation_retryable_conflict
+            Res.string.purchase_confirmation_retryable_conflict
     },
 )
 
@@ -343,15 +344,14 @@ private val PreparationContract.Failure.allowsRetry: Boolean
         -> false
     }
 
-@StringRes
-private fun PurchaseDuplicateReason.labelRes(): Int = when (this) {
-        PurchaseDuplicateReason.SAME_BUSINESS -> R.string.purchase_duplicate_signal_business
-        PurchaseDuplicateReason.SAME_SUPPLIER -> R.string.purchase_duplicate_signal_supplier
-        PurchaseDuplicateReason.SAME_DOCUMENT_TYPE -> R.string.purchase_duplicate_signal_type
-        PurchaseDuplicateReason.SAME_DOCUMENT_NUMBER -> R.string.purchase_duplicate_signal_number
-        PurchaseDuplicateReason.CORRELATIVE_PADDING_VARIANT -> R.string.purchase_duplicate_signal_padding
-        PurchaseDuplicateReason.SAME_SERIES -> R.string.purchase_duplicate_signal_series
-        PurchaseDuplicateReason.SAME_ISSUE_DATE -> R.string.purchase_duplicate_signal_date
-        PurchaseDuplicateReason.SAME_TOTAL -> R.string.purchase_duplicate_signal_total
-        PurchaseDuplicateReason.SAME_IMAGE_HASH -> R.string.purchase_duplicate_signal_image
+private fun PurchaseDuplicateReason.labelRes(): StringResource = when (this) {
+        PurchaseDuplicateReason.SAME_BUSINESS -> Res.string.purchase_duplicate_signal_business
+        PurchaseDuplicateReason.SAME_SUPPLIER -> Res.string.purchase_duplicate_signal_supplier
+        PurchaseDuplicateReason.SAME_DOCUMENT_TYPE -> Res.string.purchase_duplicate_signal_type
+        PurchaseDuplicateReason.SAME_DOCUMENT_NUMBER -> Res.string.purchase_duplicate_signal_number
+        PurchaseDuplicateReason.CORRELATIVE_PADDING_VARIANT -> Res.string.purchase_duplicate_signal_padding
+        PurchaseDuplicateReason.SAME_SERIES -> Res.string.purchase_duplicate_signal_series
+        PurchaseDuplicateReason.SAME_ISSUE_DATE -> Res.string.purchase_duplicate_signal_date
+        PurchaseDuplicateReason.SAME_TOTAL -> Res.string.purchase_duplicate_signal_total
+        PurchaseDuplicateReason.SAME_IMAGE_HASH -> Res.string.purchase_duplicate_signal_image
     }

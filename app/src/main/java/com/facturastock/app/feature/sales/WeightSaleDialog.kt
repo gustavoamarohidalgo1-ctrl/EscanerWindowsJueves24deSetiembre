@@ -1,6 +1,8 @@
 package com.facturastock.app.feature.sales
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,12 +15,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
-import com.facturastock.app.R
 import com.facturastock.app.feature.sales.SalesContract.WeightEntryMode
 import com.facturastock.app.feature.sales.SalesContract.WeightSaleEditor
 import com.facturastock.app.feature.sales.SalesContract.WeightSaleFailure
@@ -41,12 +42,12 @@ internal fun WeightSaleDialog(
     val price = editor.pricePerKg
     FacturaStockDialog(
         title = editor.product.productName,
-        message = stringResource(R.string.weight_sale_help),
+        message = stringResource(Res.string.weight_sale_help),
         confirmLabel =
             stringResource(
-                if (editor.lineId == null) R.string.weight_sale_add else R.string.weight_sale_save,
+                if (editor.lineId == null) Res.string.weight_sale_add else Res.string.weight_sale_save,
             ),
-        dismissLabel = stringResource(R.string.action_cancel),
+        dismissLabel = stringResource(Res.string.action_cancel),
         onConfirm = {
             if (editor.isValid && !isMutating) onAction(SalesContract.Action.WeightSaleConfirmed)
         },
@@ -61,8 +62,8 @@ internal fun WeightSaleDialog(
             Text(
                 text =
                     stringResource(
-                        R.string.weight_sale_price_per_kg,
-                        price?.formatForDisplay() ?: stringResource(R.string.sales_total_pending),
+                        Res.string.weight_sale_price_per_kg,
+                        price?.formatForDisplay() ?: stringResource(Res.string.sales_total_pending),
                     ),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.testTag(WeightSaleTestTags.PRICE),
@@ -70,7 +71,7 @@ internal fun WeightSaleDialog(
             Text(
                 text =
                     stringResource(
-                        R.string.weight_sale_stock,
+                        Res.string.weight_sale_stock,
                         formatWeightForDisplay(editor.product.availableQuantity),
                         editor.product.locationName,
                     ),
@@ -81,14 +82,14 @@ internal fun WeightSaleDialog(
                 FilterChip(
                     selected = amountMode,
                     onClick = { onAction(SalesContract.Action.WeightEntryModeChanged(WeightEntryMode.AMOUNT)) },
-                    label = { Text(stringResource(R.string.weight_sale_by_amount)) },
+                    label = { Text(stringResource(Res.string.weight_sale_by_amount)) },
                     enabled = !isMutating,
                     modifier = Modifier.weight(1f).testTag(WeightSaleTestTags.AMOUNT_MODE),
                 )
                 FilterChip(
                     selected = !amountMode,
                     onClick = { onAction(SalesContract.Action.WeightEntryModeChanged(WeightEntryMode.QUANTITY)) },
-                    label = { Text(stringResource(R.string.weight_sale_by_quantity)) },
+                    label = { Text(stringResource(Res.string.weight_sale_by_quantity)) },
                     enabled = !isMutating,
                     modifier = Modifier.weight(1f).testTag(WeightSaleTestTags.QUANTITY_MODE),
                 )
@@ -108,7 +109,7 @@ internal fun WeightSaleDialog(
                     Text(
                         if (amountMode) {
                             stringResource(
-                                R.string.weight_sale_amount_label,
+                                Res.string.weight_sale_amount_label,
                                 price
                                     ?.currency
                                     ?.value
@@ -116,7 +117,7 @@ internal fun WeightSaleDialog(
                                     .orEmpty(),
                             )
                         } else {
-                            stringResource(R.string.weight_sale_quantity_label)
+                            stringResource(Res.string.weight_sale_quantity_label)
                         },
                     )
                 },
@@ -147,8 +148,8 @@ internal fun WeightSaleDialog(
                 Text(
                     text =
                         stringResource(
-                            R.string.weight_sale_total,
-                            editor.total?.formatForDisplay() ?: stringResource(R.string.weight_sale_pending_value),
+                            Res.string.weight_sale_total,
+                            editor.total?.formatForDisplay() ?: stringResource(Res.string.weight_sale_pending_value),
                         ),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.testTag(WeightSaleTestTags.TOTAL),
@@ -156,9 +157,9 @@ internal fun WeightSaleDialog(
                 Text(
                     text =
                         stringResource(
-                            R.string.weight_sale_calculated_quantity,
+                            Res.string.weight_sale_calculated_quantity,
                             editor.quantity?.value?.let(::formatWeightForDisplay)
-                                ?: stringResource(R.string.weight_sale_pending_value),
+                                ?: stringResource(Res.string.weight_sale_pending_value),
                         ),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.testTag(WeightSaleTestTags.QUANTITY),
@@ -168,31 +169,30 @@ internal fun WeightSaleDialog(
     }
 }
 
-@StringRes
-private fun WeightSaleEditor.errorRes(input: String): Int? =
+private fun WeightSaleEditor.errorRes(input: String): StringResource? =
     when {
         failure != null -> {
             when (failure) {
-                WeightSaleFailure.PRODUCT_CHANGED -> R.string.weight_sale_product_changed
-                WeightSaleFailure.PRODUCT_UNAVAILABLE -> R.string.weight_sale_product_unavailable
-                WeightSaleFailure.STALE_CART -> R.string.weight_sale_stale_cart
-                WeightSaleFailure.SAVE_FAILED -> R.string.weight_sale_save_failed
+                WeightSaleFailure.PRODUCT_CHANGED -> Res.string.weight_sale_product_changed
+                WeightSaleFailure.PRODUCT_UNAVAILABLE -> Res.string.weight_sale_product_unavailable
+                WeightSaleFailure.STALE_CART -> Res.string.weight_sale_stale_cart
+                WeightSaleFailure.SAVE_FAILED -> Res.string.weight_sale_save_failed
             }
         }
 
         (pricePerKg?.minorUnits ?: 0L) <= 0L -> {
-            R.string.weight_sale_missing_price
+            Res.string.weight_sale_missing_price
         }
 
         exceedsStock -> {
-            R.string.weight_sale_exceeds_stock
+            Res.string.weight_sale_exceeds_stock
         }
 
         !isValid && (submitAttempted || input.isNotBlank()) -> {
             if (mode == WeightEntryMode.AMOUNT) {
-                R.string.weight_sale_invalid_amount
+                Res.string.weight_sale_invalid_amount
             } else {
-                R.string.weight_sale_invalid_quantity
+                Res.string.weight_sale_invalid_quantity
             }
         }
 

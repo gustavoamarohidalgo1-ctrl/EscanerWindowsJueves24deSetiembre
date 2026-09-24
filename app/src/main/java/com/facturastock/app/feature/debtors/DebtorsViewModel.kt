@@ -22,7 +22,6 @@ import com.facturastock.app.domain.usecase.ObserveDebtsUseCase
 import com.facturastock.app.domain.usecase.RecordDebtPaymentUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -32,8 +31,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
-
-@HiltViewModel
 class DebtorsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observeDebts: ObserveDebtsUseCase,

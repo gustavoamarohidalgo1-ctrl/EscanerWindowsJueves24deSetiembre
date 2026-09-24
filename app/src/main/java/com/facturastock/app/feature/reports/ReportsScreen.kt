@@ -1,6 +1,8 @@
 package com.facturastock.app.feature.reports
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,9 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -50,7 +52,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.ExactMonetaryAmount
 import com.facturastock.app.domain.model.DebtPaymentReportItem
 import com.facturastock.app.domain.model.RealizedProfitIssue
@@ -159,7 +160,7 @@ fun ReportsScreen(
                 ) {
                     ReportsConstrainedSection {
                         LoadingState(
-                            message = stringResource(R.string.reports_loading),
+                            message = stringResource(Res.string.reports_loading),
                             modifier = Modifier.testTag(ReportsTestTags.LOADING),
                         )
                     }
@@ -171,7 +172,7 @@ fun ReportsScreen(
                 ) {
                     ReportsConstrainedSection {
                         RetryNotice(
-                            text = stringResource(R.string.reports_error_message),
+                            text = stringResource(Res.string.reports_error_message),
                             onRetry = { onAction(ReportsContract.Action.Retry) },
                             isError = true,
                             enabled = !state.isVoiding,
@@ -190,7 +191,7 @@ fun ReportsScreen(
                         item(key = "reports_stale", contentType = "warning") {
                             ReportsConstrainedSection {
                                 RetryNotice(
-                                    text = stringResource(R.string.reports_stale_message),
+                                    text = stringResource(Res.string.reports_stale_message),
                                     onRetry = { onAction(ReportsContract.Action.Retry) },
                                     isError = false,
                                     enabled = !state.isVoiding,
@@ -245,7 +246,7 @@ fun ReportsScreen(
                         item(key = "reports_empty", contentType = "empty") {
                             ReportsConstrainedSection {
                                 if (report.debtPayments.isEmpty()) EmptyReport()
-                                else Text(stringResource(R.string.reports_debt_payments_no_new_sales),
+                                else Text(stringResource(Res.string.reports_debt_payments_no_new_sales),
                                     style = MaterialTheme.typography.bodyMedium)
                             }
                         }
@@ -254,7 +255,7 @@ fun ReportsScreen(
                             ReportsConstrainedSection {
                                 Text(
                                     text = pluralStringResource(
-                                        R.plurals.reports_sale_count,
+                                        Res.plurals.reports_sale_count,
                                         report.sales.size,
                                         report.sales.size,
                                     ),
@@ -310,11 +311,11 @@ fun ReportsScreen(
                 actionOnNewLine = true,
                 action = {
                     TextButton(onClick = { onAction(ReportsContract.Action.VoidNoticeDismissed) }) {
-                        Text(stringResource(R.string.reports_void_notice_dismiss))
+                        Text(stringResource(Res.string.reports_void_notice_dismiss))
                     }
                 },
             ) {
-                Text(stringResource(R.string.reports_void_success))
+                Text(stringResource(Res.string.reports_void_success))
             }
         }
     }
@@ -338,19 +339,19 @@ private fun DebtPaymentSummary(report: SalesReport) {
     ) {
         Column(Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
             Text(
-                stringResource(if (report.range.period == SalesReportPeriod.DAY) R.string.reports_debt_payments_today
-                    else R.string.reports_debt_payments_period),
+                stringResource(if (report.range.period == SalesReportPeriod.DAY) Res.string.reports_debt_payments_today
+                    else Res.string.reports_debt_payments_period),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.semantics { heading() },
             )
             Column(Modifier.testTag(ReportsTestTags.DEBT_PAYMENT_TOTALS)) {
                 totals.forEach { (currency, total) ->
-                    Text(stringResource(R.string.reports_debt_payments_total, ExactMonetaryAmount(total, currency).formatForReport()),
+                    Text(stringResource(Res.string.reports_debt_payments_total, ExactMonetaryAmount(total, currency).formatForReport()),
                         style = MaterialTheme.typography.headlineSmall)
                 }
             }
-            Text(stringResource(R.string.reports_debt_payments_explanation), style = MaterialTheme.typography.bodyMedium)
-            Text(stringResource(R.string.reports_debt_payments_no_double_count), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(Res.string.reports_debt_payments_explanation), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(Res.string.reports_debt_payments_no_double_count), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -365,7 +366,7 @@ private fun DebtPaymentRow(item: DebtPaymentReportItem, range: SalesReportRange)
     ) {
         Column(Modifier.padding(spacing.md), verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
             Text(item.debtorName, style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.reports_debt_payment_amount, item.payment.amount.formatForDisplay()),
+            Text(stringResource(Res.string.reports_debt_payment_amount, item.payment.amount.formatForDisplay()),
                 style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
             Text(item.payment.occurredAt.formatForDisplay(range.zoneId), style = MaterialTheme.typography.bodyMedium)
         }
@@ -388,10 +389,10 @@ private fun ReportPdfStatus(state: ReportsContract.State, onAction: (ReportsCont
                 Column(Modifier.testTag(ReportsTestTags.PDF_PROGRESS).semantics { liveRegion = LiveRegionMode.Polite }) {
                     if (state.pdfStage != ReportsContract.PdfStage.CHOOSING_DESTINATION) LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text(stringResource(when (state.pdfStage) {
-                        ReportsContract.PdfStage.PREPARING -> R.string.reports_pdf_preparing
-                        ReportsContract.PdfStage.CHOOSING_DESTINATION -> R.string.reports_pdf_choosing
-                        ReportsContract.PdfStage.WRITING -> R.string.reports_pdf_writing
-                        ReportsContract.PdfStage.IDLE -> R.string.reports_pdf_preparing
+                        ReportsContract.PdfStage.PREPARING -> Res.string.reports_pdf_preparing
+                        ReportsContract.PdfStage.CHOOSING_DESTINATION -> Res.string.reports_pdf_choosing
+                        ReportsContract.PdfStage.WRITING -> Res.string.reports_pdf_writing
+                        ReportsContract.PdfStage.IDLE -> Res.string.reports_pdf_preparing
                     }))
                 }
             }
@@ -400,37 +401,36 @@ private fun ReportPdfStatus(state: ReportsContract.State, onAction: (ReportsCont
                     modifier = Modifier.testTag(ReportsTestTags.PDF_ERROR).semantics { liveRegion = LiveRegionMode.Polite })
             }
             if (state.pdfSaved) {
-                Text(stringResource(R.string.reports_pdf_saved),
+                Text(stringResource(Res.string.reports_pdf_saved),
                     modifier = Modifier.testTag(ReportsTestTags.PDF_SUCCESS).semantics { liveRegion = LiveRegionMode.Polite })
             }
             if (state.pdfSaved) {
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.reports_pdf_open_saved),
+                    text = stringResource(Res.string.reports_pdf_open_saved),
                     onClick = { onAction(ReportsContract.Action.OpenSavedPdf) },
                     modifier = Modifier.fillMaxWidth().testTag(ReportsTestTags.PDF_OPEN_SAVED),
                 )
             }
             if (state.pdfViewerUnavailable) {
-                Text(stringResource(R.string.reports_pdf_no_viewer),
+                Text(stringResource(Res.string.reports_pdf_no_viewer),
                     modifier = Modifier.testTag(ReportsTestTags.PDF_NO_VIEWER).semantics { liveRegion = LiveRegionMode.Polite })
             }
             if (state.pdfFailure != null || state.pdfSaved) {
                 TextButton(onClick = { onAction(ReportsContract.Action.PdfNoticeDismissed) }) {
-                    Text(stringResource(R.string.reports_pdf_dismiss_notice))
+                    Text(stringResource(Res.string.reports_pdf_dismiss_notice))
                 }
             }
         }
     }
 }
 
-@StringRes
-private fun ReportsContract.PdfFailure.messageRes(): Int = when (this) {
-    ReportsContract.PdfFailure.PREPARATION_FAILED -> R.string.reports_pdf_preparation_failed
-    ReportsContract.PdfFailure.NO_ACTIVE_BUSINESS -> R.string.reports_pdf_no_business
-    ReportsContract.PdfFailure.CONTEXT_CHANGED -> R.string.reports_pdf_context_changed
-    ReportsContract.PdfFailure.DESTINATION_CLEAN -> R.string.reports_pdf_destination_clean
-    ReportsContract.PdfFailure.DESTINATION_MAY_CONTAIN_PARTIAL_DATA -> R.string.reports_pdf_destination_partial
-    ReportsContract.PdfFailure.INTERRUPTED -> R.string.reports_pdf_interrupted
+private fun ReportsContract.PdfFailure.messageRes(): StringResource = when (this) {
+    ReportsContract.PdfFailure.PREPARATION_FAILED -> Res.string.reports_pdf_preparation_failed
+    ReportsContract.PdfFailure.NO_ACTIVE_BUSINESS -> Res.string.reports_pdf_no_business
+    ReportsContract.PdfFailure.CONTEXT_CHANGED -> Res.string.reports_pdf_context_changed
+    ReportsContract.PdfFailure.DESTINATION_CLEAN -> Res.string.reports_pdf_destination_clean
+    ReportsContract.PdfFailure.DESTINATION_MAY_CONTAIN_PARTIAL_DATA -> Res.string.reports_pdf_destination_partial
+    ReportsContract.PdfFailure.INTERRUPTED -> Res.string.reports_pdf_interrupted
 }
 
 @Composable
@@ -441,18 +441,18 @@ private fun VoidSaleDialog(
     val preview = state.voidPreview
     val busy = state.isLoadingVoidPreview || state.isVoiding
     FacturaStockDialog(
-        title = stringResource(R.string.reports_void_title),
+        title = stringResource(Res.string.reports_void_title),
         message = stringResource(
             when {
-                state.isVoiding -> R.string.reports_void_saving
-                state.isLoadingVoidPreview -> R.string.reports_void_loading
-                else -> R.string.reports_void_message
+                state.isVoiding -> Res.string.reports_void_saving
+                state.isLoadingVoidPreview -> Res.string.reports_void_loading
+                else -> Res.string.reports_void_message
             },
         ),
         confirmLabel = stringResource(
-            if (preview != null || busy) R.string.reports_void_action else R.string.reports_void_retry,
+            if (preview != null || busy) Res.string.reports_void_action else Res.string.reports_void_retry,
         ),
-        dismissLabel = stringResource(R.string.reports_void_cancel),
+        dismissLabel = stringResource(Res.string.reports_void_cancel),
         onConfirm = {
             onAction(
                 if (preview != null) ReportsContract.Action.VoidConfirmed
@@ -480,18 +480,18 @@ private fun VoidSaleDialog(
                         verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm),
                     ) {
                         Text(stringResource(
-                            R.string.reports_void_date,
+                            Res.string.reports_void_date,
                             preview.postedAt.formatForDisplay(state.report?.range?.zoneId ?: java.time.ZoneId.systemDefault()),
                         ))
-                        Text(stringResource(R.string.reports_void_total, preview.total.formatForDisplay()))
+                        Text(stringResource(Res.string.reports_void_total, preview.total.formatForDisplay()))
                         Text(
-                            text = stringResource(R.string.reports_void_stock),
+                            text = stringResource(Res.string.reports_void_stock),
                             modifier = Modifier.semantics { heading() },
                             style = MaterialTheme.typography.titleMedium,
                         )
                         preview.lines.forEach { line ->
                             Text(stringResource(
-                                R.string.reports_void_line,
+                                Res.string.reports_void_line,
                                 line.productName,
                                 line.quantity.value.stripTrailingZeros().toPlainString(),
                                 line.unitCode,
@@ -499,13 +499,13 @@ private fun VoidSaleDialog(
                             ))
                         }
                         preview.debtBalanceToCancel?.let { balance ->
-                            Text(stringResource(R.string.reports_void_debt, balance.formatForDisplay()))
+                            Text(stringResource(Res.string.reports_void_debt, balance.formatForDisplay()))
                         }
                         Text(
                             if (preview.refundAmount.minorUnits > 0L) {
-                                stringResource(R.string.reports_void_refund, preview.refundAmount.formatForDisplay())
+                                stringResource(Res.string.reports_void_refund, preview.refundAmount.formatForDisplay())
                             } else {
-                                stringResource(R.string.reports_void_no_refund)
+                                stringResource(Res.string.reports_void_no_refund)
                             },
                         )
                     }
@@ -515,16 +515,15 @@ private fun VoidSaleDialog(
     )
 }
 
-@StringRes
-private fun ReportsContract.VoidFailure.messageRes(): Int = when (this) {
-    ReportsContract.VoidFailure.LOAD_FAILED -> R.string.reports_void_error_load
-    ReportsContract.VoidFailure.OPERATION_FAILED -> R.string.reports_void_error_save
-    ReportsContract.VoidFailure.STALE -> R.string.reports_void_error_stale
-    ReportsContract.VoidFailure.NO_ACTIVE_BUSINESS -> R.string.reports_void_error_business
-    ReportsContract.VoidFailure.NOT_FOUND -> R.string.reports_void_error_missing
-    ReportsContract.VoidFailure.UNAUTHORIZED -> R.string.reports_void_error_unauthorized
-    ReportsContract.VoidFailure.SHARED_BUSINESS_UNSUPPORTED -> R.string.reports_void_error_shared
-    ReportsContract.VoidFailure.INVALID_HISTORY -> R.string.reports_void_error_history
+private fun ReportsContract.VoidFailure.messageRes(): StringResource = when (this) {
+    ReportsContract.VoidFailure.LOAD_FAILED -> Res.string.reports_void_error_load
+    ReportsContract.VoidFailure.OPERATION_FAILED -> Res.string.reports_void_error_save
+    ReportsContract.VoidFailure.STALE -> Res.string.reports_void_error_stale
+    ReportsContract.VoidFailure.NO_ACTIVE_BUSINESS -> Res.string.reports_void_error_business
+    ReportsContract.VoidFailure.NOT_FOUND -> Res.string.reports_void_error_missing
+    ReportsContract.VoidFailure.UNAUTHORIZED -> Res.string.reports_void_error_unauthorized
+    ReportsContract.VoidFailure.SHARED_BUSINESS_UNSUPPORTED -> Res.string.reports_void_error_shared
+    ReportsContract.VoidFailure.INVALID_HISTORY -> Res.string.reports_void_error_history
 }
 
 @Composable
@@ -572,7 +571,7 @@ private fun PeriodSelector(
             )
         }
         ReportsTab(
-            label = stringResource(R.string.reports_tab_debtors),
+            label = stringResource(Res.string.reports_tab_debtors),
             selected = debtorsSelected,
             enabled = debtorsEnabled,
             onClick = onDebtorsSelect,
@@ -631,9 +630,9 @@ private fun ReportsTab(
 @Composable
 private fun selectedPeriodLabel(period: SalesReportPeriod): String = stringResource(
     when (period) {
-        SalesReportPeriod.DAY -> R.string.reports_period_day
-        SalesReportPeriod.WEEK -> R.string.reports_period_week
-        SalesReportPeriod.MONTH -> R.string.reports_period_month
+        SalesReportPeriod.DAY -> Res.string.reports_period_day
+        SalesReportPeriod.WEEK -> Res.string.reports_period_week
+        SalesReportPeriod.MONTH -> Res.string.reports_period_month
     },
 )
 
@@ -651,7 +650,7 @@ private fun ReportRange(range: SalesReportRange) {
         start.formatForDisplay()
     } else {
         stringResource(
-            R.string.reports_range_dates,
+            Res.string.reports_range_dates,
             start.formatForDisplay(),
             end.formatForDisplay(),
         )
@@ -693,20 +692,20 @@ private fun GrossProfitHero(totals: SalesReportTotals) {
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             Text(
-                text = stringResource(R.string.reports_gross_profit),
+                text = stringResource(Res.string.reports_gross_profit),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
                 text = profit?.formatForReport()
-                    ?: stringResource(R.string.reports_amount_unavailable),
+                    ?: stringResource(Res.string.reports_amount_unavailable),
                 color = profitColor,
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = stringResource(R.string.reports_profit_formula),
+                text = stringResource(Res.string.reports_profit_formula),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -718,17 +717,17 @@ private fun GrossProfitHero(totals: SalesReportTotals) {
 private fun PrimaryMetrics(totals: SalesReportTotals, singleColumn: Boolean) {
     val metrics = listOf(
         ReportMetric(
-            label = stringResource(R.string.reports_total_charged),
+            label = stringResource(Res.string.reports_total_charged),
             value = totals.totalCharged.formatForReport(),
         ),
         ReportMetric(
-            label = stringResource(R.string.reports_net_revenue),
+            label = stringResource(Res.string.reports_net_revenue),
             value = totals.netRevenue.formatForReport(),
         ),
         ReportMetric(
-            label = stringResource(R.string.reports_historical_cost),
+            label = stringResource(Res.string.reports_historical_cost),
             value = totals.historicalCost?.formatForReport()
-                ?: stringResource(R.string.reports_amount_unavailable),
+                ?: stringResource(Res.string.reports_amount_unavailable),
         ),
     )
     val spacing = FacturaStockDesign.spacing
@@ -802,13 +801,13 @@ private fun ProfitUnavailableNotice(
             verticalAlignment = Alignment.Top,
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_warning),
+                painter = painterResource(Res.drawable.ic_warning),
                 contentDescription = null,
                 modifier = Modifier.size(spacing.iconSmall),
             )
             Text(
                 text = stringResource(
-                    R.string.reports_profit_unavailable_summary,
+                    Res.string.reports_profit_unavailable_summary,
                     profitIssuesMessage(issues),
                 ),
                 modifier = Modifier.weight(1f),
@@ -820,7 +819,7 @@ private fun ProfitUnavailableNotice(
 
 @Composable
 private fun profitIssuesMessage(issues: Set<RealizedProfitIssue>): String {
-    if (issues.isEmpty()) return stringResource(R.string.reports_issue_unknown)
+    if (issues.isEmpty()) return stringResource(Res.string.reports_issue_unknown)
     val messages = mutableListOf<String>()
     for (issue in issues.sortedBy { it.ordinal }) {
         messages += stringResource(issue.messageRes())
@@ -828,12 +827,11 @@ private fun profitIssuesMessage(issues: Set<RealizedProfitIssue>): String {
     return messages.joinToString(separator = " ")
 }
 
-@StringRes
-private fun RealizedProfitIssue.messageRes(): Int = when (this) {
-    RealizedProfitIssue.MISSING_HISTORICAL_COST -> R.string.reports_issue_missing_cost
-    RealizedProfitIssue.COST_CURRENCY_MISMATCH -> R.string.reports_issue_currency_mismatch
-    RealizedProfitIssue.INVALID_PERSISTED_DATA -> R.string.reports_issue_invalid_data
-    RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED -> R.string.reports_issue_decimal_limit
+private fun RealizedProfitIssue.messageRes(): StringResource = when (this) {
+    RealizedProfitIssue.MISSING_HISTORICAL_COST -> Res.string.reports_issue_missing_cost
+    RealizedProfitIssue.COST_CURRENCY_MISMATCH -> Res.string.reports_issue_currency_mismatch
+    RealizedProfitIssue.INVALID_PERSISTED_DATA -> Res.string.reports_issue_invalid_data
+    RealizedProfitIssue.DECIMAL_LIMIT_EXCEEDED -> Res.string.reports_issue_decimal_limit
 }
 
 @Composable
@@ -847,13 +845,13 @@ private fun OtherCurrencies(report: SalesReport, singleColumn: Boolean) {
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         Text(
-            text = stringResource(R.string.reports_other_currencies_title),
+            text = stringResource(Res.string.reports_other_currencies_title),
             modifier = Modifier.semantics { heading() },
             color = MaterialTheme.colorScheme.onBackground,
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            text = stringResource(R.string.reports_other_currencies_description),
+            text = stringResource(Res.string.reports_other_currencies_description),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -878,9 +876,9 @@ private fun CurrencyTotals(totals: SalesReportTotals, singleColumn: Boolean) {
                 style = MaterialTheme.typography.titleMedium,
             )
             LabeledAmount(
-                label = stringResource(R.string.reports_gross_profit),
+                label = stringResource(Res.string.reports_gross_profit),
                 value = totals.grossProfit?.formatForReport()
-                    ?: stringResource(R.string.reports_amount_unavailable),
+                    ?: stringResource(Res.string.reports_amount_unavailable),
                 textAlign = TextAlign.End,
             )
         }
@@ -888,7 +886,7 @@ private fun CurrencyTotals(totals: SalesReportTotals, singleColumn: Boolean) {
             totalCharged = totals.totalCharged.formatForReport(),
             netRevenue = totals.netRevenue.formatForReport(),
             historicalCost = totals.historicalCost?.formatForReport()
-                ?: stringResource(R.string.reports_amount_unavailable),
+                ?: stringResource(Res.string.reports_amount_unavailable),
             singleColumn = singleColumn,
         )
         if (totals.issues.isNotEmpty()) {
@@ -919,7 +917,7 @@ private fun SaleProfitRow(
         if (singleColumn) {
             SaleIdentity(sale = sale, range = range)
             LabeledAmount(
-                label = stringResource(R.string.reports_total_charged),
+                label = stringResource(Res.string.reports_total_charged),
                 value = sale.totalCharged.formatForDisplay(),
                 modifier = Modifier
                     .testTag(ReportsTestTags.saleTotal(sale.saleId.value))
@@ -933,7 +931,7 @@ private fun SaleProfitRow(
             ) {
                 SaleIdentity(sale = sale, range = range, modifier = Modifier.weight(2f))
                 LabeledAmount(
-                    label = stringResource(R.string.reports_total_charged),
+                    label = stringResource(Res.string.reports_total_charged),
                     value = sale.totalCharged.formatForDisplay(),
                     modifier = Modifier
                         .weight(1f)
@@ -944,7 +942,7 @@ private fun SaleProfitRow(
             }
         }
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.reports_void_action),
+            text = stringResource(Res.string.reports_void_action),
             onClick = onVoid,
             enabled = voidEnabled,
             modifier = Modifier.testTag(ReportsTestTags.saleVoid(sale.saleId.value)),
@@ -958,12 +956,12 @@ private fun SaleProfitRow(
             sale.lines.forEach { line -> SaleLineSummary(line) }
         }
         val toggleLabel = stringResource(
-            if (expanded) R.string.reports_sale_collapse_details
-            else R.string.reports_sale_expand_details,
+            if (expanded) Res.string.reports_sale_collapse_details
+            else Res.string.reports_sale_expand_details,
         )
         val toggleState = stringResource(
-            if (expanded) R.string.reports_sale_details_expanded
-            else R.string.reports_sale_details_collapsed,
+            if (expanded) Res.string.reports_sale_details_expanded
+            else Res.string.reports_sale_details_collapsed,
         )
         Row(
             modifier = Modifier
@@ -1022,11 +1020,11 @@ private fun SaleLineSummary(line: RealizedSaleLineProfit) {
     val spacing = FacturaStockDesign.spacing
     val quantity = line.quantity?.let {
         stringResource(
-            R.string.reports_sale_product_quantity,
+            Res.string.reports_sale_product_quantity,
             it.value.stripTrailingZeros().toPlainString(),
             line.unitCode,
         )
-    } ?: stringResource(R.string.reports_amount_unavailable)
+    } ?: stringResource(Res.string.reports_amount_unavailable)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
@@ -1066,9 +1064,9 @@ private fun SaleLineDetails(
             style = MaterialTheme.typography.titleMedium,
         )
         LabeledAmount(
-            label = stringResource(R.string.reports_sale_line_profit),
+            label = stringResource(Res.string.reports_sale_line_profit),
             value = line.grossProfit?.formatForReport()
-                ?: stringResource(R.string.reports_amount_unavailable),
+                ?: stringResource(Res.string.reports_amount_unavailable),
             modifier = Modifier
                 .testTag(ReportsTestTags.saleLineProfit(saleId, line.saleLineId.value))
                 .semantics(mergeDescendants = true) {},
@@ -1077,9 +1075,9 @@ private fun SaleLineDetails(
             totalCharged = line.totalCharged.formatForDisplay(),
             netRevenue = line.netRevenue.formatForDisplay(),
             historicalCost = line.historicalCost?.formatForReport()
-                ?: stringResource(R.string.reports_amount_unavailable),
+                ?: stringResource(Res.string.reports_amount_unavailable),
             singleColumn = singleColumn,
-            totalLabel = stringResource(R.string.reports_sale_line_total),
+            totalLabel = stringResource(Res.string.reports_sale_line_total),
         )
     }
 }
@@ -1094,7 +1092,7 @@ private fun SaleIdentity(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
         Text(
             text = stringResource(
-                R.string.reports_sale_title,
+                Res.string.reports_sale_title,
                 sale.postedAt.formatForDisplay(range.zoneId),
             ),
             color = MaterialTheme.colorScheme.onSurface,
@@ -1102,7 +1100,7 @@ private fun SaleIdentity(
         )
         Text(
             text = pluralStringResource(
-                R.plurals.reports_line_count,
+                Res.plurals.reports_line_count,
                 sale.lineCount,
                 sale.lineCount,
             ),
@@ -1118,13 +1116,13 @@ private fun ThreeAmounts(
     netRevenue: String,
     historicalCost: String,
     singleColumn: Boolean,
-    totalLabel: String = stringResource(R.string.reports_total_charged),
+    totalLabel: String = stringResource(Res.string.reports_total_charged),
 ) {
     val spacing = FacturaStockDesign.spacing
     val amounts = listOf(
         ReportMetric(totalLabel, totalCharged),
-        ReportMetric(stringResource(R.string.reports_net_revenue), netRevenue),
-        ReportMetric(stringResource(R.string.reports_historical_cost), historicalCost),
+        ReportMetric(stringResource(Res.string.reports_net_revenue), netRevenue),
+        ReportMetric(stringResource(Res.string.reports_historical_cost), historicalCost),
     )
     if (singleColumn) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
@@ -1180,13 +1178,13 @@ private fun EmptyReport() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_sale),
+            painter = painterResource(Res.drawable.ic_sale),
             contentDescription = null,
             modifier = Modifier.size(spacing.icon),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = stringResource(R.string.reports_empty_title),
+            text = stringResource(Res.string.reports_empty_title),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -1227,11 +1225,11 @@ private fun RetryNotice(
         ) {
             Text(text = text, style = MaterialTheme.typography.bodyMedium)
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_retry),
+                text = stringResource(Res.string.action_retry),
                 onClick = onRetry,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
-                leadingIconRes = R.drawable.ic_refresh,
+                leadingIconRes = Res.drawable.ic_refresh,
             )
         }
     }

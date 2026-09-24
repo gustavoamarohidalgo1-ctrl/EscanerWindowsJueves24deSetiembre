@@ -1,6 +1,6 @@
 package com.facturastock.app.data.reporting
 
-import android.app.ApplicationExitInfo
+
 import com.facturastock.app.domain.observability.OperationalErrorCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

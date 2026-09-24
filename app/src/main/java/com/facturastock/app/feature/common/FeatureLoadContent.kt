@@ -1,5 +1,6 @@
 package com.facturastock.app.feature.common
 
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,8 +10,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import com.facturastock.app.R
+import org.jetbrains.compose.resources.stringResource
 import com.facturastock.app.ui.components.LoadingState
 import com.facturastock.app.ui.components.RecoverableError
 import com.facturastock.app.ui.theme.FacturaStockDesign
@@ -28,9 +28,9 @@ fun FeatureLoadContent(
     Box(modifier = modifier.fillMaxSize()) {
         when {
             hasFailure && !hasContent -> RecoverableError(
-                title = stringResource(R.string.feature_load_error_title),
-                message = stringResource(R.string.feature_load_error_message),
-                actionLabel = stringResource(R.string.action_retry),
+                title = stringResource(Res.string.feature_load_error_title),
+                message = stringResource(Res.string.feature_load_error_message),
+                actionLabel = stringResource(Res.string.action_retry),
                 onAction = onRetry,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -38,16 +38,16 @@ fun FeatureLoadContent(
             )
 
             isLoading && !hasContent -> LoadingState(
-                message = stringResource(R.string.feature_loading_message),
+                message = stringResource(Res.string.feature_loading_message),
                 modifier = Modifier.fillMaxSize(),
             )
 
             else -> Column(modifier = Modifier.fillMaxSize()) {
                 if (hasFailure) {
                     RecoverableError(
-                        title = stringResource(R.string.feature_stale_error_title),
-                        message = stringResource(R.string.feature_stale_error_message),
-                        actionLabel = stringResource(R.string.action_retry),
+                        title = stringResource(Res.string.feature_stale_error_title),
+                        message = stringResource(Res.string.feature_stale_error_message),
+                        actionLabel = stringResource(Res.string.action_retry),
                         onAction = onRetry,
                         modifier = Modifier.padding(
                             horizontal = FacturaStockDesign.spacing.lg,

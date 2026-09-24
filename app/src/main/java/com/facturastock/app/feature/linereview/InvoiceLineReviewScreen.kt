@@ -1,7 +1,7 @@
 package com.facturastock.app.feature.linereview
 
-import android.content.res.Resources
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -60,13 +60,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -83,7 +81,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.InventoryTaxTreatment
 import com.facturastock.app.domain.model.id.LineId
 import com.facturastock.app.feature.linereview.InvoiceLineReviewContract.Action
@@ -128,19 +125,19 @@ fun InvoiceLineReviewScreen(
 ) {
     val spacing = FacturaStockDesign.spacing
     val listState = rememberLazyListState()
-    val resources = LocalResources.current
-    val configuration = LocalConfiguration.current
-    val cardCopy = remember(resources, configuration) { resources.lineCardCopy() }
-    val cardLocale = remember(configuration) {
-        configuration.locales[0] ?: Locale.ROOT
-    }
+    // LineCardPresentationEntry.matches compara la copia por identidad (===): cada recomposición
+    // crea un LineCardCopy nuevo, así que se conserva la misma instancia mientras los textos sean
+    // iguales; si no, las tarjetas quedarían en "Cargando…" tras cualquier recomposición.
+    val resolvedCardCopy = lineCardCopy()
+    val cardCopy = remember(resolvedCardCopy) { resolvedCardCopy }
+    val cardLocale = remember { Locale.getDefault() ?: Locale.ROOT }
     val currentOnCardPresentationsReady by rememberUpdatedState(onCardPresentationsReady)
     val requestedCardFocusRequester = remember { FocusRequester() }
     var focusTargetLineId by remember { mutableStateOf<LineId?>(null) }
     var announceLineId by remember { mutableStateOf<LineId?>(null) }
-    val warningIconPainter = painterResource(R.drawable.ic_warning)
-    val deleteIconPainter = painterResource(R.drawable.ic_delete)
-    val moreActionsIconPainter = painterResource(R.drawable.ic_more_vert)
+    val warningIconPainter = painterResource(Res.drawable.ic_warning)
+    val deleteIconPainter = painterResource(Res.drawable.ic_delete)
+    val moreActionsIconPainter = painterResource(Res.drawable.ic_more_vert)
     val cardIcons = remember(warningIconPainter, deleteIconPainter, moreActionsIconPainter) {
         LineCardIcons(
             warning = warningIconPainter,
@@ -412,15 +409,15 @@ private fun LineReviewControls(
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         if (saveFailure) {
             RecoverableError(
-                title = stringResource(R.string.line_review_save_error_title),
+                title = stringResource(Res.string.line_review_save_error_title),
                 message = stringResource(
                     if (failure == InvoiceLineReviewContract.Failure.STORAGE_FULL) {
-                        R.string.storage_full_recoverable_message
+                        Res.string.storage_full_recoverable_message
                     } else {
-                        R.string.line_review_save_error_message
+                        Res.string.line_review_save_error_message
                     },
                 ),
-                actionLabel = stringResource(R.string.line_review_retry_save),
+                actionLabel = stringResource(Res.string.line_review_retry_save),
                 onAction = { onAction(Action.RetrySave) },
             )
         }
@@ -431,7 +428,7 @@ private fun LineReviewControls(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(InvoiceLineReviewTestTags.SEARCH),
-            label = { Text(stringResource(R.string.line_review_search_label)) },
+            label = { Text(stringResource(Res.string.line_review_search_label)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences,
@@ -441,7 +438,7 @@ private fun LineReviewControls(
             trailingIcon = if (searchQuery.isNotEmpty()) {
                 {
                     TextButton(onClick = { onAction(Action.SearchChanged("")) }) {
-                        Text(stringResource(R.string.line_review_search_clear))
+                        Text(stringResource(Res.string.line_review_search_clear))
                     }
                 }
             } else {
@@ -454,18 +451,18 @@ private fun LineReviewControls(
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             val filterStateDescription = if (pendingOnly) {
-                stringResource(R.string.line_review_pending_count, pendingCount, lineCount)
+                stringResource(Res.string.line_review_pending_count, pendingCount, lineCount)
             } else {
-                stringResource(R.string.line_review_total_count, lineCount)
+                stringResource(Res.string.line_review_total_count, lineCount)
             }
             FilterChip(
                 selected = pendingOnly,
                 onClick = { onAction(Action.PendingFilterToggled) },
-                label = { Text(stringResource(R.string.line_review_pending_filter)) },
+                label = { Text(stringResource(Res.string.line_review_pending_filter)) },
                 leadingIcon = if (pendingCount > 0) {
                     {
                         Icon(
-                            painter = painterResource(R.drawable.ic_warning),
+                            painter = painterResource(Res.drawable.ic_warning),
                             contentDescription = null,
                             modifier = Modifier.size(spacing.iconSmall),
                         )
@@ -481,7 +478,7 @@ private fun LineReviewControls(
                     },
             )
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.line_review_add_line),
+                text = stringResource(Res.string.line_review_add_line),
                 onClick = { onAction(Action.AddLine) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -492,7 +489,7 @@ private fun LineReviewControls(
 
         if (!canAddLine && lineCount >= InvoiceLineReviewContract.MAX_LINES) {
             Text(
-                text = stringResource(R.string.line_review_limit_reached),
+                text = stringResource(Res.string.line_review_limit_reached),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -500,10 +497,10 @@ private fun LineReviewControls(
 
         Text(
             text = if (pendingCount == 0) {
-                stringResource(R.string.line_review_all_reviewed)
+                stringResource(Res.string.line_review_all_reviewed)
             } else {
                 stringResource(
-                    R.string.line_review_pending_count,
+                    Res.string.line_review_pending_count,
                     pendingCount,
                     lineCount,
                 )
@@ -535,9 +532,9 @@ private fun EmptyLinesContent(
         Text(
             text = stringResource(
                 if (filtered) {
-                    R.string.line_review_filter_empty_title
+                    Res.string.line_review_filter_empty_title
                 } else {
-                    R.string.line_review_empty_title
+                    Res.string.line_review_empty_title
                 },
             ),
             modifier = Modifier.semantics { heading() },
@@ -548,9 +545,9 @@ private fun EmptyLinesContent(
         Text(
             text = stringResource(
                 if (filtered) {
-                    R.string.line_review_filter_empty_message
+                    Res.string.line_review_filter_empty_message
                 } else {
-                    R.string.line_review_empty_message
+                    Res.string.line_review_empty_message
                 },
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -559,7 +556,7 @@ private fun EmptyLinesContent(
         if (!filtered) {
             Spacer(modifier = Modifier.height(spacing.md))
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.line_review_add_line),
+                text = stringResource(Res.string.line_review_add_line),
                 onClick = onAdd,
                 modifier = Modifier.testTag(InvoiceLineReviewTestTags.EMPTY_ADD_LINE),
                 enabled = canAddLine,
@@ -664,41 +661,42 @@ private fun Line.hasSameCardPresentationAs(other: Line): Boolean =
         cardProjection == other.cardProjection
 
 /** Resuelve una sola vez por pantalla el texto estático que comparten hasta cien tarjetas. */
-private fun Resources.lineCardCopy(): LineCardCopy = LineCardCopy(
-    loadingDescription = getString(R.string.line_review_loading),
-    descriptionLabel = getString(R.string.line_review_description_label),
-    descriptionPending = getString(R.string.line_review_description_pending),
-    valuePending = getString(R.string.line_review_value_pending),
-    metricQuantity = getString(R.string.line_review_metric_quantity),
-    metricCost = getString(R.string.line_review_metric_cost),
-    metricIgv = getString(R.string.line_review_metric_igv),
-    metricTotal = getString(R.string.line_review_metric_total),
-    taxExemptValue = getString(R.string.line_review_tax_exempt_value),
-    pendingStatus = getString(R.string.line_review_pending_status),
-    reviewedStatus = getString(R.string.line_review_reviewed_status),
-    confidenceHigh = getString(R.string.line_review_confidence_high),
-    confidenceMedium = getString(R.string.line_review_confidence_medium),
-    confidenceLow = getString(R.string.line_review_confidence_low),
-    confidenceUnknown = getString(R.string.line_review_confidence_unknown),
-    savingLine = getString(R.string.line_review_saving_line),
-    confirmReviewed = getString(R.string.line_review_confirm_reviewed),
-    moveUp = getString(R.string.line_review_move_up),
-    moveDown = getString(R.string.line_review_move_down),
-    delete = getString(R.string.line_review_delete),
-    edit = getString(R.string.line_review_edit),
-    lineNumberFormat = getString(R.string.line_review_line_number),
-    quantityUnitFormat = getString(R.string.line_review_quantity_unit_value),
-    metricValueFormat = getString(R.string.line_review_metric_value),
-    currencyAmountFormat = getString(R.string.line_review_currency_amount),
-    confidencePercentFormat = getString(R.string.line_review_confidence_percent),
-    confirmAccessibilityFormat = getString(R.string.line_review_confirm_accessibility),
-    moreActionsAccessibilityFormat = getString(
-        R.string.line_review_more_actions_accessibility,
+@Composable
+private fun lineCardCopy(): LineCardCopy = LineCardCopy(
+    loadingDescription = stringResource(Res.string.line_review_loading),
+    descriptionLabel = stringResource(Res.string.line_review_description_label),
+    descriptionPending = stringResource(Res.string.line_review_description_pending),
+    valuePending = stringResource(Res.string.line_review_value_pending),
+    metricQuantity = stringResource(Res.string.line_review_metric_quantity),
+    metricCost = stringResource(Res.string.line_review_metric_cost),
+    metricIgv = stringResource(Res.string.line_review_metric_igv),
+    metricTotal = stringResource(Res.string.line_review_metric_total),
+    taxExemptValue = stringResource(Res.string.line_review_tax_exempt_value),
+    pendingStatus = stringResource(Res.string.line_review_pending_status),
+    reviewedStatus = stringResource(Res.string.line_review_reviewed_status),
+    confidenceHigh = stringResource(Res.string.line_review_confidence_high),
+    confidenceMedium = stringResource(Res.string.line_review_confidence_medium),
+    confidenceLow = stringResource(Res.string.line_review_confidence_low),
+    confidenceUnknown = stringResource(Res.string.line_review_confidence_unknown),
+    savingLine = stringResource(Res.string.line_review_saving_line),
+    confirmReviewed = stringResource(Res.string.line_review_confirm_reviewed),
+    moveUp = stringResource(Res.string.line_review_move_up),
+    moveDown = stringResource(Res.string.line_review_move_down),
+    delete = stringResource(Res.string.line_review_delete),
+    edit = stringResource(Res.string.line_review_edit),
+    lineNumberFormat = stringResource(Res.string.line_review_line_number),
+    quantityUnitFormat = stringResource(Res.string.line_review_quantity_unit_value),
+    metricValueFormat = stringResource(Res.string.line_review_metric_value),
+    currencyAmountFormat = stringResource(Res.string.line_review_currency_amount),
+    confidencePercentFormat = stringResource(Res.string.line_review_confidence_percent),
+    confirmAccessibilityFormat = stringResource(Res.string.line_review_confirm_accessibility),
+    moreActionsAccessibilityFormat = stringResource(
+        Res.string.line_review_more_actions_accessibility,
     ),
-    moveUpAccessibilityFormat = getString(R.string.line_review_move_up_accessibility),
-    moveDownAccessibilityFormat = getString(R.string.line_review_move_down_accessibility),
-    deleteAccessibilityFormat = getString(R.string.line_review_delete_accessibility),
-    editAccessibilityFormat = getString(R.string.line_review_edit_accessibility),
+    moveUpAccessibilityFormat = stringResource(Res.string.line_review_move_up_accessibility),
+    moveDownAccessibilityFormat = stringResource(Res.string.line_review_move_down_accessibility),
+    deleteAccessibilityFormat = stringResource(Res.string.line_review_delete_accessibility),
+    editAccessibilityFormat = stringResource(Res.string.line_review_edit_accessibility),
 )
 
 @Composable
@@ -1126,7 +1124,7 @@ private fun CardMetric(
 
 @Composable
 private fun LineMetric(
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     value: String,
     modifier: Modifier = Modifier,
 ) {
@@ -1204,9 +1202,9 @@ private fun RestoreDeletionBar(
         ) {
             Text(
                 text = stringResource(
-                    R.string.line_review_deleted_message,
+                    Res.string.line_review_deleted_message,
                     deletion.description.ifBlank {
-                        stringResource(R.string.line_review_description_pending)
+                        stringResource(Res.string.line_review_description_pending)
                     },
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1220,7 +1218,7 @@ private fun RestoreDeletionBar(
                     enabled = !deletion.isRestoring,
                 ) {
                     Text(
-                        text = stringResource(R.string.line_review_dismiss_restore),
+                        text = stringResource(Res.string.line_review_dismiss_restore),
                         color = MaterialTheme.colorScheme.inversePrimary,
                     )
                 }
@@ -1232,9 +1230,9 @@ private fun RestoreDeletionBar(
                     Text(
                         text = stringResource(
                             if (deletion.isRestoring) {
-                                R.string.line_review_restoring
+                                Res.string.line_review_restoring
                             } else {
-                                R.string.line_review_restore
+                                Res.string.line_review_restore
                             },
                         ),
                         color = MaterialTheme.colorScheme.inversePrimary,
@@ -1255,14 +1253,14 @@ private fun LineReviewSummaryBar(
     onAction: (Action) -> Unit,
 ) {
     val spacing = FacturaStockDesign.spacing
-    val pending = stringResource(R.string.line_review_summary_pending)
+    val pending = stringResource(Res.string.line_review_summary_pending)
     val lineSum = summary.lineSum.ifBlank { pending }
     val invoiceTotal = summary.invoiceTotal.ifBlank { pending }
     val difference = summary.exactDifference.ifBlank { pending }
     val differenceMessage = summaryStatusMessage(summary, difference)
     val spoken = listOf(
-        stringResource(R.string.line_review_summary_sum_label) + ": " + lineSum,
-        stringResource(R.string.line_review_summary_invoice_label) + ": " + invoiceTotal,
+        stringResource(Res.string.line_review_summary_sum_label) + ": " + lineSum,
+        stringResource(Res.string.line_review_summary_invoice_label) + ": " + invoiceTotal,
         differenceMessage,
     ).joinToString(separator = ". ")
 
@@ -1290,12 +1288,12 @@ private fun LineReviewSummaryBar(
                 horizontalArrangement = Arrangement.spacedBy(spacing.md),
             ) {
                 LineMetric(
-                    labelRes = R.string.line_review_summary_sum_label,
+                    labelRes = Res.string.line_review_summary_sum_label,
                     value = lineSum,
                     modifier = Modifier.weight(1f),
                 )
                 LineMetric(
-                    labelRes = R.string.line_review_summary_invoice_label,
+                    labelRes = Res.string.line_review_summary_invoice_label,
                     value = invoiceTotal,
                     modifier = Modifier.weight(1f),
                 )
@@ -1319,7 +1317,7 @@ private fun LineReviewSummaryBar(
             ) {
                 Column(modifier = Modifier.padding(spacing.xs)) {
                     Text(
-                        text = stringResource(R.string.line_review_summary_difference_label),
+                        text = stringResource(Res.string.line_review_summary_difference_label),
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Text(text = difference, style = MaterialTheme.typography.titleMedium)
@@ -1329,7 +1327,7 @@ private fun LineReviewSummaryBar(
             if (continueAttempted && pendingCount > 0) {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.line_review_blocking_message,
+                        Res.plurals.line_review_blocking_message,
                         pendingCount,
                         pendingCount,
                     ),
@@ -1341,9 +1339,9 @@ private fun LineReviewSummaryBar(
             FacturaStockPrimaryButton(
                 text = stringResource(
                     if (isSaving) {
-                        R.string.line_review_saving_changes
+                        Res.string.line_review_saving_changes
                     } else {
-                        R.string.line_review_link_products
+                        Res.string.line_review_link_products
                     },
                 ),
                 onClick = { onAction(Action.LinkProducts) },
@@ -1367,9 +1365,9 @@ private fun LineEditorDialog(
     val spacing = FacturaStockDesign.spacing
     val title = stringResource(
         if (editor.isNew) {
-            R.string.line_review_editor_new_title
+            Res.string.line_review_editor_new_title
         } else {
-            R.string.line_review_editor_title
+            Res.string.line_review_editor_title
         },
     )
     val focusManager = LocalFocusManager.current
@@ -1410,7 +1408,7 @@ private fun LineEditorDialog(
                             style = MaterialTheme.typography.headlineSmall,
                         )
                         Text(
-                            text = stringResource(R.string.line_review_editor_hint),
+                            text = stringResource(Res.string.line_review_editor_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1419,7 +1417,7 @@ private fun LineEditorDialog(
                         onClick = { onAction(Action.CloseEditor) },
                         modifier = Modifier.testTag(InvoiceLineReviewTestTags.CLOSE_EDITOR),
                     ) {
-                        Text(stringResource(R.string.line_review_editor_close))
+                        Text(stringResource(Res.string.line_review_editor_close))
                     }
                 }
 
@@ -1438,15 +1436,15 @@ private fun LineEditorDialog(
                     if (editor.saveFailure) {
                         item(key = "editor_save_failure", contentType = "error") {
                             RecoverableError(
-                                title = stringResource(R.string.line_review_save_error_title),
+                                title = stringResource(Res.string.line_review_save_error_title),
                                 message = stringResource(
                                     if (storageFull) {
-                                        R.string.storage_full_recoverable_message
+                                        Res.string.storage_full_recoverable_message
                                     } else {
-                                        R.string.line_review_save_error_message
+                                        Res.string.line_review_save_error_message
                                     },
                                 ),
-                                actionLabel = stringResource(R.string.line_review_retry_save),
+                                actionLabel = stringResource(Res.string.line_review_retry_save),
                                 onAction = { onAction(Action.RetrySave) },
                             )
                         }
@@ -1481,13 +1479,13 @@ private fun LineEditorDialog(
                     }
                     item(key = "editor_delete", contentType = "action") {
                         FacturaStockSecondaryButton(
-                            text = stringResource(R.string.line_review_delete),
+                            text = stringResource(Res.string.line_review_delete),
                             onClick = {
                                 onAction(Action.RequestDelete(editor.line.lineId))
                             },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !editor.line.isPersisting,
-                            leadingIconRes = R.drawable.ic_delete,
+                            leadingIconRes = Res.drawable.ic_delete,
                         )
                     }
                 }
@@ -1511,7 +1509,7 @@ private fun LineEditorDialog(
                         Spacer(modifier = Modifier.height(spacing.sm))
                         if (editor.line.canConfirmReviewed) {
                             FacturaStockSecondaryButton(
-                                text = stringResource(R.string.line_review_confirm_reviewed),
+                                text = stringResource(Res.string.line_review_confirm_reviewed),
                                 onClick = {
                                     onAction(Action.ConfirmLineReviewed(editor.line.lineId))
                                 },
@@ -1520,7 +1518,7 @@ private fun LineEditorDialog(
                             Spacer(modifier = Modifier.height(spacing.xs))
                         }
                         FacturaStockPrimaryButton(
-                            text = stringResource(R.string.line_review_editor_close),
+                            text = stringResource(Res.string.line_review_editor_close),
                             onClick = { onAction(Action.CloseEditor) },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1549,7 +1547,7 @@ private fun TaxTreatmentSelector(
             .testTag(InvoiceLineReviewTestTags.TAX_TREATMENT),
     ) {
         Text(
-            text = stringResource(R.string.line_review_tax_treatment_label),
+            text = stringResource(Res.string.line_review_tax_treatment_label),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleSmall,
         )
@@ -1560,9 +1558,9 @@ private fun TaxTreatmentSelector(
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             listOf(
-                InventoryTaxTreatment.EXCLUDED to R.string.line_review_tax_excluded,
-                InventoryTaxTreatment.INCLUDED to R.string.line_review_tax_included,
-                InventoryTaxTreatment.EXEMPT to R.string.line_review_tax_exempt,
+                InventoryTaxTreatment.EXCLUDED to Res.string.line_review_tax_excluded,
+                InventoryTaxTreatment.INCLUDED to Res.string.line_review_tax_included,
+                InventoryTaxTreatment.EXEMPT to Res.string.line_review_tax_exempt,
             ).forEach { (treatment, label) ->
                 FilterChip(
                     selected = selected == treatment,
@@ -1577,7 +1575,7 @@ private fun TaxTreatmentSelector(
         }
         if (selected == InventoryTaxTreatment.UNKNOWN) {
             Text(
-                text = stringResource(R.string.line_review_tax_treatment_required),
+                text = stringResource(Res.string.line_review_tax_treatment_required),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1588,7 +1586,7 @@ private fun TaxTreatmentSelector(
             ) && !hasExplicitEvidence
         ) {
             Text(
-                text = stringResource(R.string.line_review_tax_evidence_required),
+                text = stringResource(Res.string.line_review_tax_evidence_required),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1599,12 +1597,12 @@ private fun TaxTreatmentSelector(
 @Composable
 private fun EditorSummary(summary: Summary) {
     val spacing = FacturaStockDesign.spacing
-    val pending = stringResource(R.string.line_review_summary_pending)
+    val pending = stringResource(Res.string.line_review_summary_pending)
     val lineSum = summary.lineSum.ifBlank { pending }
     val difference = summary.exactDifference.ifBlank { pending }
     val spoken = listOf(
-        stringResource(R.string.line_review_summary_sum_label) + ": " + lineSum,
-        stringResource(R.string.line_review_summary_difference_label) + ": " + difference,
+        stringResource(Res.string.line_review_summary_sum_label) + ": " + lineSum,
+        stringResource(Res.string.line_review_summary_difference_label) + ": " + difference,
         summaryStatusMessage(summary, difference),
     ).joinToString(". ")
     Surface(
@@ -1635,14 +1633,14 @@ private fun EditorSummary(summary: Summary) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.line_review_summary_sum_label),
+                    text = stringResource(Res.string.line_review_summary_sum_label),
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text(text = lineSum, style = MaterialTheme.typography.titleMedium)
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.line_review_summary_difference_label),
+                    text = stringResource(Res.string.line_review_summary_difference_label),
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text(text = difference, style = MaterialTheme.typography.titleMedium)
@@ -1654,19 +1652,19 @@ private fun EditorSummary(summary: Summary) {
 @Composable
 private fun summaryStatusMessage(summary: Summary, difference: String): String = when {
     summary.issue == SummaryIssue.ARITHMETIC_OVERFLOW ->
-        stringResource(R.string.line_review_summary_overflow)
+        stringResource(Res.string.line_review_summary_overflow)
 
     summary.issue == SummaryIssue.UNRESOLVED_LINES -> pluralStringResource(
-        R.plurals.line_review_summary_unresolved,
+        Res.plurals.line_review_summary_unresolved,
         summary.unresolvedLineCount,
         summary.unresolvedLineCount,
     )
 
     summary.issue == SummaryIssue.NOT_COMPARABLE || !summary.isComparable ->
-        stringResource(R.string.line_review_summary_incomplete)
+        stringResource(Res.string.line_review_summary_incomplete)
 
-    summary.hasDifference -> stringResource(R.string.line_review_summary_differs, difference)
-    else -> stringResource(R.string.line_review_summary_matches)
+    summary.hasDifference -> stringResource(Res.string.line_review_summary_differs, difference)
+    else -> stringResource(Res.string.line_review_summary_matches)
 }
 
 @Composable
@@ -1726,7 +1724,7 @@ private fun EditorField(
                 Text(
                     text = if (field.id.isMoney && currencyLabel.isNotBlank()) {
                         stringResource(
-                            R.string.line_review_field_with_currency,
+                            Res.string.line_review_field_with_currency,
                             baseLabel,
                             currencyLabelForDisplay(currencyLabel),
                         )
@@ -1764,10 +1762,10 @@ private fun FieldOriginSupport(field: Field) {
     val confidenceText = confidenceLabel(field.confidence, percent = null)
     val ocrReference = field.ocrValue
         ?.takeIf(String::isNotBlank)
-        ?.let { value -> stringResource(R.string.line_review_ocr_reference, value) }
+        ?.let { value -> stringResource(Res.string.line_review_ocr_reference, value) }
     val calculatedReference = field.calculatedValue
         ?.takeIf(String::isNotBlank)
-        ?.let { value -> stringResource(R.string.line_review_calculated_reference, value) }
+        ?.let { value -> stringResource(Res.string.line_review_calculated_reference, value) }
     val spokenDescription = listOfNotNull(
         sourceText,
         confidenceText,
@@ -1800,14 +1798,14 @@ private fun FieldOriginSupport(field: Field) {
             )
             field.ocrValue?.takeIf(String::isNotBlank)?.let { ocr ->
                 ReferenceValue(
-                    text = stringResource(R.string.line_review_ocr_reference, ocr),
+                    text = stringResource(Res.string.line_review_ocr_reference, ocr),
                     sameAsEffective = ocr == field.value,
                 )
             }
             field.calculatedValue?.takeIf(String::isNotBlank)?.let { calculated ->
                 ReferenceValue(
                     text = stringResource(
-                        R.string.line_review_calculated_reference,
+                        Res.string.line_review_calculated_reference,
                         calculated,
                     ),
                     sameAsEffective = calculated == field.value,
@@ -1824,7 +1822,7 @@ private fun ReferenceValue(
 ) {
     Text(
         text = if (sameAsEffective) {
-            text + " · " + stringResource(R.string.line_review_reference_same)
+            text + " · " + stringResource(Res.string.line_review_reference_same)
         } else {
             text
         },
@@ -1839,13 +1837,13 @@ private fun DeleteLineDialog(
     onAction: (Action) -> Unit,
 ) {
     val description = line.field(FieldId.DESCRIPTION).value.ifBlank {
-        stringResource(R.string.line_review_description_pending)
+        stringResource(Res.string.line_review_description_pending)
     }
     FacturaStockDialog(
-        title = stringResource(R.string.line_review_delete_title),
-        message = stringResource(R.string.line_review_delete_message, description),
-        confirmLabel = stringResource(R.string.line_review_delete_confirm),
-        dismissLabel = stringResource(R.string.action_cancel),
+        title = stringResource(Res.string.line_review_delete_title),
+        message = stringResource(Res.string.line_review_delete_message, description),
+        confirmLabel = stringResource(Res.string.line_review_delete_confirm),
+        dismissLabel = stringResource(Res.string.action_cancel),
         onConfirm = { onAction(Action.ConfirmDelete) },
         onDismiss = { onAction(Action.CancelDelete) },
         modifier = Modifier.testTag(InvoiceLineReviewTestTags.DELETE_DIALOG),
@@ -1874,46 +1872,44 @@ private fun confidenceLabel(
 ): String {
     val base = stringResource(confidenceLabelRes(confidence))
     return percent?.let { value ->
-        stringResource(R.string.line_review_confidence_percent, base, value)
+        // Compose Resources no reduce "%%" a "%": se usa el mismo String.format que la tarjeta.
+        stringResource(Res.string.line_review_confidence_percent)
+            .formatForCard(Locale.getDefault() ?: Locale.ROOT, base, value)
     } ?: base
 }
 
-@StringRes
-private fun confidenceLabelRes(confidence: Confidence): Int = when (confidence) {
-    Confidence.HIGH -> R.string.line_review_confidence_high
-    Confidence.MEDIUM -> R.string.line_review_confidence_medium
-    Confidence.LOW -> R.string.line_review_confidence_low
-    Confidence.UNKNOWN -> R.string.line_review_confidence_unknown
+private fun confidenceLabelRes(confidence: Confidence): StringResource = when (confidence) {
+    Confidence.HIGH -> Res.string.line_review_confidence_high
+    Confidence.MEDIUM -> Res.string.line_review_confidence_medium
+    Confidence.LOW -> Res.string.line_review_confidence_low
+    Confidence.UNKNOWN -> Res.string.line_review_confidence_unknown
 }
 
-@StringRes
-private fun fieldLabelRes(field: FieldId): Int = when (field) {
-    FieldId.DESCRIPTION -> R.string.line_review_description_label
-    FieldId.CODE -> R.string.line_review_code_label
-    FieldId.QUANTITY -> R.string.line_review_quantity_label
-    FieldId.UNIT -> R.string.line_review_unit_label
-    FieldId.UNIT_COST -> R.string.line_review_unit_cost_label
-    FieldId.DISCOUNT -> R.string.line_review_discount_label
-    FieldId.IGV -> R.string.line_review_igv_label
-    FieldId.TOTAL -> R.string.line_review_total_label
+private fun fieldLabelRes(field: FieldId): StringResource = when (field) {
+    FieldId.DESCRIPTION -> Res.string.line_review_description_label
+    FieldId.CODE -> Res.string.line_review_code_label
+    FieldId.QUANTITY -> Res.string.line_review_quantity_label
+    FieldId.UNIT -> Res.string.line_review_unit_label
+    FieldId.UNIT_COST -> Res.string.line_review_unit_cost_label
+    FieldId.DISCOUNT -> Res.string.line_review_discount_label
+    FieldId.IGV -> Res.string.line_review_igv_label
+    FieldId.TOTAL -> Res.string.line_review_total_label
 }
 
-@StringRes
-private fun originLabelRes(origin: ValueOrigin): Int = when (origin) {
-    ValueOrigin.OCR -> R.string.line_review_source_ocr
-    ValueOrigin.CALCULATED -> R.string.line_review_source_calculated
-    ValueOrigin.WRITTEN -> R.string.line_review_source_written
-    ValueOrigin.MISSING -> R.string.line_review_source_missing
+private fun originLabelRes(origin: ValueOrigin): StringResource = when (origin) {
+    ValueOrigin.OCR -> Res.string.line_review_source_ocr
+    ValueOrigin.CALCULATED -> Res.string.line_review_source_calculated
+    ValueOrigin.WRITTEN -> Res.string.line_review_source_written
+    ValueOrigin.MISSING -> Res.string.line_review_source_missing
 }
 
-@StringRes
-private fun fieldErrorRes(error: FieldError): Int = when (error) {
-    FieldError.REQUIRED -> R.string.line_review_error_required
-    FieldError.INVALID_DECIMAL -> R.string.line_review_error_decimal
-    FieldError.INVALID_AMOUNT -> R.string.line_review_error_amount
-    FieldError.NEGATIVE_QUANTITY -> R.string.line_review_error_negative_quantity
-    FieldError.NEGATIVE_AMOUNT -> R.string.line_review_error_negative_amount
-    FieldError.TOO_LONG -> R.string.line_review_error_too_long
+private fun fieldErrorRes(error: FieldError): StringResource = when (error) {
+    FieldError.REQUIRED -> Res.string.line_review_error_required
+    FieldError.INVALID_DECIMAL -> Res.string.line_review_error_decimal
+    FieldError.INVALID_AMOUNT -> Res.string.line_review_error_amount
+    FieldError.NEGATIVE_QUANTITY -> Res.string.line_review_error_negative_quantity
+    FieldError.NEGATIVE_AMOUNT -> Res.string.line_review_error_negative_amount
+    FieldError.TOO_LONG -> Res.string.line_review_error_too_long
 }
 
 private const val EDITOR_FOOTER_MAX_HEIGHT_FRACTION = 0.45f

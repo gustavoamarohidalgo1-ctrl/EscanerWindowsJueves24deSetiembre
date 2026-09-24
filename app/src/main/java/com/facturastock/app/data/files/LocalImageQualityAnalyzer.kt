@@ -1,13 +1,12 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
-import android.graphics.Bitmap
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.domain.model.ImageQualityReport
 import com.facturastock.app.domain.model.ImageQualityWarning
 import com.facturastock.app.domain.model.InvoiceImage
 import com.facturastock.app.domain.repository.ImageQualityAnalyzer
-import dagger.hilt.android.qualifiers.ApplicationContext
+import java.awt.image.BufferedImage
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -26,10 +25,10 @@ import kotlinx.coroutines.withContext
  */
 @Singleton
 class LocalImageQualityAnalyzer @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val dispatcherProvider: DispatcherProvider,
 ) : ImageQualityAnalyzer {
-    private val rootDirectory: File = context.filesDir
+    private val rootDirectory: File = directories.filesDir
 
     override suspend fun analyze(image: InvoiceImage): ImageQualityReport =
         withContext(dispatcherProvider.default) {
@@ -140,7 +139,7 @@ class LocalImageQualityAnalyzer @Inject constructor(
         )
     }
 
-    internal suspend fun readLuminance(bitmap: Bitmap): ByteArray {
+    internal suspend fun readLuminance(bitmap: BufferedImage): ByteArray {
         val width = bitmap.width
         val height = bitmap.height
         val gray = ByteArray(width * height)
@@ -149,7 +148,8 @@ class LocalImageQualityAnalyzer @Inject constructor(
         for (top in 0 until height step PIXEL_BLOCK_ROWS) {
             currentCoroutineContext().ensureActive()
             val rows = minOf(PIXEL_BLOCK_ROWS, height - top)
-            bitmap.getPixels(pixels, 0, width, 0, top, width, rows)
+            // `getRGB` entrega ARGB sRGB sin premultiplicar, igual que `Bitmap.getPixels`.
+            bitmap.getRGB(0, top, width, rows, pixels, 0, width)
             for (row in 0 until rows) {
                 currentCoroutineContext().ensureActive()
                 val blockOffset = row * width

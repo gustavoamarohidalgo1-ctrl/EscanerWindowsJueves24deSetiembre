@@ -19,14 +19,11 @@ import com.facturastock.app.domain.usecase.RunInvoiceOcrUseCase
 import com.facturastock.app.domain.usecase.ScannedInvoiceProductImportError
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-@HiltViewModel
 class OcrViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val runInvoiceOcrUseCase: RunInvoiceOcrUseCase,

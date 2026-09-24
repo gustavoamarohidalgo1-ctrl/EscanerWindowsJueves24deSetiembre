@@ -1,6 +1,6 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.domain.model.PrivateImageDeletionResult
 import com.facturastock.app.domain.model.RetainedImageEncryptionState
@@ -8,7 +8,6 @@ import com.facturastock.app.domain.model.RetainedImageMigrationState
 import com.facturastock.app.domain.repository.DocumentUploadDecodePolicy
 import com.facturastock.app.domain.repository.RetainedImageStore
 import com.facturastock.app.domain.repository.RetainedImageReadResult
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -24,14 +23,14 @@ import kotlinx.coroutines.withContext
  */
 @Singleton
 class LocalRetainedImageStore @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val cipher: RetainedImageCipher,
     private val dispatchers: DispatcherProvider,
     private val mutationCoordinator: PrivateImageMutationCoordinator =
         PrivateImageMutationCoordinator(),
     private val deletionDurability: PrivateDeletionDurability = PrivateDeletionDurability(),
 ) : RetainedImageStore {
-    private val rootDirectory: File = context.filesDir
+    private val rootDirectory: File = directories.filesDir
 
     override suspend fun readForDisplay(relativePath: String): RetainedImageReadResult =
         withContext(dispatchers.io) {

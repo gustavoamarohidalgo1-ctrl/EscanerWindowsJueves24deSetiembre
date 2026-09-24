@@ -1,6 +1,6 @@
 package com.facturastock.app.data.local
 
-import androidx.sqlite.db.SupportSQLiteDatabase
+import com.facturastock.app.data.local.sqlite.SupportSQLiteDatabase
 
 private val DEBT_TRIGGER_NAMES = listOf(
     "debts_block_replace",

@@ -25,7 +25,6 @@ import com.facturastock.app.feature.summary.PurchaseSummaryContract.Mode
 import com.facturastock.app.feature.summary.PurchaseSummaryContract.State
 import com.facturastock.app.ui.format.formatForDisplay
 import com.facturastock.app.ui.format.formatSignedForDisplay
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -41,7 +40,6 @@ import kotlinx.coroutines.withContext
  * su cuenta), prepara la instantánea solo cuando no quedan bloqueos o el único pendiente es la
  * aceptación explícita del redondeo, y reabre la edición invalidando la instantánea.
  */
-@HiltViewModel
 class PurchaseSummaryViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val preparePurchaseUseCase: PreparePurchaseUseCase,

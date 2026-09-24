@@ -1,6 +1,10 @@
 package com.facturastock.app.feature.inventory
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.DrawableResource
+
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,9 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -49,7 +53,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.CatalogStatus
 import com.facturastock.app.domain.model.InventoryDataAlert
@@ -135,10 +138,10 @@ fun InventoryListScreen(
         }
         if (showRegisterActions) item(key = "register_products", contentType = "register_products") {
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.inventory_register_products),
+                text = stringResource(Res.string.inventory_register_products),
                 onClick = onRegisterProducts,
                 enabled = productActionsEnabled,
-                leadingIconRes = R.drawable.ic_barcode_scanner,
+                leadingIconRes = Res.drawable.ic_barcode_scanner,
                 modifier = Modifier.fillMaxWidth().testTag(InventoryTestTags.REGISTER_PRODUCTS),
             )
         }
@@ -165,7 +168,7 @@ fun InventoryListScreen(
                 item(key = "count", contentType = "count") {
                     Text(
                         text = pluralStringResource(
-                            R.plurals.inventory_product_count,
+                            Res.plurals.inventory_product_count,
                             items.size,
                             items.size,
                         ),
@@ -176,26 +179,26 @@ fun InventoryListScreen(
             }
             when {
                 isLoading -> item(key = "loading", contentType = "loading") {
-                    LoadingState(message = stringResource(R.string.feature_loading_message))
+                    LoadingState(message = stringResource(Res.string.feature_loading_message))
                 }
                 items.isEmpty() -> item(key = "empty", contentType = "empty") {
                     val filtered = query.trim().length >= 2
                     EmptyState(
                         title = stringResource(
                             when {
-                                filtered -> R.string.inventory_empty_filtered_title
-                                else -> R.string.inventory_empty_title
+                                filtered -> Res.string.inventory_empty_filtered_title
+                                else -> Res.string.inventory_empty_title
                             },
                         ),
                         message = stringResource(
                             when {
-                                filtered -> R.string.inventory_empty_filtered_message
-                                else -> R.string.inventory_empty_message
+                                filtered -> Res.string.inventory_empty_filtered_message
+                                else -> Res.string.inventory_empty_message
                             },
                         ),
-                        iconRes = R.drawable.ic_inventory,
+                        iconRes = Res.drawable.ic_inventory,
                         actionLabel = if (filtered) {
-                            stringResource(R.string.action_clear_search)
+                            stringResource(Res.string.action_clear_search)
                         } else {
                             null
                         },
@@ -230,7 +233,7 @@ fun InventoryListScreen(
                 item(key = "profit_count", contentType = "count") {
                     Text(
                         text = pluralStringResource(
-                            R.plurals.inventory_profit_result_count,
+                            Res.plurals.inventory_profit_result_count,
                             profits.size,
                             profits.size,
                         ),
@@ -241,28 +244,28 @@ fun InventoryListScreen(
             }
             when {
                 isProfitLoading -> item(key = "profit_loading", contentType = "loading") {
-                    LoadingState(message = stringResource(R.string.inventory_profit_loading))
+                    LoadingState(message = stringResource(Res.string.inventory_profit_loading))
                 }
                 profitFailure == InventoryContract.ProfitFailure.LOAD_FAILED -> {
                     item(key = "profit_failure", contentType = "failure") {
                         com.facturastock.app.ui.components.RecoverableError(
-                            title = stringResource(R.string.inventory_profit_load_error_title),
-                            message = stringResource(R.string.inventory_profit_load_error_message),
-                            actionLabel = stringResource(R.string.action_retry),
+                            title = stringResource(Res.string.inventory_profit_load_error_title),
+                            message = stringResource(Res.string.inventory_profit_load_error_message),
+                            actionLabel = stringResource(Res.string.action_retry),
                             onAction = onRetryProfit,
                         )
                     }
                 }
                 profits.isEmpty() -> item(key = "profit_empty", contentType = "empty") {
                     EmptyState(
-                        title = stringResource(R.string.inventory_profit_empty_title),
+                        title = stringResource(Res.string.inventory_profit_empty_title),
                         message = stringResource(
-                            if (query.isBlank()) R.string.inventory_profit_empty_message
-                            else R.string.inventory_empty_filtered_message,
+                            if (query.isBlank()) Res.string.inventory_profit_empty_message
+                            else Res.string.inventory_empty_filtered_message,
                         ),
-                        iconRes = R.drawable.ic_sale,
+                        iconRes = Res.drawable.ic_sale,
                         actionLabel = if (query.isNotBlank()) {
-                            stringResource(R.string.action_clear_search)
+                            stringResource(Res.string.action_clear_search)
                         } else {
                             null
                         },
@@ -319,10 +322,10 @@ private fun InventorySearchField(
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        label = { Text(stringResource(R.string.inventory_search_label)) },
-        supportingText = { Text(stringResource(R.string.inventory_search_hint)) },
+        label = { Text(stringResource(Res.string.inventory_search_label)) },
+        supportingText = { Text(stringResource(Res.string.inventory_search_hint)) },
         leadingIcon = {
-            Icon(painterResource(R.drawable.ic_search), contentDescription = null)
+            Icon(painterResource(Res.drawable.ic_search), contentDescription = null)
         },
         trailingIcon = {
             if (query.isNotEmpty()) {
@@ -332,8 +335,8 @@ private fun InventorySearchField(
                     modifier = Modifier.testTag(InventoryTestTags.SEARCH_CLEAR),
                 ) {
                     Icon(
-                        painterResource(R.drawable.ic_close),
-                        contentDescription = stringResource(R.string.action_clear_search),
+                        painterResource(Res.drawable.ic_close),
+                        contentDescription = stringResource(Res.string.action_clear_search),
                     )
                 }
             }
@@ -357,7 +360,7 @@ private fun InventorySearchField(
 @Composable
 private fun ProfitScopeNote() {
     Text(
-        text = stringResource(R.string.inventory_profit_message),
+        text = stringResource(Res.string.inventory_profit_message),
         modifier = Modifier
             .fillMaxWidth()
             .testTag(InventoryTestTags.PROFIT_LIVE_REGION)
@@ -414,7 +417,7 @@ private fun ProductProfitCard(
             )
             profit.sku?.let { sku ->
                 Text(
-                    text = stringResource(R.string.inventory_sku, sku),
+                    text = stringResource(Res.string.inventory_sku, sku),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -422,7 +425,7 @@ private fun ProductProfitCard(
             profit.salePrice?.let { price ->
                 Text(
                     text = stringResource(
-                        R.string.inventory_profit_sale_price,
+                        Res.string.inventory_profit_sale_price,
                         price.formatForDisplay(),
                         profit.unitCode,
                     ),
@@ -436,7 +439,7 @@ private fun ProductProfitCard(
                 val potential = requireNotNull(profit.potentialProfit)
                 Text(
                     text = stringResource(
-                        R.string.inventory_profit_average_cost,
+                        Res.string.inventory_profit_average_cost,
                         average.amount.formatInventoryMoney(average.currency),
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -444,7 +447,7 @@ private fun ProductProfitCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.inventory_profit_unit_profit,
+                        Res.string.inventory_profit_unit_profit,
                         unitProfit.amount.formatInventoryMoney(unitProfit.currency),
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
@@ -452,7 +455,7 @@ private fun ProductProfitCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.inventory_profit_margin,
+                        Res.string.inventory_profit_margin,
                         requireNotNull(profit.marginPercent).formatInventoryNumber(),
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -460,7 +463,7 @@ private fun ProductProfitCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.inventory_profit_stock,
+                        Res.string.inventory_profit_stock,
                         requireNotNull(profit.totalStockQuantity).formatInventoryNumber(),
                         profit.unitCode,
                     ),
@@ -469,7 +472,7 @@ private fun ProductProfitCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.inventory_profit_potential,
+                        Res.string.inventory_profit_potential,
                         potential.amount.formatInventoryMoney(potential.currency),
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
@@ -501,11 +504,11 @@ private fun ProductProfitCard(
             }
             if (profit.productStatus == CatalogStatus.ACTIVE) {
                 val editDescription = stringResource(
-                    R.string.inventory_profit_edit_price_accessibility,
+                    Res.string.inventory_profit_edit_price_accessibility,
                     profit.productName,
                 )
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.inventory_profit_edit_price),
+                    text = stringResource(Res.string.inventory_profit_edit_price),
                     onClick = onEditPrice,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -514,7 +517,7 @@ private fun ProductProfitCard(
                 )
             } else {
                 Text(
-                    text = stringResource(R.string.inventory_profit_archived),
+                    text = stringResource(Res.string.inventory_profit_archived),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -533,18 +536,18 @@ private fun SalePriceDialog(
     onDismiss: () -> Unit,
 ) {
     FacturaStockDialog(
-        title = stringResource(R.string.inventory_profit_price_dialog_title),
+        title = stringResource(Res.string.inventory_profit_price_dialog_title),
         message = stringResource(
-            R.string.inventory_profit_price_dialog_message,
+            Res.string.inventory_profit_price_dialog_message,
             editor.productName,
             editor.currency.value,
         ),
         confirmLabel = if (isSaving) {
-            stringResource(R.string.inventory_profit_price_saving)
+            stringResource(Res.string.inventory_profit_price_saving)
         } else {
-            stringResource(R.string.inventory_profit_price_save)
+            stringResource(Res.string.inventory_profit_price_save)
         },
-        dismissLabel = stringResource(R.string.action_cancel),
+        dismissLabel = stringResource(Res.string.action_cancel),
         onConfirm = onSave,
         onDismiss = onDismiss,
         confirmEnabled = !isSaving,
@@ -561,7 +564,7 @@ private fun SalePriceDialog(
                 label = {
                     Text(
                         stringResource(
-                            R.string.inventory_profit_price_field_label,
+                            Res.string.inventory_profit_price_field_label,
                             editor.currency.value,
                         ),
                     )
@@ -570,9 +573,9 @@ private fun SalePriceDialog(
                     Text(
                         stringResource(
                             if (editor.submitAttempted && !editor.isValid) {
-                                R.string.inventory_profit_price_invalid
+                                Res.string.inventory_profit_price_invalid
                             } else {
-                                R.string.inventory_profit_price_help
+                                Res.string.inventory_profit_price_help
                             },
                         ),
                     )
@@ -610,13 +613,13 @@ private fun InventoryProductActions(
     if (InventoryDataAlert.ARCHIVED_PRODUCT in item.allAlerts) return
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.inventory_product_edit),
+            text = stringResource(Res.string.inventory_product_edit),
             onClick = onEdit,
             enabled = enabled && InventoryDataAlert.ARCHIVED_PRODUCT !in item.allAlerts,
             modifier = Modifier.weight(1f).testTag(InventoryTestTags.editProduct(item.productId)),
         )
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.inventory_product_delete),
+            text = stringResource(Res.string.inventory_product_delete),
             onClick = onDelete,
             enabled = enabled,
             modifier = Modifier.weight(1f).testTag(InventoryTestTags.deleteProduct(item.productId)),
@@ -638,7 +641,7 @@ internal fun InventoryProductDeletionDialog(
     if (blocked) {
         AlertDialog(
             onDismissRequest = { if (!isBusy) onDismiss() },
-            title = { Text(stringResource(R.string.inventory_product_delete_title)) },
+            title = { Text(stringResource(Res.string.inventory_product_delete_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
                     Text(pending.productName)
@@ -647,7 +650,7 @@ internal fun InventoryProductDeletionDialog(
             },
             confirmButton = {
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.inventory_product_delete_close),
+                    text = stringResource(Res.string.inventory_product_delete_close),
                     onClick = onDismiss,
                     enabled = !isBusy,
                 )
@@ -657,10 +660,10 @@ internal fun InventoryProductDeletionDialog(
         return
     }
     FacturaStockDialog(
-        title = stringResource(R.string.inventory_product_delete_title),
-        message = stringResource(R.string.inventory_product_delete_message, pending.productName),
-        confirmLabel = stringResource(if (retryable) R.string.action_retry else R.string.inventory_product_delete_confirm),
-        dismissLabel = stringResource(R.string.action_cancel),
+        title = stringResource(Res.string.inventory_product_delete_title),
+        message = stringResource(Res.string.inventory_product_delete_message, pending.productName),
+        confirmLabel = stringResource(if (retryable) Res.string.action_retry else Res.string.inventory_product_delete_confirm),
+        dismissLabel = stringResource(Res.string.action_cancel),
         onConfirm = onConfirm,
         onDismiss = onDismiss,
         confirmEnabled = !isBusy && (retryable || pending.expectedVersion != null),
@@ -670,14 +673,14 @@ internal fun InventoryProductDeletionDialog(
             if (isBusy || (pending.expectedVersion == null && failure == null)) {
                 LoadingState(
                     message = stringResource(
-                        if (pending.expectedVersion == null) R.string.inventory_product_delete_checking
-                        else R.string.inventory_product_delete_saving,
+                        if (pending.expectedVersion == null) Res.string.inventory_product_delete_checking
+                        else Res.string.inventory_product_delete_saving,
                     ),
                 )
             }
             failure?.let {
                 Text(
-                    stringResource(R.string.inventory_product_delete_retry),
+                    stringResource(Res.string.inventory_product_delete_retry),
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
                 )
@@ -693,7 +696,7 @@ internal fun InventoryProductActionError(
 ) {
     Text(
         text = stringResource(
-            if (deleting && failure == InventoryContract.ProductActionFailure.STALE_PRODUCT) R.string.inventory_product_delete_stale
+            if (deleting && failure == InventoryContract.ProductActionFailure.STALE_PRODUCT) Res.string.inventory_product_delete_stale
             else failure.messageRes(),
         ),
         color = MaterialTheme.colorScheme.error,
@@ -704,16 +707,15 @@ internal fun InventoryProductActionError(
     )
 }
 
-@StringRes
-private fun InventoryContract.ProductActionFailure.messageRes(): Int = when (this) {
-    InventoryContract.ProductActionFailure.LOAD_FAILED -> R.string.inventory_product_load_failed
-    InventoryContract.ProductActionFailure.SAVE_FAILED -> R.string.inventory_product_save_failed
-    InventoryContract.ProductActionFailure.BUSINESS_CHANGED -> R.string.inventory_product_business_changed
-    InventoryContract.ProductActionFailure.PRODUCT_UNAVAILABLE -> R.string.inventory_product_unavailable
-    InventoryContract.ProductActionFailure.STALE_PRODUCT -> R.string.inventory_product_stale
-    InventoryContract.ProductActionFailure.HAS_HISTORY -> R.string.inventory_product_delete_has_history
-    InventoryContract.ProductActionFailure.HAS_STOCK -> R.string.inventory_product_delete_has_stock
-    InventoryContract.ProductActionFailure.SHARED_BUSINESS -> R.string.inventory_product_delete_shared
+private fun InventoryContract.ProductActionFailure.messageRes(): StringResource = when (this) {
+    InventoryContract.ProductActionFailure.LOAD_FAILED -> Res.string.inventory_product_load_failed
+    InventoryContract.ProductActionFailure.SAVE_FAILED -> Res.string.inventory_product_save_failed
+    InventoryContract.ProductActionFailure.BUSINESS_CHANGED -> Res.string.inventory_product_business_changed
+    InventoryContract.ProductActionFailure.PRODUCT_UNAVAILABLE -> Res.string.inventory_product_unavailable
+    InventoryContract.ProductActionFailure.STALE_PRODUCT -> Res.string.inventory_product_stale
+    InventoryContract.ProductActionFailure.HAS_HISTORY -> Res.string.inventory_product_delete_has_history
+    InventoryContract.ProductActionFailure.HAS_STOCK -> Res.string.inventory_product_delete_has_stock
+    InventoryContract.ProductActionFailure.SHARED_BUSINESS -> Res.string.inventory_product_delete_shared
 }
 
 @Composable
@@ -774,14 +776,14 @@ private fun InventoryProductContent(
         )
         item.sku?.let { sku ->
             Text(
-                text = stringResource(R.string.inventory_sku, sku),
+                text = stringResource(Res.string.inventory_sku, sku),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
         Text(
             text = stringResource(
-                R.string.inventory_total_quantity,
+                Res.string.inventory_total_quantity,
                 item.totalQuantityOnHand.formatInventoryNumber(),
                 item.displayUnit(),
             ),
@@ -793,16 +795,16 @@ private fun InventoryProductContent(
                 val average = item.averageUnitCostsByCurrency[currency]
                 Text(
                     text = stringResource(
-                        R.string.inventory_total_average,
+                        Res.string.inventory_total_average,
                         average?.amount?.formatInventoryMoney(currency)
-                            ?: stringResource(R.string.inventory_value_unavailable),
+                            ?: stringResource(Res.string.inventory_value_unavailable),
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
                     text = stringResource(
-                        R.string.inventory_total_value,
+                        Res.string.inventory_total_value,
                         value.formatInventoryMoney(currency),
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -811,7 +813,7 @@ private fun InventoryProductContent(
             }
         Text(
             text = pluralStringResource(
-                R.plurals.inventory_warehouse_count,
+                Res.plurals.inventory_warehouse_count,
                 item.positions.size,
                 item.positions.size,
             ),
@@ -852,7 +854,7 @@ private fun InventoryPositionContent(
         }
         Text(
             text = stringResource(
-                R.string.inventory_position_quantity,
+                Res.string.inventory_position_quantity,
                 position.quantityOnHand.formatInventoryNumber(),
                 unit,
             ),
@@ -861,7 +863,7 @@ private fun InventoryPositionContent(
         )
         Text(
             text = stringResource(
-                R.string.inventory_position_average,
+                Res.string.inventory_position_average,
                 position.averageUnitCost.amount.formatInventoryMoney(
                     position.averageUnitCost.currency,
                 ),
@@ -871,7 +873,7 @@ private fun InventoryPositionContent(
         )
         Text(
             text = stringResource(
-                R.string.inventory_position_value,
+                Res.string.inventory_position_value,
                 position.estimatedValue.formatInventoryMoney(
                     position.averageUnitCost.currency,
                 ),
@@ -896,7 +898,7 @@ private fun InventoryAlerts(alerts: Set<InventoryDataAlert>) {
             verticalArrangement = Arrangement.spacedBy(spacing.xxs),
         ) {
             Text(
-                text = stringResource(R.string.inventory_alert_title),
+                text = stringResource(Res.string.inventory_alert_title),
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.labelLarge,
             )
@@ -920,34 +922,34 @@ private fun InventoryDiagnosticCard(
 ) {
     val status = when {
         isRunning -> DiagnosticPresentation(
-            R.string.inventory_diagnostic_running_status,
-            R.string.inventory_diagnostic_running_message,
+            Res.string.inventory_diagnostic_running_status,
+            Res.string.inventory_diagnostic_running_message,
             StatusTone.INFO,
-            R.drawable.ic_refresh,
+            Res.drawable.ic_refresh,
         )
         failed -> DiagnosticPresentation(
-            R.string.inventory_diagnostic_failed_status,
-            R.string.inventory_diagnostic_failed_message,
+            Res.string.inventory_diagnostic_failed_status,
+            Res.string.inventory_diagnostic_failed_message,
             StatusTone.ERROR,
-            R.drawable.ic_warning,
+            Res.drawable.ic_warning,
         )
         report == null -> DiagnosticPresentation(
-            R.string.inventory_diagnostic_idle_status,
-            R.string.inventory_diagnostic_idle_message,
+            Res.string.inventory_diagnostic_idle_status,
+            Res.string.inventory_diagnostic_idle_message,
             StatusTone.NEUTRAL,
-            R.drawable.ic_inventory,
+            Res.drawable.ic_inventory,
         )
         report.isConsistent -> DiagnosticPresentation(
-            R.string.inventory_diagnostic_ok_status,
-            R.string.inventory_diagnostic_ok_message,
+            Res.string.inventory_diagnostic_ok_status,
+            Res.string.inventory_diagnostic_ok_message,
             StatusTone.SUCCESS,
-            R.drawable.ic_check_circle,
+            Res.drawable.ic_check_circle,
         )
         else -> DiagnosticPresentation(
-            R.string.inventory_diagnostic_warning_status,
-            R.string.inventory_diagnostic_warning_message,
+            Res.string.inventory_diagnostic_warning_status,
+            Res.string.inventory_diagnostic_warning_message,
             StatusTone.WARNING,
-            R.drawable.ic_warning,
+            Res.drawable.ic_warning,
         )
     }
     val message = when {
@@ -968,7 +970,7 @@ private fun InventoryDiagnosticCard(
     ) {
         StatusCard(
             statusLabel = stringResource(status.statusRes),
-            title = stringResource(R.string.inventory_diagnostic_title),
+            title = stringResource(Res.string.inventory_diagnostic_title),
             message = message,
             tone = status.tone,
             iconRes = status.iconRes,
@@ -978,10 +980,10 @@ private fun InventoryDiagnosticCard(
             },
         )
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.inventory_diagnostic_action),
+            text = stringResource(Res.string.inventory_diagnostic_action),
             onClick = onRun,
             enabled = !isRunning,
-            leadingIconRes = R.drawable.ic_refresh,
+            leadingIconRes = Res.drawable.ic_refresh,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(InventoryTestTags.RUN_DIAGNOSTIC),
@@ -1007,11 +1009,11 @@ private fun DiagnosticIssueContent(position: InventoryDiagnosticPosition) {
         Text(text = position.locationName, style = MaterialTheme.typography.bodySmall)
         Text(
             text = stringResource(
-                R.string.inventory_diagnostic_issue_quantity,
+                Res.string.inventory_diagnostic_issue_quantity,
                 position.cachedQuantity?.formatInventoryNumber()
-                    ?: stringResource(R.string.inventory_value_unavailable),
+                    ?: stringResource(Res.string.inventory_value_unavailable),
                 position.ledgerQuantity?.formatInventoryNumber()
-                    ?: stringResource(R.string.inventory_value_unavailable),
+                    ?: stringResource(Res.string.inventory_value_unavailable),
             ),
             style = MaterialTheme.typography.bodySmall,
         )
@@ -1021,11 +1023,11 @@ private fun DiagnosticIssueContent(position: InventoryDiagnosticPosition) {
         ) {
             Text(
                 text = stringResource(
-                    R.string.inventory_diagnostic_issue_cost,
+                    Res.string.inventory_diagnostic_issue_cost,
                     position.cachedAverageUnitCost?.formatInventoryNumber()
-                        ?: stringResource(R.string.inventory_value_unavailable),
+                        ?: stringResource(Res.string.inventory_value_unavailable),
                     position.ledgerAverageUnitCost?.formatInventoryNumber()
-                        ?: stringResource(R.string.inventory_value_unavailable),
+                        ?: stringResource(Res.string.inventory_value_unavailable),
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1063,7 +1065,7 @@ fun InventoryProductDetailScreen(
             item(key = "header", contentType = "header") {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
                     Text(
-                        text = stringResource(R.string.inventory_detail_title),
+                        text = stringResource(Res.string.inventory_detail_title),
                         modifier = Modifier.semantics { heading() },
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.headlineLarge,
@@ -1075,7 +1077,7 @@ fun InventoryProductDetailScreen(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        text = stringResource(R.string.inventory_detail_message),
+                        text = stringResource(Res.string.inventory_detail_message),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyLarge,
                     )
@@ -1090,21 +1092,21 @@ fun InventoryProductDetailScreen(
                 )
             }
             item(key = "positions_header", contentType = "section_header") {
-                SectionTitle(stringResource(R.string.inventory_positions_section))
+                SectionTitle(stringResource(Res.string.inventory_positions_section))
             }
             item(key = "positions", contentType = "positions") {
                 InventoryProductSnapshotCard(item = detail.item)
             }
             item(key = "movements_header", contentType = "section_header") {
                 SectionTitle(
-                    stringResource(R.string.inventory_movements_section, detail.movements.size),
+                    stringResource(Res.string.inventory_movements_section, detail.movements.size),
                 )
             }
             if (detail.movements.isEmpty()) {
                 item(key = "movements_empty", contentType = "empty") {
                     EmptyState(
-                        title = stringResource(R.string.inventory_no_movements),
-                        message = stringResource(R.string.inventory_detail_message),
+                        title = stringResource(Res.string.inventory_no_movements),
+                        message = stringResource(Res.string.inventory_detail_message),
                     )
                 }
             } else {
@@ -1125,10 +1127,10 @@ fun InventoryProductDetailScreen(
             }
         }
         FacturaStockPrimaryButton(
-            text = stringResource(R.string.action_back),
+            text = stringResource(Res.string.action_back),
             onClick = onBack,
             enabled = productActionsEnabled,
-            leadingIconRes = R.drawable.ic_back,
+            leadingIconRes = Res.drawable.ic_back,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(spacing.lg)
@@ -1173,7 +1175,7 @@ private fun InventoryMovementCard(
             }
             Text(
                 text = stringResource(
-                    R.string.inventory_movement_delta,
+                    Res.string.inventory_movement_delta,
                     movement.quantityDelta.formatSignedInventoryNumber(),
                     unit,
                 ),
@@ -1183,23 +1185,23 @@ private fun InventoryMovementCard(
             Text(
                 text = movement.unitCost?.let { cost ->
                     stringResource(
-                        R.string.inventory_movement_cost,
+                        Res.string.inventory_movement_cost,
                         cost.amount.formatInventoryMoney(cost.currency),
                     )
-                } ?: stringResource(R.string.inventory_movement_no_cost),
+                } ?: stringResource(Res.string.inventory_movement_no_cost),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 text = stringResource(
-                    R.string.inventory_movement_date,
+                    Res.string.inventory_movement_date,
                     movement.occurredAt.formatForDisplay(),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = stringResource(R.string.inventory_movement_immutable),
+                text = stringResource(Res.string.inventory_movement_immutable),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
             )
@@ -1207,9 +1209,9 @@ private fun InventoryMovementCard(
             val document = movement.purchaseDocumentNumber
             if (purchaseId != null && document != null) {
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.inventory_movement_open_purchase, document),
+                    text = stringResource(Res.string.inventory_movement_open_purchase, document),
                     onClick = { onOpenPurchase(purchaseId) },
-                    leadingIconRes = R.drawable.ic_receipt,
+                    leadingIconRes = Res.drawable.ic_receipt,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(InventoryTestTags.openPurchase(movement.movementId)),
@@ -1230,81 +1232,75 @@ private fun SectionTitle(text: String) {
 }
 
 private data class DiagnosticPresentation(
-    @param:StringRes val statusRes: Int,
-    @param:StringRes val messageRes: Int,
+    val statusRes: StringResource,
+    val messageRes: StringResource,
     val tone: StatusTone,
-    val iconRes: Int,
+    val iconRes: DrawableResource,
 )
 
-@StringRes
-private fun InventoryDataAlert.labelRes(): Int = when (this) {
-    InventoryDataAlert.NEGATIVE_STOCK -> R.string.inventory_alert_negative
-    InventoryDataAlert.ARCHIVED_PRODUCT -> R.string.inventory_alert_archived_product
-    InventoryDataAlert.ARCHIVED_LOCATION -> R.string.inventory_alert_archived_location
-    InventoryDataAlert.MIXED_CURRENCIES -> R.string.inventory_alert_mixed_currencies
-    InventoryDataAlert.MISSING_MOVEMENT_COST -> R.string.inventory_alert_missing_cost
-    InventoryDataAlert.PROJECTION_DIVERGENCE -> R.string.inventory_alert_projection_divergence
+private fun InventoryDataAlert.labelRes(): StringResource = when (this) {
+    InventoryDataAlert.NEGATIVE_STOCK -> Res.string.inventory_alert_negative
+    InventoryDataAlert.ARCHIVED_PRODUCT -> Res.string.inventory_alert_archived_product
+    InventoryDataAlert.ARCHIVED_LOCATION -> Res.string.inventory_alert_archived_location
+    InventoryDataAlert.MIXED_CURRENCIES -> Res.string.inventory_alert_mixed_currencies
+    InventoryDataAlert.MISSING_MOVEMENT_COST -> Res.string.inventory_alert_missing_cost
+    InventoryDataAlert.PROJECTION_DIVERGENCE -> Res.string.inventory_alert_projection_divergence
     InventoryDataAlert.UNDEFINED_AGGREGATE_AVERAGE ->
-        R.string.inventory_alert_undefined_average
+        Res.string.inventory_alert_undefined_average
 }
 
-@StringRes
-private fun InventoryDiagnosticIssue.labelRes(): Int = when (this) {
+private fun InventoryDiagnosticIssue.labelRes(): StringResource = when (this) {
     InventoryDiagnosticIssue.MISSING_CACHED_BALANCE ->
-        R.string.inventory_diagnostic_issue_missing_balance
+        Res.string.inventory_diagnostic_issue_missing_balance
     InventoryDiagnosticIssue.QUANTITY_DIVERGENCE ->
-        R.string.inventory_diagnostic_issue_quantity_divergence
+        Res.string.inventory_diagnostic_issue_quantity_divergence
     InventoryDiagnosticIssue.AVERAGE_COST_DIVERGENCE ->
-        R.string.inventory_diagnostic_issue_cost_divergence
+        Res.string.inventory_diagnostic_issue_cost_divergence
     InventoryDiagnosticIssue.CURRENCY_DIVERGENCE ->
-        R.string.inventory_diagnostic_issue_currency
+        Res.string.inventory_diagnostic_issue_currency
     InventoryDiagnosticIssue.MISSING_MOVEMENT_COST,
     InventoryDiagnosticIssue.COST_UNVERIFIABLE,
-    -> R.string.inventory_diagnostic_issue_unverifiable
-    InventoryDiagnosticIssue.ORDER_AMBIGUOUS -> R.string.inventory_diagnostic_issue_order
+    -> Res.string.inventory_diagnostic_issue_unverifiable
+    InventoryDiagnosticIssue.ORDER_AMBIGUOUS -> Res.string.inventory_diagnostic_issue_order
     InventoryDiagnosticIssue.UNEXPLAINED_OPENING_BALANCE ->
-        R.string.inventory_diagnostic_issue_opening
-    InventoryDiagnosticIssue.INVALID_LEDGER_DATA -> R.string.inventory_diagnostic_issue_invalid
+        Res.string.inventory_diagnostic_issue_opening
+    InventoryDiagnosticIssue.INVALID_LEDGER_DATA -> Res.string.inventory_diagnostic_issue_invalid
 }
 
-@StringRes
-private fun StockMovementType.labelRes(): Int = when (this) {
-    StockMovementType.PURCHASE -> R.string.inventory_movement_purchase
-    StockMovementType.SALE -> R.string.inventory_movement_sale
-    StockMovementType.SALE_VOID -> R.string.inventory_movement_sale_void
-    StockMovementType.VOID -> R.string.inventory_movement_void
-    StockMovementType.ADJUSTMENT -> R.string.inventory_movement_adjustment
+private fun StockMovementType.labelRes(): StringResource = when (this) {
+    StockMovementType.PURCHASE -> Res.string.inventory_movement_purchase
+    StockMovementType.SALE -> Res.string.inventory_movement_sale
+    StockMovementType.SALE_VOID -> Res.string.inventory_movement_sale_void
+    StockMovementType.VOID -> Res.string.inventory_movement_void
+    StockMovementType.ADJUSTMENT -> Res.string.inventory_movement_adjustment
 }
 
-@StringRes
-private fun ProductProfitStatus.titleRes(): Int = when (this) {
-    ProductProfitStatus.AVAILABLE -> R.string.inventory_profit_status_available
-    ProductProfitStatus.MISSING_SALE_PRICE -> R.string.inventory_profit_status_missing_price
-    ProductProfitStatus.NO_STOCK -> R.string.inventory_profit_status_no_stock
+private fun ProductProfitStatus.titleRes(): StringResource = when (this) {
+    ProductProfitStatus.AVAILABLE -> Res.string.inventory_profit_status_available
+    ProductProfitStatus.MISSING_SALE_PRICE -> Res.string.inventory_profit_status_missing_price
+    ProductProfitStatus.NO_STOCK -> Res.string.inventory_profit_status_no_stock
     ProductProfitStatus.NON_COMPARABLE_CURRENCY ->
-        R.string.inventory_profit_status_non_comparable
-    ProductProfitStatus.INVALID_INVENTORY -> R.string.inventory_profit_status_invalid
+        Res.string.inventory_profit_status_non_comparable
+    ProductProfitStatus.INVALID_INVENTORY -> Res.string.inventory_profit_status_invalid
 }
 
-@StringRes
-private fun ProductProfitStatus.messageRes(): Int = when (this) {
-    ProductProfitStatus.AVAILABLE -> R.string.inventory_profit_status_available_message
-    ProductProfitStatus.MISSING_SALE_PRICE -> R.string.inventory_profit_status_missing_price_message
-    ProductProfitStatus.NO_STOCK -> R.string.inventory_profit_status_no_stock_message
+private fun ProductProfitStatus.messageRes(): StringResource = when (this) {
+    ProductProfitStatus.AVAILABLE -> Res.string.inventory_profit_status_available_message
+    ProductProfitStatus.MISSING_SALE_PRICE -> Res.string.inventory_profit_status_missing_price_message
+    ProductProfitStatus.NO_STOCK -> Res.string.inventory_profit_status_no_stock_message
     ProductProfitStatus.NON_COMPARABLE_CURRENCY ->
-        R.string.inventory_profit_status_non_comparable_message
-    ProductProfitStatus.INVALID_INVENTORY -> R.string.inventory_profit_status_invalid_message
+        Res.string.inventory_profit_status_non_comparable_message
+    ProductProfitStatus.INVALID_INVENTORY -> Res.string.inventory_profit_status_invalid_message
 }
 
-@StringRes
-private fun InventoryContract.ProfitFailure.messageRes(): Int = when (this) {
-    InventoryContract.ProfitFailure.LOAD_FAILED -> R.string.inventory_profit_load_error_message
-    InventoryContract.ProfitFailure.INVALID_PRICE -> R.string.inventory_profit_price_invalid
-    InventoryContract.ProfitFailure.STALE_PRICE -> R.string.inventory_profit_price_stale
-    InventoryContract.ProfitFailure.CURRENCY_MISMATCH -> R.string.inventory_profit_price_currency
+private fun InventoryContract.ProfitFailure.messageRes(): StringResource = when (this) {
+    InventoryContract.ProfitFailure.LOAD_FAILED -> Res.string.inventory_profit_load_error_message
+    InventoryContract.ProfitFailure.INVALID_PRICE -> Res.string.inventory_profit_price_invalid
+    InventoryContract.ProfitFailure.STALE_PRICE -> Res.string.inventory_profit_price_stale
+    InventoryContract.ProfitFailure.CURRENCY_MISMATCH -> Res.string.inventory_profit_price_currency
     InventoryContract.ProfitFailure.PRODUCT_UNAVAILABLE ->
-        R.string.inventory_profit_price_unavailable
-    InventoryContract.ProfitFailure.SAVE_FAILED -> R.string.inventory_profit_price_save_failed
+        Res.string.inventory_profit_price_unavailable
+    InventoryContract.ProfitFailure.SAVE_FAILED -> Res.string.inventory_profit_price_save_failed
 }
 
 private fun InventoryReadItem.displayUnit(): String = unitSymbol?.takeIf(String::isNotBlank)
@@ -1332,7 +1328,7 @@ private fun InventoryRegisterActions(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.sm)) {
         FacturaStockPrimaryButton(
-            text = stringResource(R.string.inventory_register_manual),
+            text = stringResource(Res.string.inventory_register_manual),
             onClick = onManualClicked,
             enabled = enabled,
             modifier = Modifier
@@ -1340,7 +1336,7 @@ private fun InventoryRegisterActions(
                 .testTag(InventoryTestTags.REGISTER_MANUAL),
         )
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.inventory_register_special_product),
+            text = stringResource(Res.string.inventory_register_special_product),
             onClick = onSpecialClicked,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth().testTag(InventoryTestTags.REGISTER_SPECIAL_PRODUCT),

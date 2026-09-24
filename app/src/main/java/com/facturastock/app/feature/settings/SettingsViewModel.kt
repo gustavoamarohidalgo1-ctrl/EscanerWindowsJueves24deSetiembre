@@ -13,7 +13,6 @@ import com.facturastock.app.domain.usecase.UpdateBusinessProfileUseCase
 import com.facturastock.app.domain.usecase.UpdateTaxConfigurationUseCase
 import com.facturastock.app.domain.usecase.WriteUserDataExportUseCase
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -23,8 +22,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-
-@HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observeAppConfigurationUseCase: ObserveAppConfigurationUseCase,

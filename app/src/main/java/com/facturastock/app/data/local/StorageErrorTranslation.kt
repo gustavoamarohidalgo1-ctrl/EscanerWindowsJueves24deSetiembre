@@ -1,8 +1,8 @@
 package com.facturastock.app.data.local
 
-import android.database.sqlite.SQLiteConstraintException
-import android.database.sqlite.SQLiteException
-import android.database.sqlite.SQLiteFullException
+import com.facturastock.app.data.local.sqlite.SQLiteConstraintException
+import com.facturastock.app.data.local.sqlite.SQLiteException
+import com.facturastock.app.data.local.sqlite.SQLiteFullException
 import com.facturastock.app.domain.error.StorageError
 import com.facturastock.app.domain.error.StorageException
 import java.io.IOException
@@ -58,7 +58,9 @@ private fun Throwable.indicatesFullStorage(): Boolean {
             "sqlite_full" in message ||
             "database or disk is full" in message ||
             "enospc" in message ||
-            "no space left" in message
+            "no space left" in message ||
+            "not enough space" in message ||
+            "espacio en disco insuficiente" in message
         ) {
             return true
         }

@@ -1,13 +1,13 @@
 package com.facturastock.app.feature.review
 
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.purchase.PurchaseFlowScreen
@@ -19,11 +19,11 @@ fun ReviewRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    @StringRes titleRes: Int = R.string.purchase_lines_title,
-    @StringRes messageRes: Int = R.string.purchase_lines_message,
-    @StringRes primaryActionRes: Int = R.string.action_link_products,
+    titleRes: StringResource = Res.string.purchase_lines_title,
+    messageRes: StringResource = Res.string.purchase_lines_message,
+    primaryActionRes: StringResource = Res.string.action_link_products,
     step: Int = 6,
-    viewModel: ReviewViewModel = hiltViewModel(),
+    viewModel: ReviewViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -39,7 +39,7 @@ fun ReviewRoute(
 
     if (state.isSubmitting) {
         LoadingState(
-            message = stringResource(R.string.feature_loading_message),
+            message = stringResource(Res.string.feature_loading_message),
             modifier = modifier,
         )
     } else {
@@ -47,7 +47,7 @@ fun ReviewRoute(
             titleRes = titleRes,
             messageRes = messageRes,
             primaryActionRes = if (state.failure == ReviewContract.Failure.REVIEW_FAILED) {
-                R.string.action_retry
+                Res.string.action_retry
             } else {
                 primaryActionRes
             },

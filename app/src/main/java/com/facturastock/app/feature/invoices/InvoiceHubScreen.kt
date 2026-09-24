@@ -1,5 +1,6 @@
 package com.facturastock.app.feature.invoices
 
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +21,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import com.facturastock.app.R
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
 import com.facturastock.app.ui.theme.FacturaStockDesign
 
@@ -132,15 +132,15 @@ private fun RegisterButton(
     FacturaStockPrimaryButton(
         text = stringResource(
             when {
-                isCreating -> R.string.invoice_hub_register_working
-                creationFailed -> R.string.invoice_hub_retry_action
-                else -> R.string.invoice_hub_register_action
+                isCreating -> Res.string.invoice_hub_register_working
+                creationFailed -> Res.string.invoice_hub_retry_action
+                else -> Res.string.invoice_hub_register_action
             },
         ),
         onClick = onRegister,
         modifier = modifier.testTag(InvoiceHubTestTags.REGISTER_ACTION),
         enabled = !isCreating,
-        leadingIconRes = if (isCreating) null else R.drawable.ic_camera,
+        leadingIconRes = if (isCreating) null else Res.drawable.ic_camera,
     )
 }
 
@@ -163,12 +163,12 @@ private fun CreationError() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_warning),
+                painter = painterResource(Res.drawable.ic_warning),
                 contentDescription = null,
                 modifier = Modifier.size(spacing.icon),
             )
             Text(
-                text = stringResource(R.string.invoice_hub_error_message),
+                text = stringResource(Res.string.invoice_hub_error_message),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -193,15 +193,15 @@ private fun TwoStepGuide() {
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             Text(
-                text = stringResource(R.string.invoice_hub_guide_title),
+                text = stringResource(Res.string.invoice_hub_guide_title),
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = stringResource(R.string.invoice_hub_guide_open_camera),
+                text = stringResource(Res.string.invoice_hub_guide_open_camera),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = stringResource(R.string.invoice_hub_guide_take_photo),
+                text = stringResource(Res.string.invoice_hub_guide_take_photo),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -221,13 +221,13 @@ private fun CatalogOnlyNotice() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_info),
+            painter = painterResource(Res.drawable.ic_info),
             contentDescription = null,
             modifier = Modifier.size(spacing.icon),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = stringResource(R.string.invoice_hub_inventory_notice),
+            text = stringResource(Res.string.invoice_hub_inventory_notice),
             modifier = Modifier.weight(1f),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,

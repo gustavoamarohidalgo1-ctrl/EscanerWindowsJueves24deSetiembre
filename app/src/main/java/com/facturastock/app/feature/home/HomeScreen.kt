@@ -1,5 +1,8 @@
 package com.facturastock.app.feature.home
 
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,8 +36,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.paneTitle
@@ -44,7 +47,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.DraftStatus
 import com.facturastock.app.domain.model.HomeDashboardSnapshot
 import com.facturastock.app.domain.model.InvoiceDraft
@@ -111,7 +113,7 @@ fun HomeScreen(
             )
             if (showDraftSection) {
                 item(key = "home_drafts_header", contentType = "drafts_header") {
-                    HomeSectionHeader(text = stringResource(R.string.home_drafts_title))
+                    HomeSectionHeader(text = stringResource(Res.string.home_drafts_title))
                 }
                 items(
                     items = drafts,
@@ -212,9 +214,9 @@ private fun HomeDraftCard(
                         .testTag(HomeTestTags.draftDelete(draft.draftId)),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_delete),
+                        painter = painterResource(Res.drawable.ic_delete),
                         contentDescription = stringResource(
-                            R.string.home_delete_draft_description_context,
+                            Res.string.home_delete_draft_description_context,
                             supplierLabel,
                             documentLabel,
                         ),
@@ -235,7 +237,7 @@ private fun HomeDraftCard(
             }
             Text(
                 text = stringResource(
-                    R.string.home_draft_continue,
+                    Res.string.home_draft_continue,
                     stringResource(draftNextActionLabelRes(draft.status)),
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -275,26 +277,26 @@ private fun HomeDraftStatusChip(
     }
 }
 
-private fun draftStatusLabelRes(status: DraftStatus): Int = when (status) {
-    DraftStatus.CREATED -> R.string.home_status_created
-    DraftStatus.CAPTURED -> R.string.home_status_captured
-    DraftStatus.OCR_PROCESSING -> R.string.home_status_ocr_interrupted
-    DraftStatus.OCR_READY -> R.string.home_status_ocr_ready
-    DraftStatus.NEEDS_REVIEW -> R.string.home_status_needs_review
-    DraftStatus.READY_TO_POST -> R.string.home_status_ready_to_post
-    DraftStatus.COMMITTED -> R.string.home_status_committed
-    DraftStatus.ERROR -> R.string.home_status_error
+private fun draftStatusLabelRes(status: DraftStatus): StringResource = when (status) {
+    DraftStatus.CREATED -> Res.string.home_status_created
+    DraftStatus.CAPTURED -> Res.string.home_status_captured
+    DraftStatus.OCR_PROCESSING -> Res.string.home_status_ocr_interrupted
+    DraftStatus.OCR_READY -> Res.string.home_status_ocr_ready
+    DraftStatus.NEEDS_REVIEW -> Res.string.home_status_needs_review
+    DraftStatus.READY_TO_POST -> Res.string.home_status_ready_to_post
+    DraftStatus.COMMITTED -> Res.string.home_status_committed
+    DraftStatus.ERROR -> Res.string.home_status_error
 }
 
-private fun draftNextActionLabelRes(status: DraftStatus): Int = when (status) {
-    DraftStatus.CREATED -> R.string.home_next_capture
-    DraftStatus.CAPTURED -> R.string.home_next_start_ocr
-    DraftStatus.OCR_PROCESSING -> R.string.home_next_resume_ocr
-    DraftStatus.OCR_READY -> R.string.home_next_review_header
-    DraftStatus.NEEDS_REVIEW -> R.string.home_next_review_products
-    DraftStatus.READY_TO_POST -> R.string.home_next_confirm_purchase
-    DraftStatus.COMMITTED -> R.string.home_next_open_purchase
-    DraftStatus.ERROR -> R.string.home_next_review_error
+private fun draftNextActionLabelRes(status: DraftStatus): StringResource = when (status) {
+    DraftStatus.CREATED -> Res.string.home_next_capture
+    DraftStatus.CAPTURED -> Res.string.home_next_start_ocr
+    DraftStatus.OCR_PROCESSING -> Res.string.home_next_resume_ocr
+    DraftStatus.OCR_READY -> Res.string.home_next_review_header
+    DraftStatus.NEEDS_REVIEW -> Res.string.home_next_review_products
+    DraftStatus.READY_TO_POST -> Res.string.home_next_confirm_purchase
+    DraftStatus.COMMITTED -> Res.string.home_next_open_purchase
+    DraftStatus.ERROR -> Res.string.home_next_review_error
 }
 
 private fun draftStatusTone(status: DraftStatus): StatusTone = when (status) {
@@ -378,13 +380,13 @@ private fun HomeDeleteDialog(
     val spacing = FacturaStockDesign.spacing
 
     HomeDialogFrame(
-        title = stringResource(R.string.home_delete_dialog_title),
-        message = stringResource(R.string.home_delete_dialog_message),
+        title = stringResource(Res.string.home_delete_dialog_title),
+        message = stringResource(Res.string.home_delete_dialog_message),
         testTag = HomeTestTags.DELETE_DIALOG,
         onDismiss = onDismiss,
     ) {
         FacturaStockPrimaryButton(
-            text = stringResource(R.string.action_delete_draft),
+            text = stringResource(Res.string.action_delete_draft),
             onClick = onConfirm,
             modifier = Modifier
                 .fillMaxWidth()
@@ -392,7 +394,7 @@ private fun HomeDeleteDialog(
         )
         Spacer(modifier = Modifier.height(spacing.xs))
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_cancel),
+            text = stringResource(Res.string.action_cancel),
             onClick = onDismiss,
             modifier = Modifier
                 .fillMaxWidth()
@@ -411,17 +413,17 @@ private fun HomeOcrChoiceDialog(
     val spacing = FacturaStockDesign.spacing
 
     HomeDialogFrame(
-        title = stringResource(R.string.home_ocr_dialog_title),
-        message = stringResource(R.string.home_ocr_dialog_message),
+        title = stringResource(Res.string.home_ocr_dialog_title),
+        message = stringResource(Res.string.home_ocr_dialog_message),
         testTag = HomeTestTags.OCR_DIALOG,
         onDismiss = { if (!isRecovering) onDismiss() },
     ) {
         if (isRecovering) {
-            LoadingState(message = stringResource(R.string.ocr_recovering))
+            LoadingState(message = stringResource(Res.string.ocr_recovering))
             Spacer(modifier = Modifier.height(spacing.xs))
         }
         FacturaStockPrimaryButton(
-            text = stringResource(R.string.action_resume_ocr),
+            text = stringResource(Res.string.action_resume_ocr),
             onClick = onResume,
             enabled = !isRecovering,
             modifier = Modifier
@@ -430,7 +432,7 @@ private fun HomeOcrChoiceDialog(
         )
         Spacer(modifier = Modifier.height(spacing.xs))
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_retry_ocr),
+            text = stringResource(Res.string.action_retry_ocr),
             onClick = onRetry,
             enabled = !isRecovering,
             modifier = Modifier
@@ -439,7 +441,7 @@ private fun HomeOcrChoiceDialog(
         )
         Spacer(modifier = Modifier.height(spacing.xs))
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_cancel),
+            text = stringResource(Res.string.action_cancel),
             onClick = onDismiss,
             enabled = !isRecovering,
             modifier = Modifier
@@ -454,16 +456,16 @@ private fun homeDraftSupplierLabel(item: HomeContract.HomeDraftItem): String =
     item.supplierName
         ?: item.draft.supplierRucNormalized
         ?: item.draft.supplierRucRaw
-        ?: stringResource(R.string.home_supplier_pending)
+        ?: stringResource(Res.string.home_supplier_pending)
 
 @Composable
 private fun homeDraftDocumentLabel(draft: InvoiceDraft): String =
     draft.documentNumberNormalized
         ?: draft.documentNumberRaw
-        ?: stringResource(R.string.home_document_pending)
+        ?: stringResource(Res.string.home_document_pending)
 
 @Composable
 private fun homeDraftTotalLabel(draft: InvoiceDraft): String =
     draft.total?.let { total ->
-        stringResource(R.string.home_total, total.formatForDisplay())
-    } ?: stringResource(R.string.home_total_pending)
+        stringResource(Res.string.home_total, total.formatForDisplay())
+    } ?: stringResource(Res.string.home_total_pending)

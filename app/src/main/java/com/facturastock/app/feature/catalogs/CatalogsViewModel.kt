@@ -54,7 +54,6 @@ import com.facturastock.app.feature.catalogs.CatalogsContract.Section
 import com.facturastock.app.feature.catalogs.CatalogsContract.State
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.Locale
@@ -72,7 +71,6 @@ import kotlinx.coroutines.flow.map
  * nunca materializa los 5.000 productos para filtrarlos en Compose. Los cambios de consulta se
  * cancelan con `collectLatest` y esperan 250 ms para no saturar SQLite mientras se escribe.
  */
-@HiltViewModel
 class CatalogsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observeAppConfiguration: ObserveAppConfigurationUseCase,

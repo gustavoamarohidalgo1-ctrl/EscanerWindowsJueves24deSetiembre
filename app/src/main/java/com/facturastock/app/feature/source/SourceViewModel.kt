@@ -16,14 +16,11 @@ import com.facturastock.app.domain.usecase.ObserveDraftImagesUseCase
 import com.facturastock.app.domain.usecase.ObserveInvoiceDraftUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
-
-@HiltViewModel
 class SourceViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val importDraftImageUseCase: ImportDraftImageUseCase,

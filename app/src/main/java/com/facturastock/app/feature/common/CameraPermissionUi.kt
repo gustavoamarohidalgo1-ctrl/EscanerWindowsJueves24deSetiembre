@@ -1,35 +1,19 @@
 package com.facturastock.app.feature.common
 
-import android.Manifest
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
-import androidx.core.app.ActivityCompat
+import java.awt.Desktop
+import java.net.URI
 
-/** Android deja de mostrar el diálogo tras "No volver a preguntar"; desde ahí solo valen ajustes. */
-fun Context.isCameraPermissionPermanentlyDenied(): Boolean {
-    val activity = findActivity() ?: return false
-    return !ActivityCompat.shouldShowRequestPermissionRationale(
-        activity,
-        Manifest.permission.CAMERA,
-    )
-}
+/**
+ * En Windows la app no controla la cámara directamente (no hay CameraX): el permiso se considera
+ * no disponible de forma permanente y la foto de la factura se elige como archivo de imagen.
+ */
+fun isCameraPermissionPermanentlyDenied(): Boolean = true
 
-/** Abre únicamente la ficha de permisos de esta app; no navega a ajustes globales. */
-fun Context.openAppPermissionSettings() {
-    startActivity(
-        Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.fromParts("package", packageName, null),
-        ),
-    )
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
+/** Abre la página de privacidad de cámara de Configuración de Windows. */
+fun openAppPermissionSettings() {
+    runCatching {
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            Desktop.getDesktop().browse(URI("ms-settings:privacy-webcam"))
+        }
+    }
 }

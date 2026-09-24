@@ -1,6 +1,8 @@
 package com.facturastock.app.feature.purchases
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,9 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import com.facturastock.app.R
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import com.facturastock.app.domain.model.PurchaseDocumentType
 import com.facturastock.app.domain.model.PurchaseReadSummary
 import com.facturastock.app.domain.model.PurchaseStatus
@@ -53,7 +54,7 @@ internal fun PurchaseStatusBadge(
         )
     }
     PurchaseBadge(
-        label = androidx.compose.ui.res.stringResource(status.labelRes()),
+        label = org.jetbrains.compose.resources.stringResource(status.labelRes()),
         colors = colors,
         modifier = modifier,
     )
@@ -104,7 +105,7 @@ internal fun PurchaseSyncBadge(
         )
     }
     PurchaseBadge(
-        label = androidx.compose.ui.res.stringResource(syncState.labelRes()),
+        label = org.jetbrains.compose.resources.stringResource(syncState.labelRes()),
         colors = colors,
         modifier = modifier,
     )
@@ -140,30 +141,27 @@ private data class BadgeColors(
     val border: Color,
 )
 
-@StringRes
-internal fun PurchaseStatus.labelRes(): Int = when (this) {
-    PurchaseStatus.DRAFT -> R.string.purchase_status_draft
-    PurchaseStatus.POSTED -> R.string.purchase_status_posted
-    PurchaseStatus.VOIDED -> R.string.purchase_status_voided
+internal fun PurchaseStatus.labelRes(): StringResource = when (this) {
+    PurchaseStatus.DRAFT -> Res.string.purchase_status_draft
+    PurchaseStatus.POSTED -> Res.string.purchase_status_posted
+    PurchaseStatus.VOIDED -> Res.string.purchase_status_voided
 }
 
-@StringRes
-internal fun PurchaseDocumentType.labelRes(): Int = when (this) {
-    PurchaseDocumentType.INVOICE -> R.string.header_review_document_type_invoice
-    PurchaseDocumentType.SALES_RECEIPT -> R.string.header_review_document_type_sales_receipt
-    PurchaseDocumentType.CREDIT_NOTE -> R.string.header_review_document_type_credit_note
-    PurchaseDocumentType.DEBIT_NOTE -> R.string.header_review_document_type_debit_note
+internal fun PurchaseDocumentType.labelRes(): StringResource = when (this) {
+    PurchaseDocumentType.INVOICE -> Res.string.header_review_document_type_invoice
+    PurchaseDocumentType.SALES_RECEIPT -> Res.string.header_review_document_type_sales_receipt
+    PurchaseDocumentType.CREDIT_NOTE -> Res.string.header_review_document_type_credit_note
+    PurchaseDocumentType.DEBIT_NOTE -> Res.string.header_review_document_type_debit_note
 }
 
-@StringRes
-internal fun PurchaseSyncState.labelRes(): Int = when (this) {
-    PurchaseSyncState.DRAFT -> R.string.purchases_sync_draft
-    PurchaseSyncState.PENDING_SYNC -> R.string.purchases_sync_pending
-    PurchaseSyncState.SYNCING -> R.string.purchases_sync_syncing
-    PurchaseSyncState.SYNCED -> R.string.purchases_sync_synced
-    PurchaseSyncState.ERROR -> R.string.purchases_sync_error
-    PurchaseSyncState.CONFLICT -> R.string.purchases_sync_conflict
-    PurchaseSyncState.RESOLVED -> R.string.purchases_sync_resolved
+internal fun PurchaseSyncState.labelRes(): StringResource = when (this) {
+    PurchaseSyncState.DRAFT -> Res.string.purchases_sync_draft
+    PurchaseSyncState.PENDING_SYNC -> Res.string.purchases_sync_pending
+    PurchaseSyncState.SYNCING -> Res.string.purchases_sync_syncing
+    PurchaseSyncState.SYNCED -> Res.string.purchases_sync_synced
+    PurchaseSyncState.ERROR -> Res.string.purchases_sync_error
+    PurchaseSyncState.CONFLICT -> Res.string.purchases_sync_conflict
+    PurchaseSyncState.RESOLVED -> Res.string.purchases_sync_resolved
 }
 
 /**
@@ -192,17 +190,17 @@ internal fun PurchasePersistenceStatus(
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             Text(
-                text = stringResource(R.string.purchase_local_saved_title),
+                text = stringResource(Res.string.purchase_local_saved_title),
                 color = FacturaStockDesign.semanticColors.success,
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = stringResource(R.string.purchase_local_saved_message),
+                text = stringResource(Res.string.purchase_local_saved_message),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = stringResource(R.string.purchase_backup_title),
+                text = stringResource(Res.string.purchase_backup_title),
                 modifier = Modifier.padding(top = spacing.xs),
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleSmall,
@@ -216,7 +214,7 @@ internal fun PurchasePersistenceStatus(
             summary.lastSyncAttemptAt?.let { attemptedAt ->
                 Text(
                     text = stringResource(
-                        R.string.purchase_backup_last_attempt,
+                        Res.string.purchase_backup_last_attempt,
                         attemptedAt.formatForDisplay(),
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -225,7 +223,7 @@ internal fun PurchasePersistenceStatus(
             }
             if (retryFailed) {
                 Text(
-                    text = stringResource(R.string.purchase_backup_retry_failed),
+                    text = stringResource(Res.string.purchase_backup_retry_failed),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -234,9 +232,9 @@ internal fun PurchasePersistenceStatus(
                 FacturaStockSecondaryButton(
                     text = stringResource(
                         if (isRetrying) {
-                            R.string.action_retrying_backup
+                            Res.string.action_retrying_backup
                         } else {
-                            R.string.action_retry_backup
+                            Res.string.action_retry_backup
                         },
                     ),
                     onClick = onRetryBackup,
@@ -252,15 +250,14 @@ internal fun PurchasePersistenceStatus(
     }
 }
 
-@StringRes
-private fun PurchaseSyncState.messageRes(): Int = when (this) {
-    PurchaseSyncState.DRAFT -> R.string.purchase_backup_draft_message
-    PurchaseSyncState.PENDING_SYNC -> R.string.purchase_backup_pending_message
-    PurchaseSyncState.SYNCING -> R.string.purchase_backup_syncing_message
-    PurchaseSyncState.SYNCED -> R.string.purchase_backup_synced_message
-    PurchaseSyncState.ERROR -> R.string.purchase_backup_error_message
-    PurchaseSyncState.CONFLICT -> R.string.purchase_backup_conflict_message
-    PurchaseSyncState.RESOLVED -> R.string.purchase_backup_resolved_message
+private fun PurchaseSyncState.messageRes(): StringResource = when (this) {
+    PurchaseSyncState.DRAFT -> Res.string.purchase_backup_draft_message
+    PurchaseSyncState.PENDING_SYNC -> Res.string.purchase_backup_pending_message
+    PurchaseSyncState.SYNCING -> Res.string.purchase_backup_syncing_message
+    PurchaseSyncState.SYNCED -> Res.string.purchase_backup_synced_message
+    PurchaseSyncState.ERROR -> Res.string.purchase_backup_error_message
+    PurchaseSyncState.CONFLICT -> Res.string.purchase_backup_conflict_message
+    PurchaseSyncState.RESOLVED -> Res.string.purchase_backup_resolved_message
 }
 
 internal fun PurchaseSyncState.isRetryable(): Boolean =
@@ -274,9 +271,9 @@ internal fun UnitCost.formatPurchaseUnitCost(): String =
 
 @Composable
 internal fun purchaseCountsText(lineCount: Int, productCount: Int): String = stringResource(
-    R.string.purchases_card_counts,
-    pluralStringResource(R.plurals.purchases_line_count, lineCount, lineCount),
-    pluralStringResource(R.plurals.purchases_product_count, productCount, productCount),
+    Res.string.purchases_card_counts,
+    pluralStringResource(Res.plurals.purchases_line_count, lineCount, lineCount),
+    pluralStringResource(Res.plurals.purchases_product_count, productCount, productCount),
 )
 
 @Composable
@@ -287,19 +284,19 @@ internal fun purchaseSuccessCountsText(
     unknownProductCount: Int,
 ): String {
     val linesAndCreated = stringResource(
-        R.string.purchases_card_counts,
-        pluralStringResource(R.plurals.purchases_line_count, lineCount, lineCount),
+        Res.string.purchases_card_counts,
+        pluralStringResource(Res.plurals.purchases_line_count, lineCount, lineCount),
         pluralStringResource(
-            R.plurals.purchase_success_created_product_count,
+            Res.plurals.purchase_success_created_product_count,
             createdProductCount,
             createdProductCount,
         ),
     )
     val knownCounts = stringResource(
-        R.string.purchases_card_counts,
+        Res.string.purchases_card_counts,
         linesAndCreated,
         pluralStringResource(
-            R.plurals.purchase_success_existing_product_count,
+            Res.plurals.purchase_success_existing_product_count,
             existingProductCount,
             existingProductCount,
         ),
@@ -308,10 +305,10 @@ internal fun purchaseSuccessCountsText(
         knownCounts
     } else {
         stringResource(
-            R.string.purchases_card_counts,
+            Res.string.purchases_card_counts,
             knownCounts,
             pluralStringResource(
-                R.plurals.purchase_success_unknown_product_count,
+                Res.plurals.purchase_success_unknown_product_count,
                 unknownProductCount,
                 unknownProductCount,
             ),

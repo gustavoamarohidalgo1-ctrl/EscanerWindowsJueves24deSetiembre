@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Variante local de tooling: no se distribuye y mantiene R8 apagado durante la captura. -->
-    <application>
-        <profileable android:shell="true" />
-    </application>
-</manifest>

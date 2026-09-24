@@ -1,5 +1,10 @@
 package com.facturastock.app.feature.capture
 
+import org.jetbrains.compose.resources.DrawableResource
+
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -40,12 +45,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.facturastock.app.R
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
 import com.facturastock.app.ui.components.LoadingState
@@ -169,7 +173,7 @@ private fun CaptureFrameOverlay(modifier: Modifier = Modifier) {
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Text(
-            text = stringResource(R.string.capture_frame_instruction),
+            text = stringResource(Res.string.capture_frame_instruction),
             modifier = Modifier
                 .padding(top = spacing.xxl)
                 .background(
@@ -242,8 +246,8 @@ private fun CaptureControls(
                     modifier = Modifier.testTag(CaptureTestTags.BACK),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_back),
-                        contentDescription = stringResource(R.string.capture_back_to_source),
+                        painter = painterResource(Res.drawable.ic_back),
+                        contentDescription = stringResource(Res.string.capture_back_to_source),
                     )
                 }
             }
@@ -261,8 +265,8 @@ private fun CaptureControls(
             ) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_camera),
-                        contentDescription = stringResource(R.string.action_take_photo),
+                        painter = painterResource(Res.drawable.ic_camera),
+                        contentDescription = stringResource(Res.string.action_take_photo),
                         modifier = Modifier.size(spacing.iconLarge),
                     )
                 }
@@ -312,7 +316,7 @@ private fun CaptureInProgressOverlay(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             LoadingState(
-                message = stringResource(R.string.capture_in_progress),
+                message = stringResource(Res.string.capture_in_progress),
                 modifier = Modifier
                     .padding(horizontal = spacing.xl)
                     .testTag(CaptureTestTags.IMPORTING),
@@ -333,20 +337,20 @@ private fun CapturePermissionDeniedState(
     CaptureFullScreenState(
         card = {
             StatusCard(
-                statusLabel = stringResource(R.string.source_camera_denied_label),
-                title = stringResource(R.string.source_camera_denied_title),
-                message = stringResource(R.string.source_camera_denied_message),
+                statusLabel = stringResource(Res.string.source_camera_denied_label),
+                title = stringResource(Res.string.source_camera_denied_title),
+                message = stringResource(Res.string.source_camera_denied_message),
                 tone = StatusTone.WARNING,
-                iconRes = R.drawable.ic_camera,
+                iconRes = Res.drawable.ic_camera,
                 announcementMode = LiveRegionMode.Assertive,
                 modifier = Modifier.testTag(CaptureTestTags.PERMISSION_DENIED),
             )
         },
         primaryLabel = stringResource(
             if (permanentlyDenied) {
-                R.string.action_open_app_settings
+                Res.string.action_open_app_settings
             } else {
-                R.string.action_grant_permission
+                Res.string.action_grant_permission
             },
         ),
         onPrimary = onGrantPermission,
@@ -368,29 +372,29 @@ private fun CaptureErrorState(
 ) {
     val (titleRes, messageRes) = when (cameraError) {
         CaptureContract.CameraErrorKind.STORAGE_FULL ->
-            R.string.capture_storage_full_title to R.string.capture_storage_full_message
+            Res.string.capture_storage_full_title to Res.string.capture_storage_full_message
 
         CaptureContract.CameraErrorKind.IMPORT_FAILED ->
-            R.string.capture_import_error_title to R.string.capture_import_error_message
+            Res.string.capture_import_error_title to Res.string.capture_import_error_message
 
         CaptureContract.CameraErrorKind.BIND_FAILED,
         CaptureContract.CameraErrorKind.CAPTURE_FAILED,
         ->
-            R.string.capture_camera_error_title to R.string.capture_camera_error_message
+            Res.string.capture_camera_error_title to Res.string.capture_camera_error_message
     }
 
     CaptureFullScreenState(
         card = {
             StatusCard(
-                statusLabel = stringResource(R.string.capture_camera_error_label),
+                statusLabel = stringResource(Res.string.capture_camera_error_label),
                 title = stringResource(titleRes),
                 message = stringResource(messageRes),
                 tone = StatusTone.ERROR,
-                iconRes = R.drawable.ic_warning,
+                iconRes = Res.drawable.ic_warning,
                 modifier = Modifier.testTag(CaptureTestTags.CAMERA_ERROR),
             )
         },
-        primaryLabel = stringResource(R.string.action_retry),
+        primaryLabel = stringResource(Res.string.action_retry),
         onPrimary = onRetryCamera,
         primaryTestTag = CaptureTestTags.RETRY,
         onPickImage = onPickImage,
@@ -431,27 +435,27 @@ private fun CaptureFullScreenState(
         )
         if (allowImagePicker) {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_pick_image),
+                text = stringResource(Res.string.action_pick_image),
                 onClick = onPickImage,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(CaptureTestTags.PICK_IMAGE),
-                leadingIconRes = R.drawable.ic_photo_library,
+                leadingIconRes = Res.drawable.ic_photo_library,
             )
         }
     }
 }
 
-private fun flashIconRes(mode: CaptureFlashMode): Int = when (mode) {
-    CaptureFlashMode.AUTO -> R.drawable.ic_flash_auto
-    CaptureFlashMode.ON -> R.drawable.ic_flash_on
-    CaptureFlashMode.OFF -> R.drawable.ic_flash_off
+private fun flashIconRes(mode: CaptureFlashMode): DrawableResource = when (mode) {
+    CaptureFlashMode.AUTO -> Res.drawable.ic_flash_auto
+    CaptureFlashMode.ON -> Res.drawable.ic_flash_on
+    CaptureFlashMode.OFF -> Res.drawable.ic_flash_off
 }
 
-private fun flashDescriptionRes(mode: CaptureFlashMode): Int = when (mode) {
-    CaptureFlashMode.AUTO -> R.string.capture_flash_auto
-    CaptureFlashMode.ON -> R.string.capture_flash_on
-    CaptureFlashMode.OFF -> R.string.capture_flash_off
+private fun flashDescriptionRes(mode: CaptureFlashMode): StringResource = when (mode) {
+    CaptureFlashMode.AUTO -> Res.string.capture_flash_auto
+    CaptureFlashMode.ON -> Res.string.capture_flash_on
+    CaptureFlashMode.OFF -> Res.string.capture_flash_off
 }
 
 /** Proporción vertical tipo A4 (alto = ancho × √2) para el marco guía de la factura. */

@@ -1,9 +1,9 @@
 package com.facturastock.app.navigation
 
-import androidx.activity.OnBackPressedCallback
-import androidx.activity.compose.LocalActivity
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import com.facturastock.app.resources.*
+import com.facturastock.app.ui.navigation.BackHandler
+import com.facturastock.app.ui.navigation.BackPressedDispatcher
+import com.facturastock.app.ui.navigation.LocalBackPressedDispatcher
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,9 +21,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import com.facturastock.app.startup.LocalDesktopStartup
+import androidx.savedstate.SavedState
+import androidx.savedstate.read
+import androidx.savedstate.write
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -39,12 +42,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
-import com.facturastock.app.FacturaStockApplication
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.ReportPdfKind
 import com.facturastock.app.domain.model.id.BusinessId
 import com.facturastock.app.core.id.RandomUuidGenerator
@@ -118,7 +119,7 @@ fun FacturaStockApp(
     // Compuerta de primer inicio: con ViewModels inyectados se observa la configuración real;
     // sin ellos (tests de navegación) la compuerta se fuerza a Complete.
     val gateViewModel = if (useInjectedViewModels) {
-        hiltViewModel<AppGateViewModel>()
+        appViewModel<AppGateViewModel>()
     } else {
         null
     }
@@ -128,14 +129,14 @@ fun FacturaStockApp(
         GateState.Complete
     }
     val draftFlowViewModel = if (shouldCreateDraftFlowViewModel(gateState, useInjectedViewModels)) {
-        hiltViewModel<DraftFlowViewModel>()
+        appViewModel<DraftFlowViewModel>()
     } else {
         null
     }
 
     when (gateState) {
         GateState.Loading -> LoadingState(
-            message = stringResource(R.string.feature_loading_message),
+            message = stringResource(Res.string.feature_loading_message),
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -146,9 +147,9 @@ fun FacturaStockApp(
                 contentAlignment = Alignment.Center,
             ) {
                 RecoverableError(
-                    title = stringResource(R.string.app_configuration_error_title),
-                    message = stringResource(R.string.app_configuration_error_message),
-                    actionLabel = stringResource(R.string.action_retry),
+                    title = stringResource(Res.string.app_configuration_error_title),
+                    message = stringResource(Res.string.app_configuration_error_message),
+                    actionLabel = stringResource(Res.string.action_retry),
                     onAction = { gateViewModel?.retry() },
                     modifier = Modifier.padding(FacturaStockDesign.spacing.lg),
                 )
@@ -201,15 +202,15 @@ internal fun shouldCreateDraftFlowViewModel(
 /** Espera un frame completo del destino antes de despertar Room, DataStore y WorkManager. */
 @Composable
 private fun DeferredStartupAfterFrameEffect() {
-    val application = LocalContext.current.applicationContext as? FacturaStockApplication
-    LaunchedEffect(application) {
-        application ?: return@LaunchedEffect
+    val startup = LocalDesktopStartup.current
+    LaunchedEffect(startup) {
+        startup ?: return@LaunchedEffect
         // LaunchedEffect puede entrar antes del draw del frame que acaba de componer este destino.
         // El primer pulso permite que ese frame se dibuje; el segundo garantiza que el trabajo
         // diferido empieza cuando al menos un frame completo ya fue presentado.
         withFrameNanos { }
         withFrameNanos { }
-        application.onFirstAppFrameRendered()
+        startup.onFirstAppFrameRendered()
     }
 }
 
@@ -225,9 +226,11 @@ private fun FacturaStockContent(
     deepLinksEnabled: Boolean,
     draftFlowViewModel: DraftFlowViewModel?,
 ) {
-    val activity = LocalActivity.current
-    val onBackPressedDispatcher =
-        LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val backPressedDispatcher = LocalBackPressedDispatcher.current
+    DisposableEffect(backPressedDispatcher, navController) {
+        backPressedDispatcher?.fallback = { navController.popBackStack() }
+        onDispose { backPressedDispatcher?.fallback = null }
+    }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentPattern = backStackEntry?.destination?.route
     if (shouldSignalDeferredStartupFromDestination(currentPattern)) {
@@ -255,7 +258,9 @@ private fun FacturaStockContent(
         } else if (protectedDraft) {
             showDiscardDialog = true
         } else {
-            onBackPressedDispatcher?.onBackPressed() ?: navController.popBackStack()
+            // Igual que OnBackPressedDispatcher: primero los BackHandler de la pantalla y, si
+            // ninguno lo atiende, el NavHost retrocede. En la raíz no se cierra la ventana.
+            if (backPressedDispatcher?.dispatch() != true) navController.popBackStack()
         }
     }
 
@@ -363,13 +368,13 @@ private fun FacturaStockContent(
     val showBackNavigation = currentDefinition?.topLevel == false &&
         currentPattern != AppRoutes.ONBOARDING
     val currentTitle = if (currentPattern == AppRoutes.PRODUCTS_PATTERN &&
-        backStackEntry?.arguments?.getString(AppRoutes.MANUAL_PRODUCT) == "true"
+        backStackEntry?.stringArgument(AppRoutes.MANUAL_PRODUCT) == "true"
     ) {
-        stringResource(R.string.inventory_register_manual)
+        stringResource(Res.string.inventory_register_manual)
     } else if (currentDefinition?.topLevel == true) {
         stringResource(topLevelDestinations[selectedTopLevelIndex].labelRes)
     } else {
-        stringResource(currentDefinition?.titleRes ?: R.string.app_name)
+        stringResource(currentDefinition?.titleRes ?: Res.string.app_name)
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -400,8 +405,8 @@ private fun FacturaStockContent(
                 FacturaStockNavigationRail(
                     items = bottomItems,
                     selectedIndex = selectedTopLevelIndex,
-                    brandLabel = stringResource(R.string.app_name),
-                    brandIconRes = R.drawable.ic_facturastock,
+                    brandLabel = stringResource(Res.string.app_name),
+                    brandIconRes = Res.drawable.ic_facturastock,
                     onItemSelected = { selectedIndex ->
                         requestNavigation(
                             PendingNavigation(
@@ -417,17 +422,17 @@ private fun FacturaStockContent(
                 val pdfDescription = pdfAction?.let {
                     stringResource(
                         if (it.kind == ReportPdfKind.DEBTORS) {
-                            R.string.reports_pdf_debtors_action
+                            Res.string.reports_pdf_debtors_action
                         } else {
-                            R.string.reports_pdf_daily_action
+                            Res.string.reports_pdf_daily_action
                         },
                     )
                 }
-                val creditSaleDescription = stringResource(R.string.sales_open_credit_sale)
+                val creditSaleDescription = stringResource(Res.string.sales_open_credit_sale)
                 val extraActions = when {
                     pdfAction != null && pdfDescription != null -> listOf(
                         FacturaStockTopBarAction(
-                            iconRes = R.drawable.ic_pdf,
+                            iconRes = Res.drawable.ic_pdf,
                             contentDescription = pdfDescription,
                             onClick = pdfAction.onClick,
                             enabled = pdfAction.enabled,
@@ -440,7 +445,7 @@ private fun FacturaStockContent(
                     )
                     currentPattern == AppRoutes.SALES && useInjectedViewModels -> listOf(
                         FacturaStockTopBarAction(
-                            iconRes = R.drawable.ic_debtors,
+                            iconRes = Res.drawable.ic_debtors,
                             contentDescription = creditSaleDescription,
                             onClick = {
                                 requestNavigation(PendingNavigation(AppRoutes.NEW_DEBT, topLevel = false))
@@ -457,16 +462,16 @@ private fun FacturaStockContent(
                     contentMaxWidth = scaffoldContentMaxWidth,
                     compact = useCompactChrome,
                     navigationIconRes = if (showBackNavigation) {
-                        R.drawable.ic_back
+                        Res.drawable.ic_back
                     } else {
                         null
                     },
                     navigationContentDescription = if (showBackNavigation) {
                         stringResource(
                             if (currentDefinition.protectsDraftOnExit) {
-                                R.string.action_close_purchase_flow
+                                Res.string.action_close_purchase_flow
                             } else {
-                                R.string.action_back
+                                Res.string.action_back
                             },
                         )
                     } else {
@@ -479,12 +484,12 @@ private fun FacturaStockContent(
                     },
                     // Ajustes mínimos (perfil del negocio y exportación de datos).
                     actionIconRes = if (currentDefinition?.topLevel == true) {
-                        R.drawable.ic_settings
+                        Res.drawable.ic_settings
                     } else {
                         null
                     },
                     actionContentDescription = if (currentDefinition?.topLevel == true) {
-                        stringResource(R.string.navigation_open_settings)
+                        stringResource(Res.string.navigation_open_settings)
                     } else {
                         null
                     },
@@ -535,7 +540,8 @@ private fun FacturaStockContent(
                     when {
                         target != null -> navigateTo(target)
                         navController.previousBackStackEntry != null -> navController.popBackStack()
-                        else -> activity?.finish()
+                        // Android cerraba la Activity; en Windows la ventana sigue abierta en Vender.
+                        else -> Unit
                     }
                 },
                 onSalesExitCancelled = { pendingSalesExit = null },
@@ -554,20 +560,20 @@ private fun FacturaStockContent(
 
     if (showDiscardDialog) {
         FacturaStockDialog(
-            title = stringResource(R.string.discard_dialog_title),
+            title = stringResource(Res.string.discard_dialog_title),
             message = stringResource(
                 if (draftFlowState.discardFailedDraftId != null) {
-                    R.string.home_draft_delete_error
+                    Res.string.home_draft_delete_error
                 } else {
-                    R.string.discard_dialog_message
+                    Res.string.discard_dialog_message
                 },
             ),
-            confirmLabel = stringResource(R.string.action_discard_draft),
-            dismissLabel = stringResource(R.string.action_keep_editing),
+            confirmLabel = stringResource(Res.string.action_discard_draft),
+            dismissLabel = stringResource(Res.string.action_keep_editing),
             onConfirm = {
                 if (draftFlowState.discardingDraftId == null) {
                     val draftId = DraftId.parse(
-                        backStackEntry?.arguments?.getString(AppRoutes.DRAFT_ID),
+                        backStackEntry?.stringArgument(AppRoutes.DRAFT_ID),
                     )
                     if (draftFlowViewModel != null && draftId != null) {
                         draftFlowViewModel.onAction(
@@ -634,8 +640,8 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.onboarding_title,
-                    messageRes = R.string.onboarding_subtitle,
+                    titleRes = Res.string.onboarding_title,
+                    messageRes = Res.string.onboarding_subtitle,
                 )
             }
         }
@@ -758,14 +764,14 @@ private fun FacturaStockNavHost(
         }
         composable(
             route = AppRoutes.DEBT_DETAIL,
-            arguments = listOf(stringArgument(AppRoutes.DEBT_ID)),
+            arguments = listOf(detailIdArgument(AppRoutes.DEBT_ID, siblingLiteralRoute = AppRoutes.NEW_DEBT)),
         ) { entry ->
-            val debtId = DebtId.parse(entry.arguments?.getString(AppRoutes.DEBT_ID))
+            val debtId = DebtId.parse(entry.stringArgument(AppRoutes.DEBT_ID))
             if (debtId == null) {
                 RecoverableError(
-                    title = stringResource(R.string.navigation_invalid_title),
-                    message = stringResource(R.string.navigation_invalid_message),
-                    actionLabel = stringResource(R.string.action_return_debtors),
+                    title = stringResource(Res.string.navigation_invalid_title),
+                    message = stringResource(Res.string.navigation_invalid_message),
+                    actionLabel = stringResource(Res.string.action_return_debtors),
                     onAction = {
                         navController.navigate(AppRoutes.DEBTORS) { launchSingleTop = true }
                     },
@@ -809,8 +815,8 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.debt_detail_title,
-                    messageRes = R.string.debt_not_found_message,
+                    titleRes = Res.string.debt_detail_title,
+                    messageRes = Res.string.debt_not_found_message,
                 )
             }
         }
@@ -842,8 +848,8 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.navigation_reports,
-                    messageRes = R.string.reports_placeholder_message,
+                    titleRes = Res.string.navigation_reports,
+                    messageRes = Res.string.reports_placeholder_message,
                 )
             }
         }
@@ -859,13 +865,13 @@ private fun FacturaStockNavHost(
             if (useInjectedViewModels) {
                 CatalogsRoute(
                     onBack = navController::popBackStack,
-                    isManualRegistration = entry.arguments?.getString(AppRoutes.MANUAL_PRODUCT) == "true",
-                    isSpecialRegistration = entry.arguments?.getString(AppRoutes.SPECIAL_PRODUCT) == "true",
+                    isManualRegistration = entry.stringArgument(AppRoutes.MANUAL_PRODUCT) == "true",
+                    isSpecialRegistration = entry.stringArgument(AppRoutes.SPECIAL_PRODUCT) == "true",
                 )
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.products_empty_title,
-                    messageRes = R.string.products_empty_message,
+                    titleRes = Res.string.products_empty_title,
+                    messageRes = Res.string.products_empty_message,
                 )
             }
         }
@@ -877,8 +883,8 @@ private fun FacturaStockNavHost(
                 stringArgument(AppRoutes.REGISTRATION_BUSINESS_ID),
             ),
         ) { entry ->
-            val requestId = entry.arguments?.getString(AppRoutes.REGISTRATION_REQUEST_ID).orEmpty()
-            val businessId = BusinessId.parse(entry.arguments?.getString(AppRoutes.REGISTRATION_BUSINESS_ID))
+            val requestId = entry.stringArgument(AppRoutes.REGISTRATION_REQUEST_ID).orEmpty()
+            val businessId = BusinessId.parse(entry.stringArgument(AppRoutes.REGISTRATION_BUSINESS_ID))
             val cancelRegistration = {
                 navController.finishSalesRegistration(entry, SalesContract.ProductRegistrationResult(requestId))
             }
@@ -900,8 +906,8 @@ private fun FacturaStockNavHost(
             } else {
                 BackHandler(onBack = cancelRegistration)
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.inventory_register_products,
-                    messageRes = R.string.products_empty_message,
+                    titleRes = Res.string.inventory_register_products,
+                    messageRes = Res.string.products_empty_message,
                 )
             }
         }
@@ -917,8 +923,8 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.purchases_empty_title,
-                    messageRes = R.string.purchases_empty_message,
+                    titleRes = Res.string.purchases_empty_title,
+                    messageRes = Res.string.purchases_empty_message,
                 )
             }
         }
@@ -996,9 +1002,9 @@ private fun FacturaStockNavHost(
         }
         composable(
             route = AppRoutes.INVENTORY_DETAIL,
-            arguments = listOf(stringArgument(AppRoutes.PRODUCT_ID)),
+            arguments = listOf(detailIdArgument(AppRoutes.PRODUCT_ID, siblingLiteralRoute = AppRoutes.INVENTORY_REGISTER)),
         ) { entry ->
-            val productId = ProductId.parse(entry.arguments?.getString(AppRoutes.PRODUCT_ID))
+            val productId = ProductId.parse(entry.stringArgument(AppRoutes.PRODUCT_ID))
             if (productId == null) {
                 InvalidNavigationScreen(
                     onReturnToPurchases = {
@@ -1026,8 +1032,8 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.inventory_detail_title,
-                    messageRes = R.string.inventory_detail_message,
+                    titleRes = Res.string.inventory_detail_title,
+                    messageRes = Res.string.inventory_detail_message,
                 )
             }
         }
@@ -1036,20 +1042,20 @@ private fun FacturaStockNavHost(
                 SettingsRoute()
             } else {
                 TopLevelPlaceholderScreen(
-                    titleRes = R.string.settings_empty_title,
-                    messageRes = R.string.settings_empty_message,
+                    titleRes = Res.string.settings_empty_title,
+                    messageRes = Res.string.settings_empty_message,
                 )
             }
         }
         composable(AppRoutes.NEW_PURCHASE) {
             PurchaseFlowScreen(
-                titleRes = R.string.purchase_new_title,
+                titleRes = Res.string.purchase_new_title,
                 messageRes = if (draftFlowState.draftCreationFailed) {
-                    R.string.home_draft_create_error
+                    Res.string.home_draft_create_error
                 } else {
-                    R.string.purchase_new_message
+                    Res.string.purchase_new_message
                 },
-                primaryActionRes = R.string.action_start_purchase,
+                primaryActionRes = Res.string.action_start_purchase,
                 onPrimaryAction = {
                     if (useInjectedViewModels) {
                         onStartDraft()
@@ -1058,7 +1064,7 @@ private fun FacturaStockNavHost(
                         navController.navigate(AppRoutes.camera(draftId))
                     }
                 },
-                iconRes = R.drawable.ic_add_document,
+                iconRes = Res.drawable.ic_add_document,
                 tone = if (draftFlowState.draftCreationFailed) {
                     StatusTone.ERROR
                 } else {
@@ -1091,9 +1097,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_source_title,
-                    messageRes = R.string.purchase_source_message,
-                    primaryActionRes = R.string.action_use_camera,
+                    titleRes = Res.string.purchase_source_title,
+                    messageRes = Res.string.purchase_source_message,
+                    primaryActionRes = Res.string.action_use_camera,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.camera(draftId))
                     },
@@ -1111,7 +1117,7 @@ private fun FacturaStockNavHost(
             optionalArguments = listOf(AppRoutes.REPLACE_ID, AppRoutes.SCAN_RETAKE),
         ) { draftId, entry ->
             val isInvoiceScanRetake =
-                entry.arguments?.getString(AppRoutes.SCAN_RETAKE)?.toBooleanStrictOrNull() == true
+                entry.stringArgument(AppRoutes.SCAN_RETAKE)?.toBooleanStrictOrNull() == true
             if (useInjectedViewModels) {
                 CaptureRoute(
                     onOpenProcessing = { effectDraftId ->
@@ -1134,14 +1140,14 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_camera_title,
-                    messageRes = R.string.purchase_camera_message,
-                    primaryActionRes = R.string.action_take_photo,
+                    titleRes = Res.string.purchase_camera_title,
+                    messageRes = Res.string.purchase_camera_message,
+                    primaryActionRes = Res.string.action_take_photo,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.processing(draftId))
                     },
                     step = 2,
-                    iconRes = R.drawable.ic_add_document,
+                    iconRes = Res.drawable.ic_add_document,
                     showPreviousAction = true,
                     onPreviousAction = if (isInvoiceScanRetake) {
                         onInvalidDestination
@@ -1162,7 +1168,7 @@ private fun FacturaStockNavHost(
             onProtectedBack = onProtectedBack,
         ) { draftId, entry ->
             val captureId = CaptureId.parse(
-                entry.arguments?.getString(AppRoutes.CAPTURE_ID),
+                entry.stringArgument(AppRoutes.CAPTURE_ID),
             )
             if (captureId == null) {
                 InvalidNavigationScreen(onReturnToPurchases = onInvalidDestination)
@@ -1181,9 +1187,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_preview_title,
-                    messageRes = R.string.purchase_preview_message,
-                    primaryActionRes = R.string.action_use_photo,
+                    titleRes = Res.string.purchase_preview_title,
+                    messageRes = Res.string.purchase_preview_message,
+                    primaryActionRes = Res.string.action_use_photo,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.processing(draftId))
                     },
@@ -1239,9 +1245,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_processing_title,
-                    messageRes = R.string.purchase_processing_message,
-                    primaryActionRes = R.string.action_finish_processing,
+                    titleRes = Res.string.purchase_processing_title,
+                    messageRes = Res.string.purchase_processing_message,
+                    primaryActionRes = Res.string.action_finish_processing,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.PRODUCTS) {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -1271,9 +1277,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_header_title,
-                    messageRes = R.string.purchase_header_message,
-                    primaryActionRes = R.string.action_save_header,
+                    titleRes = Res.string.purchase_header_title,
+                    messageRes = Res.string.purchase_header_message,
+                    primaryActionRes = Res.string.action_save_header,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.invoiceLines(draftId))
                     },
@@ -1299,9 +1305,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_lines_title,
-                    messageRes = R.string.purchase_lines_message,
-                    primaryActionRes = R.string.action_link_products,
+                    titleRes = Res.string.purchase_lines_title,
+                    messageRes = Res.string.purchase_lines_message,
+                    primaryActionRes = Res.string.action_link_products,
                     onPrimaryAction = {
                         val lineId = LineId.from(uuidGenerator.newUuid())
                         navController.navigate(AppRoutes.productLinking(draftId, lineId))
@@ -1339,9 +1345,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.matching_title,
-                    messageRes = R.string.matching_subtitle,
-                    primaryActionRes = R.string.action_save,
+                    titleRes = Res.string.matching_title,
+                    messageRes = Res.string.matching_subtitle,
+                    primaryActionRes = Res.string.action_save,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.PRODUCTS)
                     },
@@ -1358,7 +1364,7 @@ private fun FacturaStockNavHost(
             protectedBackEnabled = protectedBackEnabled,
             onProtectedBack = onProtectedBack,
         ) { draftId, entry ->
-            val lineId = LineId.parse(entry.arguments?.getString(AppRoutes.LINE_ID))
+            val lineId = LineId.parse(entry.stringArgument(AppRoutes.LINE_ID))
             if (lineId == null) {
                 InvalidNavigationScreen(onReturnToPurchases = onInvalidDestination)
             } else if (useInjectedViewModels) {
@@ -1371,9 +1377,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_linking_title,
-                    messageRes = R.string.purchase_linking_message,
-                    primaryActionRes = R.string.action_review_summary,
+                    titleRes = Res.string.purchase_linking_title,
+                    messageRes = Res.string.purchase_linking_message,
+                    primaryActionRes = Res.string.action_review_summary,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.purchaseSummary(draftId))
                     },
@@ -1409,9 +1415,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_summary_title,
-                    messageRes = R.string.purchase_summary_message,
-                    primaryActionRes = R.string.action_go_to_confirmation,
+                    titleRes = Res.string.purchase_summary_title,
+                    messageRes = Res.string.purchase_summary_message,
+                    primaryActionRes = Res.string.action_go_to_confirmation,
                     onPrimaryAction = {
                         navController.navigate(
                             AppRoutes.purchaseConfirmation(draftId, "0".repeat(64)),
@@ -1450,9 +1456,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_confirmation_title,
-                    messageRes = R.string.purchase_confirmation_message,
-                    primaryActionRes = R.string.action_confirm_purchase,
+                    titleRes = Res.string.purchase_confirmation_title,
+                    messageRes = Res.string.purchase_confirmation_message,
+                    primaryActionRes = Res.string.action_confirm_purchase,
                     onPrimaryAction = {
                         val purchaseId = PurchaseId.from(uuidGenerator.newUuid())
                         navController.navigate(AppRoutes.purchaseSuccess(purchaseId)) {
@@ -1474,7 +1480,7 @@ private fun FacturaStockNavHost(
             arguments = listOf(stringArgument(AppRoutes.PURCHASE_ID)),
         ) { entry ->
             val purchaseId = PurchaseId.parse(
-                entry.arguments?.getString(AppRoutes.PURCHASE_ID),
+                entry.stringArgument(AppRoutes.PURCHASE_ID),
             )
             if (purchaseId == null) {
                 InvalidNavigationScreen(onReturnToPurchases = onInvalidDestination)
@@ -1493,16 +1499,16 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_success_title,
-                    messageRes = R.string.purchase_success_message,
-                    primaryActionRes = R.string.action_view_detail,
+                    titleRes = Res.string.purchase_success_title,
+                    messageRes = Res.string.purchase_success_message,
+                    primaryActionRes = Res.string.action_view_detail,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.purchaseDetail(purchaseId)) {
                             popUpTo(AppRoutes.PURCHASE_SUCCESS) { inclusive = true }
                             launchSingleTop = true
                         }
                     },
-                    iconRes = R.drawable.ic_check_circle,
+                    iconRes = Res.drawable.ic_check_circle,
                     tone = StatusTone.SUCCESS,
                 )
             }
@@ -1512,7 +1518,7 @@ private fun FacturaStockNavHost(
             arguments = listOf(stringArgument(AppRoutes.PURCHASE_ID)),
         ) { entry ->
             val purchaseId = PurchaseId.parse(
-                entry.arguments?.getString(AppRoutes.PURCHASE_ID),
+                entry.stringArgument(AppRoutes.PURCHASE_ID),
             )
             if (purchaseId == null) {
                 InvalidNavigationScreen(onReturnToPurchases = onInvalidDestination)
@@ -1537,9 +1543,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_detail_title,
-                    messageRes = R.string.purchase_detail_message,
-                    primaryActionRes = R.string.action_return_purchases,
+                    titleRes = Res.string.purchase_detail_title,
+                    messageRes = Res.string.purchase_detail_message,
+                    primaryActionRes = Res.string.action_return_purchases,
                     onPrimaryAction = {
                         navController.navigate(AppRoutes.PURCHASES) { launchSingleTop = true }
                     },
@@ -1552,7 +1558,7 @@ private fun FacturaStockNavHost(
             arguments = listOf(stringArgument(AppRoutes.PURCHASE_ID)),
         ) { entry ->
             val purchaseId = PurchaseId.parse(
-                entry.arguments?.getString(AppRoutes.PURCHASE_ID),
+                entry.stringArgument(AppRoutes.PURCHASE_ID),
             )
             if (purchaseId == null) {
                 InvalidNavigationScreen(onReturnToPurchases = onInvalidDestination)
@@ -1580,9 +1586,9 @@ private fun FacturaStockNavHost(
                 )
             } else {
                 PurchaseFlowScreen(
-                    titleRes = R.string.purchase_void_title,
-                    messageRes = R.string.purchase_void_intro,
-                    primaryActionRes = R.string.purchase_void_back,
+                    titleRes = Res.string.purchase_void_title,
+                    messageRes = Res.string.purchase_void_intro,
+                    primaryActionRes = Res.string.purchase_void_back,
                     onPrimaryAction = navController::popBackStack,
                     tone = StatusTone.WARNING,
                 )
@@ -1609,7 +1615,7 @@ private fun NavGraphBuilder.draftDestination(
             enabled = protectedBackEnabled,
             onBack = onProtectedBack,
         )
-        val draftId = DraftId.parse(entry.arguments?.getString(AppRoutes.DRAFT_ID))
+        val draftId = DraftId.parse(entry.stringArgument(AppRoutes.DRAFT_ID))
         if (draftId == null) {
             InvalidNavigationScreen(onReturnToPurchases = onInvalidDestination)
         } else {
@@ -1623,22 +1629,7 @@ private fun DraftBackHandler(
     enabled: Boolean,
     onBack: () -> Unit,
 ) {
-    val dispatcherOwner = LocalOnBackPressedDispatcherOwner.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val currentOnBack by rememberUpdatedState(onBack)
-    val callback = remember {
-        object : OnBackPressedCallback(enabled) {
-            override fun handleOnBackPressed() {
-                currentOnBack()
-            }
-        }
-    }
-
-    SideEffect { callback.isEnabled = enabled }
-    DisposableEffect(dispatcherOwner, lifecycleOwner) {
-        dispatcherOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
-        onDispose { callback.remove() }
-    }
+    BackHandler(enabled = enabled, onBack = onBack)
 }
 
 private const val SALES_REGISTRATION_RESULT_KEY = "sales.productRegistration.navigationResult"
@@ -1678,6 +1669,43 @@ private fun NavHostController.finishSalesRegistration(
 private fun stringArgument(name: String) = navArgument(name) {
     type = NavType.StringType
     nullable = false
+}
+
+/**
+ * Identificador de un destino de detalle ("debtors/{debtId}") que no captura el segmento de su
+ * ruta literal hermana ("debtors/new"). En escritorio (org.jetbrains.androidx.navigation 2.9.2)
+ * `NavDeepLink` nunca marca una ruta como exacta (busca `Regex(".*")`, que coincide con cualquier
+ * patrón, donde Android busca el texto literal ".*"), así que entre las
+ * dos gana la que tiene más argumentos: "Venta a crédito" abría el detalle de la deuda "new" y
+ * "Registrar productos" el del producto "register". Rechazar el valor en `parseValue` hace que el
+ * patrón no coincida y la ruta literal vuelva a ganar; cualquier otro valor se acepta como antes.
+ */
+private fun detailIdArgument(name: String, siblingLiteralRoute: String) = navArgument(name) {
+    type = DetailIdNavType(reservedSegment = siblingLiteralRoute.substringAfterLast('/'))
+    nullable = false
+}
+
+private class DetailIdNavType(private val reservedSegment: String) : NavType<String>(isNullableAllowed = false) {
+    override val name: String = "string"
+
+    override fun put(bundle: SavedState, key: String, value: String) {
+        bundle.write { putString(key, value) }
+    }
+
+    override fun get(bundle: SavedState, key: String): String? =
+        bundle.read { if (contains(key)) getStringOrNull(key) else null }
+
+    override fun parseValue(value: String): String {
+        require(value != reservedSegment) { "'$value' es la ruta literal hermana, no un identificador" }
+        return value
+    }
+
+    // NavHost compara el grafo reconstruido en cada recomposición (NavArgument compara su tipo):
+    // sin igualdad por valor, cada recomposición instalaría un grafo "distinto" y reiniciaría la pila.
+    override fun equals(other: Any?): Boolean =
+        other is DetailIdNavType && other.reservedSegment == reservedSegment
+
+    override fun hashCode(): Int = reservedSegment.hashCode()
 }
 
 /** Argumento de consulta opcional (ausente por defecto): el ID de página a reemplazar. */
@@ -1757,3 +1785,7 @@ private fun navigationExitTransition(
     } else {
         fadeOut(animationSpec = tween(SECONDARY_NAVIGATION_FADE_MILLIS))
     }
+
+/** Lee un argumento de ruta como texto (en escritorio `arguments` es un `SavedState`). */
+private fun NavBackStackEntry.stringArgument(name: String): String? =
+    arguments?.read { if (contains(name)) getStringOrNull(name) else null }

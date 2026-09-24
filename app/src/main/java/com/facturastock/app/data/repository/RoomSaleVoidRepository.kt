@@ -1,9 +1,9 @@
 package com.facturastock.app.data.repository
 
-import android.database.sqlite.SQLiteConstraintException
-import android.database.sqlite.SQLiteException
-import android.database.sqlite.SQLiteFullException
-import androidx.room.withTransaction
+import com.facturastock.app.data.local.sqlite.SQLiteConstraintException
+import com.facturastock.app.data.local.sqlite.SQLiteException
+import com.facturastock.app.data.local.sqlite.SQLiteFullException
+import com.facturastock.app.data.local.withTransaction
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.time.AppClock
 import com.facturastock.app.data.local.FacturaStockDatabase

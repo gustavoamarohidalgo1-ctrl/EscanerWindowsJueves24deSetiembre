@@ -1,7 +1,6 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
-import android.graphics.Bitmap
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.core.id.UuidGenerator
 import com.facturastock.app.domain.error.FileError
@@ -11,7 +10,7 @@ import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.model.id.ImageId
 import com.facturastock.app.domain.repository.InvoiceImagePreprocessor
 import com.facturastock.app.domain.repository.OcrImageFile
-import dagger.hilt.android.qualifiers.ApplicationContext
+import java.awt.image.BufferedImage
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -41,14 +40,14 @@ import kotlinx.coroutines.withContext
  */
 @Singleton
 class LocalInvoiceImagePreprocessor @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val uuidGenerator: UuidGenerator,
     private val dispatcherProvider: DispatcherProvider,
     private val mutationCoordinator: PrivateImageMutationCoordinator =
         PrivateImageMutationCoordinator(),
     private val deletionDurability: PrivateDeletionDurability = PrivateDeletionDurability(),
 ) : InvoiceImagePreprocessor {
-    private val rootDirectory: File = context.filesDir
+    private val rootDirectory: File = directories.filesDir
     /** Acota el pico de bitmap: solo un lote OCR pesado puede decodificar píxeles a la vez. */
     private val processingMutex = Mutex()
 
@@ -124,17 +123,9 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
                 image = image,
                 maximumSidePx = OCR_MAX_SIDE_PX,
             )
-            var bitmap = loaded.bitmap
+            // Un BufferedImage ARGB siempre es mutable: no hace falta la copia de Android.
+            val bitmap = loaded.bitmap
             try {
-                if (!bitmap.isMutable) {
-                    val mutableCopy = try {
-                        bitmap.copy(Bitmap.Config.ARGB_8888, true)
-                    } catch (failure: OutOfMemoryError) {
-                        throw FileException(FileError.TooLarge, failure)
-                    } ?: throw FileException(FileError.Corrupt)
-                    bitmap.recycleSafely()
-                    bitmap = mutableCopy
-                }
                 applyGrayscaleAndContrast(bitmap)
                 writeOcrVersion(image, bitmap, runId)
             } catch (failure: OutOfMemoryError) {
@@ -144,16 +135,16 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
             }
         }
 
-    internal suspend fun applyGrayscaleAndContrast(bitmap: Bitmap) {
+    internal suspend fun applyGrayscaleAndContrast(bitmap: BufferedImage) {
         val width = bitmap.width
         val height = bitmap.height
-        // Un bloque acotado evita cruzar JNI dos veces por fila sin retener otra página.
+        // Un bloque acotado evita convertir el raster dos veces por fila sin retener otra página.
         // A 2048 px de ancho el scratch ocupa como máximo 128 KiB.
         val pixels = IntArray(width * minOf(PIXEL_BLOCK_ROWS, height))
         for (top in 0 until height step PIXEL_BLOCK_ROWS) {
             currentCoroutineContext().ensureActive()
             val rows = minOf(PIXEL_BLOCK_ROWS, height - top)
-            bitmap.getPixels(pixels, 0, width, 0, top, width, rows)
+            bitmap.getRGB(0, top, width, rows, pixels, 0, width)
             for (row in 0 until rows) {
                 currentCoroutineContext().ensureActive()
                 val offset = row * width
@@ -175,13 +166,13 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
                 }
             }
             currentCoroutineContext().ensureActive()
-            bitmap.setPixels(pixels, 0, width, 0, top, width, rows)
+            bitmap.setRGB(0, top, width, rows, pixels, 0, width)
         }
     }
 
     private suspend fun writeOcrVersion(
         image: InvoiceImage,
-        bitmap: Bitmap,
+        bitmap: BufferedImage,
         runId: String,
     ): OcrImageFile = withContext(dispatcherProvider.io) {
         val relativePath = ocrImagePath(image.draftId, runId, image.imageId)
@@ -202,7 +193,7 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
             FileOutputStream(tempFile).use { rawOutput ->
                 val bufferedOutput = BufferedOutputStream(rawOutput)
                 val cancellable = CancellationCheckingOutputStream(bufferedOutput, job)
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, cancellable)) {
+                if (!DesktopImageCodec.compressJpeg(bitmap, JPEG_QUALITY, cancellable)) {
                     throw FileException(FileError.Corrupt)
                 }
                 cancellable.flush()
@@ -464,7 +455,7 @@ class LocalInvoiceImagePreprocessor @Inject constructor(
         false
     }
 
-    /** Hace cooperativa la compresión nativa al comprobar el Job en cada escritura. */
+    /** Hace cooperativa la compresión JPEG al comprobar el Job en cada escritura. */
     private class CancellationCheckingOutputStream(
         output: OutputStream,
         private val job: Job?,

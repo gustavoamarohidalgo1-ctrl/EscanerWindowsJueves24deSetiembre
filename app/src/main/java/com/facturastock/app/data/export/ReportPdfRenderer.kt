@@ -1,40 +1,46 @@
 package com.facturastock.app.data.export
 
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
-import android.graphics.pdf.PdfDocument
-import android.graphics.text.LineBreaker
-import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextPaint
 import com.facturastock.app.domain.model.CurrencyCode
 import com.facturastock.app.domain.model.Money
 import com.facturastock.app.domain.model.PreparedReportPdf
 import com.facturastock.app.domain.model.ReportPdfKind
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.pdmodel.PDPage
+import org.apache.pdfbox.pdmodel.PDPageContentStream
+import org.apache.pdfbox.pdmodel.common.PDRectangle
+import org.apache.pdfbox.pdmodel.font.PDFont
+import java.io.File
 import java.io.OutputStream
 import java.math.BigDecimal
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.coroutines.CoroutineContext
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
-/** PDF A4 con texto seleccionable, importes exactos y tablas que continúan entre páginas. */
-internal class ReportPdfRenderer {
+/**
+ * PDF A4 con texto seleccionable, importes exactos y tablas que continúan entre páginas.
+ *
+ * Port de la versión Android (`PdfDocument` + `StaticLayout`) a Apache PDFBox 3. Todas las
+ * coordenadas del diseño siguen expresadas con origen arriba a la izquierda (como el Canvas de
+ * Android) y se convierten al origen inferior de PDF solo al dibujar.
+ */
+internal class ReportPdfRenderer(
+    /** Carpeta de fuentes TrueType; por defecto `%WINDIR%\Fonts`. Si falta, se usa Helvetica. */
+    private val fontsDirectory: File? = ReportPdfFonts.windowsFontsDirectory(),
+) {
     suspend fun write(
         prepared: PreparedReportPdf,
         output: OutputStream,
     ) {
         val context = currentCoroutineContext()
         context.ensureActive()
-        val document = PdfDocument()
-        try {
-            val page = ReportPages(document, prepared, context)
+        PDDocument().use { document ->
+            val page = ReportPages(document, ReportPdfFonts.load(document, fontsDirectory), prepared, context)
             try {
                 page.introduction()
                 // Orden del PDF diario: primero las ventas del día y después todo lo de deudores
@@ -46,20 +52,46 @@ internal class ReportPdfRenderer {
                 page.debtors()
                 page.finish()
                 context.ensureActive()
-                document.writeTo(output)
+                document.save(output)
                 context.ensureActive()
             } finally {
-                // PdfDocument exige terminar la página abierta incluso si se cancela el trabajo.
+                // El content stream de la página abierta debe cerrarse incluso si se cancela.
                 page.finish()
             }
-        } finally {
-            document.close()
         }
     }
 }
 
+/** Color RGB opaco 0..255, independiente de AWT. */
+private data class Rgb(val red: Int, val green: Int, val blue: Int)
+
+/**
+ * Equivalente mínimo de `StaticLayout` (alineación normal u opuesta, sin relleno extra): cada
+ * línea mide [lineHeight] puntos y la línea `i` ocupa `[i * lineHeight, (i + 1) * lineHeight)`.
+ */
+private class TextLayout(
+    val lines: List<LaidOutLine>,
+    val font: PDFont,
+    val size: Float,
+    val color: Rgb,
+    val right: Boolean,
+    val width: Float,
+    val lineHeight: Int,
+    val ascent: Int,
+) {
+    val lineCount: Int get() = lines.size
+    val height: Int get() = lineCount * lineHeight
+
+    fun getLineTop(line: Int): Int = line * lineHeight
+
+    fun getLineBottom(line: Int): Int = (line + 1) * lineHeight
+}
+
+private class LaidOutLine(val text: String, val width: Float)
+
 private class ReportPages(
-    private val document: PdfDocument,
+    private val document: PDDocument,
+    private val fonts: ReportPdfFonts,
     private val prepared: PreparedReportPdf,
     private val context: CoroutineContext,
 ) {
@@ -67,9 +99,7 @@ private class ReportPages(
     private val date = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ROOT).withZone(snapshot.range.zoneId)
     private val time = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT).withZone(snapshot.range.zoneId)
     private val stamp = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.ROOT).withZone(snapshot.range.zoneId)
-    private val fill = Paint()
-    private val paints = mutableMapOf<Triple<Float, Boolean, Int>, TextPaint>()
-    private var page: PdfDocument.Page? = null
+    private var page: PDPageContentStream? = null
     private var pageNumber = 0
     private var y = CONTENT_TOP
 
@@ -232,7 +262,7 @@ private class ReportPages(
         text: String,
         size: Float,
         bold: Boolean = false,
-        color: Int = INK,
+        color: Rgb = INK,
         right: Boolean = false,
         after: Float = 8f,
     ) {
@@ -260,7 +290,7 @@ private class ReportPages(
         trailingSpace: Float = 0f,
     ) {
         require(widths.sum() == WIDTH && widths.size == headers.size)
-        val headerLayouts = headers.mapIndexed { index, text -> textLayout(text, widths[index] - 2 * CELL_PAD, 8.5f, true, Color.WHITE, index in rightAligned) }
+        val headerLayouts = headers.mapIndexed { index, text -> textLayout(text, widths[index] - 2 * CELL_PAD, 8.5f, true, WHITE, index in rightAligned) }
         val headerHeight = headerLayouts.maxOf { it.height } + 2f * CELL_PAD
         ensureSpace(headerHeight + 24f)
 
@@ -304,7 +334,7 @@ private class ReportPages(
                     }
                 while (end > first + 1 && partHeight() > available) end--
                 val height = partHeight() + 2 * CELL_PAD
-                paintRow(layouts, widths, first, end, height, if (rowIndex % 2 == 0) LIGHT else Color.WHITE)
+                paintRow(layouts, widths, first, end, height, if (rowIndex % 2 == 0) LIGHT else WHITE)
                 first = end
             }
         }
@@ -312,16 +342,14 @@ private class ReportPages(
     }
 
     private fun paintRow(
-        layouts: List<StaticLayout>,
+        layouts: List<TextLayout>,
         widths: List<Int>,
         first: Int,
         end: Int,
         height: Float,
-        background: Int,
+        background: Rgb,
     ) {
-        val canvas = requireNotNull(page).canvas
-        fill.color = background
-        canvas.drawRect(LEFT, y, LEFT + WIDTH, y + height, fill)
+        fillRect(LEFT, y, LEFT + WIDTH, y + height, background)
         var x = LEFT
         layouts.forEachIndexed { index, layout ->
             if (first < layout.lineCount) drawPart(layout, first, min(end, layout.lineCount), x + CELL_PAD, y + CELL_PAD, (widths[index] - 2 * CELL_PAD).toFloat())
@@ -330,50 +358,165 @@ private class ReportPages(
         y += height
     }
 
+    /**
+     * Corta [text] en líneas de como máximo [width] puntos: respeta `\n`, corta tras espacios y
+     * guiones (no ante dígitos) y parte por caracteres una palabra que no quepa sola en la línea.
+     * Android usaba el algoritmo "high quality" de Minikin; aquí el corte es codicioso.
+     */
     private fun textLayout(
         text: String,
         width: Int,
         size: Float,
         bold: Boolean,
-        color: Int,
+        color: Rgb,
         right: Boolean,
-    ): StaticLayout {
-        val paint =
-            paints.getOrPut(Triple(size, bold, color)) {
-                TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                    textSize = size
-                    this.color = color
-                    typeface = if (bold) Typeface.create("sans-serif", Typeface.BOLD) else Typeface.create("sans-serif", Typeface.NORMAL)
-                }
+    ): TextLayout {
+        val font = fonts.font(bold)
+        val sanitizer = fonts.sanitizer(font)
+        val maxWidth = width.toFloat()
+        val lines = mutableListOf<LaidOutLine>()
+        for (paragraph in sanitizer.sanitize(text).split('\n')) {
+            wrapParagraph(paragraph, maxWidth, size, sanitizer, lines)
+        }
+        // Métricas enteras estilo FontMetricsInt de Roboto (sans-serif de Android): mantener la
+        // misma altura de línea conserva la paginación original sea cual sea la fuente incrustada.
+        val ascent = ceil(size * ASCENT_RATIO).toInt()
+        val descent = ceil(size * DESCENT_RATIO).toInt()
+        return TextLayout(lines, font, size, color, right, maxWidth, ascent + descent, ascent)
+    }
+
+    private fun wrapParagraph(
+        paragraph: String,
+        maxWidth: Float,
+        size: Float,
+        sanitizer: PdfTextSanitizer,
+        into: MutableList<LaidOutLine>,
+    ) {
+        fun visibleWidth(text: CharSequence): Float = sanitizer.width(text.trimEnd(' '), size)
+
+        val current = StringBuilder()
+        fun flush() {
+            val line = current.toString().trimEnd(' ')
+            into += LaidOutLine(line, sanitizer.width(line, size))
+            current.setLength(0)
+        }
+
+        fun place(segment: String) {
+            if (visibleWidth(segment) <= maxWidth + EPSILON) {
+                current.append(segment)
+                return
             }
-        return StaticLayout.Builder
-            .obtain(text, 0, text.length, paint, width)
-            .setAlignment(if (right) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL)
-            .setIncludePad(false)
-            .setBreakStrategy(LineBreaker.BREAK_STRATEGY_HIGH_QUALITY)
-            .build()
+            // Palabra más ancha que la línea: se parte por puntos de código.
+            var index = 0
+            while (index < segment.length) {
+                val codePoint = segment.codePointAt(index)
+                val next = index + Character.charCount(codePoint)
+                val piece = segment.substring(index, next)
+                if (current.isNotEmpty() && piece != " " && visibleWidth(current.toString() + piece) > maxWidth + EPSILON) flush()
+                current.append(piece)
+                index = next
+            }
+        }
+
+        for (segment in breakSegments(paragraph)) {
+            if (current.isEmpty()) {
+                place(segment)
+            } else if (visibleWidth(current.toString() + segment) <= maxWidth + EPSILON) {
+                current.append(segment)
+            } else {
+                flush()
+                place(segment)
+            }
+        }
+        // Un párrafo vacío también ocupa una línea, igual que en StaticLayout.
+        flush()
+    }
+
+    /** Segmentos indivisibles; cada uno termina en una oportunidad de corte (incluye espacios). */
+    private fun breakSegments(text: String): List<String> {
+        val segments = mutableListOf<String>()
+        var start = 0
+        var index = 0
+        while (index < text.length) {
+            val char = text[index]
+            index++
+            val next = text.getOrNull(index)
+            val breakAfter = when {
+                char == ' ' -> next != ' '
+                char == '-' -> next != null && next != ' ' && next != '-' && !next.isDigit() && index > start + 1
+                else -> false
+            }
+            if (breakAfter) {
+                segments += text.substring(start, index)
+                start = index
+            }
+        }
+        if (start < text.length) segments += text.substring(start)
+        return segments
     }
 
     private fun drawPart(
-        layout: StaticLayout,
+        layout: TextLayout,
         first: Int,
         end: Int,
         x: Float,
         top: Float,
         width: Float,
     ) {
-        val canvas = requireNotNull(page).canvas
+        val stream = requireNotNull(page)
         val start = layout.getLineTop(first)
         val height = layout.getLineBottom(end - 1) - start
-        canvas.save()
-        canvas.clipRect(x, top, x + width, top + height)
-        canvas.translate(x, top - start)
-        layout.draw(canvas)
-        canvas.restore()
+        stream.saveGraphicsState()
+        try {
+            stream.addRect(x, pdfY(top + height), width, height.toFloat())
+            stream.clip()
+            for (line in first until end) {
+                val laidOut = layout.lines[line]
+                if (laidOut.text.isEmpty()) continue
+                val baseline = top + (layout.getLineTop(line) - start) + layout.ascent
+                val lineX = if (layout.right) x + layout.width - laidOut.width else x
+                drawText(laidOut.text, layout.font, layout.size, layout.color, lineX, baseline)
+            }
+        } finally {
+            stream.restoreGraphicsState()
+        }
     }
 
+    /** [text] debe venir saneado; [baseline] se mide desde el borde superior de la página. */
+    private fun drawText(
+        text: String,
+        font: PDFont,
+        size: Float,
+        color: Rgb,
+        x: Float,
+        baseline: Float,
+    ) {
+        val stream = requireNotNull(page)
+        stream.beginText()
+        stream.setFont(font, size)
+        stream.setNonStrokingColor(color.red / 255f, color.green / 255f, color.blue / 255f)
+        stream.newLineAtOffset(x, pdfY(baseline))
+        stream.showText(text)
+        stream.endText()
+    }
+
+    private fun fillRect(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        color: Rgb,
+    ) {
+        val stream = requireNotNull(page)
+        stream.setNonStrokingColor(color.red / 255f, color.green / 255f, color.blue / 255f)
+        stream.addRect(left, pdfY(bottom), right - left, bottom - top)
+        stream.fill()
+    }
+
+    private fun pdfY(topDownY: Float): Float = PAGE_HEIGHT - topDownY
+
     private fun lineHeight(
-        layout: StaticLayout,
+        layout: TextLayout,
         line: Int,
     ): Float = (layout.getLineBottom(line) - layout.getLineTop(line)).toFloat()
 
@@ -385,32 +528,25 @@ private class ReportPages(
         context.ensureActive()
         finish()
         pageNumber++
-        val fresh = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
-        page = fresh
-        val canvas: Canvas = fresh.canvas
-        fill.color = ACCENT
-        canvas.drawRect(LEFT, 29f, LEFT + WIDTH, 32f, fill)
-        val label =
-            TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = 9f
-                color = ACCENT
-                typeface = Typeface.DEFAULT_BOLD
-            }
-        canvas.drawText("FACTURASTOCK", LEFT, 48f, label)
-        label.typeface = Typeface.DEFAULT
-        label.textSize = 8f
-        label.color = MUTED
-        val number = "Página $pageNumber"
-        canvas.drawText(number, LEFT + WIDTH - label.measureText(number), 812f, label)
-        canvas.drawText("Generado ${stamp.format(snapshot.generatedAt)}", LEFT, 812f, label)
-        fill.color = RULE
-        canvas.drawRect(LEFT, 797f, LEFT + WIDTH, 798f, fill)
+        val fresh = PDPage(PDRectangle(PAGE_WIDTH, PAGE_HEIGHT))
+        document.addPage(fresh)
+        page = PDPageContentStream(document, fresh)
+        fillRect(LEFT, 29f, LEFT + WIDTH, 32f, ACCENT)
+        val bold = fonts.bold
+        val regular = fonts.regular
+        drawText(fonts.sanitizer(bold).sanitize("FACTURASTOCK"), bold, 9f, ACCENT, LEFT, 48f)
+        val footer = fonts.sanitizer(regular)
+        val number = footer.sanitize("Página $pageNumber")
+        drawText(number, regular, 8f, MUTED, LEFT + WIDTH - footer.width(number, 8f), 812f)
+        drawText(footer.sanitize("Generado ${stamp.format(snapshot.generatedAt)}"), regular, 8f, MUTED, LEFT, 812f)
+        fillRect(LEFT, 797f, LEFT + WIDTH, 798f, RULE)
         y = CONTENT_TOP
     }
 
     fun finish() {
-        page?.let(document::finishPage)
+        val open = page ?: return
         page = null
+        open.close()
     }
 
     private fun money(money: Money): String = "${money.currency.value} ${amount(money.toMajor(), money.currency)}"
@@ -430,15 +566,24 @@ private class ReportPages(
     }
 
     private companion object {
+        const val PAGE_WIDTH = 595f
+        const val PAGE_HEIGHT = 842f
         const val WIDTH = 523
         const val LEFT = 36f
         const val CONTENT_TOP = 66f
         const val BOTTOM = 781f
         const val CELL_PAD = 5
-        val INK: Int = Color.rgb(29, 44, 52)
-        val ACCENT: Int = Color.rgb(18, 92, 93)
-        val MUTED: Int = Color.rgb(83, 99, 110)
-        val LIGHT: Int = Color.rgb(241, 246, 246)
-        val RULE: Int = Color.rgb(211, 222, 225)
+        const val EPSILON = 0.001f
+
+        /** Roboto: ascent 1900/2048 y descent 500/2048 unidades (redondeo de FontMetricsInt). */
+        const val ASCENT_RATIO = 1900f / 2048f
+        const val DESCENT_RATIO = 500f / 2048f
+
+        val INK = Rgb(29, 44, 52)
+        val ACCENT = Rgb(18, 92, 93)
+        val MUTED = Rgb(83, 99, 110)
+        val LIGHT = Rgb(241, 246, 246)
+        val RULE = Rgb(211, 222, 225)
+        val WHITE = Rgb(255, 255, 255)
     }
 }

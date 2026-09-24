@@ -1,13 +1,12 @@
 package com.facturastock.app.data.files
 
-import android.content.Context
+import com.facturastock.app.core.platform.AppDirectories
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.domain.model.OcrVersionSweepReport
 import com.facturastock.app.domain.model.PrivateFileSweepReport
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.repository.OcrVersionSweepDecision
 import com.facturastock.app.domain.repository.RetentionFileSweep
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.FileVisitResult
@@ -29,15 +28,15 @@ import kotlinx.coroutines.withContext
  */
 @Singleton
 class LocalRetentionFileSweep @Inject constructor(
-    @ApplicationContext context: Context,
+    private val directories: AppDirectories,
     private val staleImportCleanup: StaleImportCleanup,
     private val dispatchers: DispatcherProvider,
     private val mutationCoordinator: PrivateImageMutationCoordinator =
         PrivateImageMutationCoordinator(),
     private val deletionDurability: PrivateDeletionDurability = PrivateDeletionDurability(),
 ) : RetentionFileSweep {
-    private val rootDirectory: File = context.filesDir
-    private val cacheDirectory: File = context.cacheDir
+    private val rootDirectory: File = directories.filesDir
+    private val cacheDirectory: File = directories.cacheDir
 
     override suspend fun sweepStaleImports(
         now: Instant,

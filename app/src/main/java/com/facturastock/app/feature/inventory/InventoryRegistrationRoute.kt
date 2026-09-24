@@ -1,5 +1,8 @@
 package com.facturastock.app.feature.inventory
 
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,15 +21,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.feature.common.ReadPhysicalInput
@@ -40,7 +42,7 @@ fun InventoryRegistrationRoute(
     onOpenProduct: (ProductId) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: InventoryViewModel = hiltViewModel(),
+    viewModel: InventoryViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scanner = rememberInventoryScannerInput(state, viewModel)
@@ -119,13 +121,13 @@ fun InventoryRegistrationScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_barcode_scanner),
+                    painter = painterResource(Res.drawable.ic_barcode_scanner),
                     contentDescription = null,
                     modifier = Modifier.size(72.dp),
                     tint = MaterialTheme.colorScheme.primary,
                 )
-                Text(stringResource(R.string.inventory_mode_scanner), style = MaterialTheme.typography.headlineSmall)
-                Text(stringResource(R.string.inventory_registration_help), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(Res.string.inventory_mode_scanner), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(Res.string.inventory_registration_help), style = MaterialTheme.typography.bodyLarge)
                 scannerContent?.invoke()
                 Surface(
                     modifier =
@@ -146,14 +148,14 @@ fun InventoryRegistrationScreen(
                 if (state.isLoading || state.isBarcodeLookupRunning) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
-                Text(stringResource(R.string.inventory_registration_enter), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(Res.string.inventory_registration_enter), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    stringResource(R.string.inventory_registration_result_help),
+                    stringResource(Res.string.inventory_registration_result_help),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 if (state.failure != null || state.scannerFailure == InventoryContract.ScannerFailure.LOOKUP_FAILED) {
-                    FacturaStockSecondaryButton(text = stringResource(R.string.action_retry), onClick = onRetry)
+                    FacturaStockSecondaryButton(text = stringResource(Res.string.action_retry), onClick = onRetry)
                 }
             }
         }
@@ -161,16 +163,16 @@ fun InventoryRegistrationScreen(
     }
 }
 
-internal fun inventoryScannerMessage(state: InventoryContract.State): Int =
+internal fun inventoryScannerMessage(state: InventoryContract.State): StringResource =
     when {
-        state.isLoading -> R.string.feature_loading_message
-        state.isBarcodeLookupRunning || state.registrationNavigationPending -> R.string.inventory_scanner_searching
-        state.failure != null -> R.string.inventory_scanner_lookup_failed
-        state.scannerFailure == InventoryContract.ScannerFailure.INVALID_BARCODE -> R.string.inventory_scanner_invalid
-        state.scannerFailure == InventoryContract.ScannerFailure.INCOMPLETE_BARCODE -> R.string.inventory_scanner_incomplete
-        state.scannerFailure == InventoryContract.ScannerFailure.BARCODE_TOO_LONG -> R.string.inventory_scanner_too_long
-        state.scannerFailure == InventoryContract.ScannerFailure.NO_ACTIVE_BUSINESS -> R.string.inventory_scanner_no_business
-        state.scannerFailure != null -> R.string.inventory_scanner_lookup_failed
-        state.scannerActive -> R.string.inventory_registration_ready
-        else -> R.string.inventory_scanner_inactive
+        state.isLoading -> Res.string.feature_loading_message
+        state.isBarcodeLookupRunning || state.registrationNavigationPending -> Res.string.inventory_scanner_searching
+        state.failure != null -> Res.string.inventory_scanner_lookup_failed
+        state.scannerFailure == InventoryContract.ScannerFailure.INVALID_BARCODE -> Res.string.inventory_scanner_invalid
+        state.scannerFailure == InventoryContract.ScannerFailure.INCOMPLETE_BARCODE -> Res.string.inventory_scanner_incomplete
+        state.scannerFailure == InventoryContract.ScannerFailure.BARCODE_TOO_LONG -> Res.string.inventory_scanner_too_long
+        state.scannerFailure == InventoryContract.ScannerFailure.NO_ACTIVE_BUSINESS -> Res.string.inventory_scanner_no_business
+        state.scannerFailure != null -> Res.string.inventory_scanner_lookup_failed
+        state.scannerActive -> Res.string.inventory_registration_ready
+        else -> Res.string.inventory_scanner_inactive
     }

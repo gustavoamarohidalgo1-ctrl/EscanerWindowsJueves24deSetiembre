@@ -49,7 +49,6 @@ import com.facturastock.app.feature.linking.ProductLinkingContract.LineLinking
 import com.facturastock.app.feature.linking.ProductLinkingContract.LinkStatus
 import com.facturastock.app.feature.linking.ProductLinkingContract.SearchStatus
 import com.facturastock.app.feature.linking.ProductLinkingContract.State
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -67,7 +66,6 @@ import kotlinx.coroutines.withContext
  * ([Action.CandidateConfirmed]) o dentro de la creación confirmada ([Action.CreateSubmitted]);
  * ningún alias nace del OCR ni del auto-enlace.
  */
-@HiltViewModel
 class ProductLinkingViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val loadInvoiceLinesReviewUseCase: LoadInvoiceLinesReviewUseCase,

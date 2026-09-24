@@ -1,6 +1,6 @@
 package com.facturastock.app.data.local
 
-import androidx.sqlite.db.SupportSQLiteDatabase
+import com.facturastock.app.data.local.sqlite.SupportSQLiteDatabase
 
 /** Respalda el bloqueo del repositorio frente a escritores SQL accidentales. */
 internal fun installCheckoutPersistenceInvariants(db: SupportSQLiteDatabase) {

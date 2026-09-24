@@ -1,16 +1,16 @@
 package com.facturastock.app.feature.top
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import com.facturastock.app.ui.components.EmptyState
 
 @Composable
 fun TopLevelPlaceholderScreen(
-    @StringRes titleRes: Int,
-    @StringRes messageRes: Int,
+    titleRes: StringResource,
+    messageRes: StringResource,
     modifier: Modifier = Modifier,
 ) {
     EmptyState(

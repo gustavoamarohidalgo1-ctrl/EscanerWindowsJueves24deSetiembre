@@ -46,7 +46,6 @@ import com.facturastock.app.domain.usecase.findSuspiciousExactBarcodeMatches
 import com.facturastock.app.domain.usecase.requiresSuspiciousExactBarcodeReview
 import com.facturastock.app.domain.usecase.findAutomaticBarcodeRecovery
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
@@ -66,8 +65,6 @@ import java.math.BigDecimal
 import java.util.UUID
 import java.util.Locale
 import javax.inject.Inject
-
-@HiltViewModel
 class SalesViewModel
     @Inject
     constructor(

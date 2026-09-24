@@ -1,5 +1,6 @@
 package com.facturastock.app.feature.linereview
 
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -10,10 +11,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.model.id.LineId
 import com.facturastock.app.feature.common.CollectUiEffects
@@ -30,7 +30,7 @@ fun InvoiceLineReviewRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: InvoiceLineReviewViewModel = hiltViewModel(),
+    viewModel: InvoiceLineReviewViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var requestedScrollLineId by remember { mutableStateOf<LineId?>(null) }
@@ -55,15 +55,15 @@ fun InvoiceLineReviewRoute(
                 .padding(FacturaStockDesign.spacing.lg),
         ) {
             RecoverableError(
-                title = stringResource(R.string.feature_load_error_title),
-                message = stringResource(R.string.feature_load_error_message),
-                actionLabel = stringResource(R.string.action_retry),
+                title = stringResource(Res.string.feature_load_error_title),
+                message = stringResource(Res.string.feature_load_error_message),
+                actionLabel = stringResource(Res.string.action_retry),
                 onAction = { onAction(Action.RetryLoad) },
             )
         }
 
         state.isLoading || state.failure == Failure.INVALID_ROUTE -> LoadingState(
-            message = stringResource(R.string.line_review_loading),
+            message = stringResource(Res.string.line_review_loading),
             modifier = modifier.fillMaxSize(),
         )
 

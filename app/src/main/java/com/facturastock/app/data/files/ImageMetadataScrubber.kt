@@ -1,6 +1,5 @@
 package com.facturastock.app.data.files
 
-import androidx.exifinterface.media.ExifInterface
 import com.facturastock.app.domain.error.FileError
 import com.facturastock.app.domain.error.FileException
 import java.io.File
@@ -90,12 +89,7 @@ internal object ImageMetadataScrubber {
      * rotación base porque los metadatos de dominio solo expresan rotación.
      */
     private fun readRotationDegrees(file: File): Int = try {
-        exifOrientationToDegrees(
-            ExifInterface(file).getAttributeInt(
-                ExifInterface.TAG_ORIENTATION,
-                ExifInterface.ORIENTATION_NORMAL,
-            ),
-        )
+        exifOrientationToDegrees(ExifOrientationReader.readOrientation(file))
     } catch (failure: IOException) {
         throw FileException(FileError.Corrupt, failure)
     }
@@ -108,8 +102,14 @@ internal object ImageMetadataScrubber {
 
 /** Traduce un valor de orientación EXIF (1 a 8) a grados de rotación (0, 90, 180 o 270). */
 internal fun exifOrientationToDegrees(exifOrientation: Int): Int = when (exifOrientation) {
-    ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
-    ExifInterface.ORIENTATION_ROTATE_180, ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180
-    ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
+    ExifOrientationReader.ORIENTATION_ROTATE_90,
+    ExifOrientationReader.ORIENTATION_TRANSPOSE,
+    -> 90
+    ExifOrientationReader.ORIENTATION_ROTATE_180,
+    ExifOrientationReader.ORIENTATION_FLIP_VERTICAL,
+    -> 180
+    ExifOrientationReader.ORIENTATION_ROTATE_270,
+    ExifOrientationReader.ORIENTATION_TRANSVERSE,
+    -> 270
     else -> 0
 }

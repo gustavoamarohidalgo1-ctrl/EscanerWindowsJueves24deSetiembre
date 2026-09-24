@@ -1,5 +1,6 @@
 package com.facturastock.app.feature.purchases
 
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,12 +11,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.PurchaseReadDetail
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
 import com.facturastock.app.ui.components.FacturaStockSecondaryButton
@@ -47,7 +47,7 @@ fun PurchaseSuccessScreen(
     ) {
         item(key = "title", contentType = "header") {
             Text(
-                text = stringResource(R.string.purchase_success_title),
+                text = stringResource(Res.string.purchase_success_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.headlineLarge,
@@ -55,11 +55,11 @@ fun PurchaseSuccessScreen(
         }
         item(key = "summary", contentType = "status") {
             StatusCard(
-                statusLabel = stringResource(R.string.purchase_success_status),
+                statusLabel = stringResource(Res.string.purchase_success_status),
                 title = summary.canonicalDocumentNumber,
-                message = stringResource(R.string.purchase_success_message),
+                message = stringResource(Res.string.purchase_success_message),
                 tone = StatusTone.SUCCESS,
-                iconRes = R.drawable.ic_check_circle,
+                iconRes = Res.drawable.ic_check_circle,
                 modifier = Modifier
                     .testTag(PurchaseSuccessTestTags.SUMMARY)
                     .semantics { liveRegion = LiveRegionMode.Polite },
@@ -70,7 +70,7 @@ fun PurchaseSuccessScreen(
                     )
                     Text(
                         stringResource(
-                            R.string.purchase_duplicate_date,
+                            Res.string.purchase_duplicate_date,
                             summary.issueDate.formatForDisplay(),
                         ),
                     )
@@ -84,7 +84,7 @@ fun PurchaseSuccessScreen(
                     )
                     Text(
                         stringResource(
-                            R.string.purchases_card_total,
+                            Res.string.purchases_card_total,
                             summary.total.formatForDisplay(),
                         ),
                         style = MaterialTheme.typography.titleMedium,
@@ -92,13 +92,13 @@ fun PurchaseSuccessScreen(
                     detail.adjustment?.let { adjustment ->
                         Text(
                             text = stringResource(
-                                R.string.purchase_success_adjustment,
+                                Res.string.purchase_success_adjustment,
                                 adjustment.formatSignedForDisplay(),
                             ),
                             modifier = Modifier.testTag(PurchaseSuccessTestTags.ADJUSTMENT),
                         )
                         detail.adjustmentReason?.let { reason ->
-                            Text(stringResource(R.string.purchase_success_adjustment_reason, reason))
+                            Text(stringResource(Res.string.purchase_success_adjustment_reason, reason))
                         }
                     }
                 },
@@ -116,29 +116,29 @@ fun PurchaseSuccessScreen(
         }
         item(key = "inventory_message", contentType = "message") {
             Text(
-                text = stringResource(R.string.purchase_success_inventory_message),
+                text = stringResource(Res.string.purchase_success_inventory_message),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
         item(key = "view_detail", contentType = "action") {
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.action_view_purchase_detail),
+                text = stringResource(Res.string.action_view_purchase_detail),
                 onClick = onViewDetail,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(PurchaseSuccessTestTags.VIEW_DETAIL),
-                leadingIconRes = R.drawable.ic_receipt,
+                leadingIconRes = Res.drawable.ic_receipt,
             )
         }
         item(key = "view_inventory", contentType = "action") {
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_view_updated_inventory),
+                text = stringResource(Res.string.action_view_updated_inventory),
                 onClick = onViewInventory,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(PurchaseSuccessTestTags.VIEW_INVENTORY),
-                leadingIconRes = R.drawable.ic_inventory,
+                leadingIconRes = Res.drawable.ic_inventory,
             )
         }
     }

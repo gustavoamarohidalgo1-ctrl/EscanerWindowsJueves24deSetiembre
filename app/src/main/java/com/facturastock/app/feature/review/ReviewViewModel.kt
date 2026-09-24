@@ -9,10 +9,7 @@ import com.facturastock.app.domain.model.id.LineId
 import com.facturastock.app.domain.usecase.RunDraftStageUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-
-@HiltViewModel
 class ReviewViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val runDraftStageUseCase: RunDraftStageUseCase,

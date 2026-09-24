@@ -1,7 +1,8 @@
 package com.facturastock.app.feature.home
 
-import androidx.annotation.DrawableRes
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,16 +26,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.HomeDashboardSnapshot
 import com.facturastock.app.ui.format.formatForDisplay
 import com.facturastock.app.ui.theme.FacturaStockDesign
@@ -118,7 +118,7 @@ private fun BusinessHeader(dashboard: HomeDashboardSnapshot?) {
     val spacing = FacturaStockDesign.spacing
     val businessName = dashboard?.business?.tradeName?.takeIf { it.isNotBlank() }
         ?: dashboard?.business?.legalName?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.home_dashboard_business_fallback)
+        ?: stringResource(Res.string.home_dashboard_business_fallback)
 
     Row(
         modifier = Modifier
@@ -148,7 +148,7 @@ private fun BusinessHeader(dashboard: HomeDashboardSnapshot?) {
         }
         if (dashboard?.isDemoMode == true) {
             Text(
-                text = stringResource(R.string.home_dashboard_demo_mode),
+                text = stringResource(Res.string.home_dashboard_demo_mode),
                 modifier = Modifier.padding(start = spacing.sm),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium,
@@ -159,7 +159,7 @@ private fun BusinessHeader(dashboard: HomeDashboardSnapshot?) {
 
 private data class SummaryValue(
     val value: String,
-    @param:StringRes val labelRes: Int,
+    val labelRes: StringResource,
     val warning: Boolean = false,
     val onClick: (() -> Unit)? = null,
 )
@@ -175,22 +175,22 @@ private fun BusinessSummary(
     val summaries = listOf(
         SummaryValue(
             value = stringResource(
-                R.string.home_summary_stock_value,
+                Res.string.home_summary_stock_value,
                 inventory.availableProductCount,
                 inventory.productCount,
             ),
-            labelRes = R.string.home_summary_stock,
+            labelRes = Res.string.home_summary_stock,
             onClick = onOpenInventory,
         ),
         SummaryValue(
             value = inventory.attentionProductCount.toString(),
-            labelRes = R.string.home_summary_attention,
+            labelRes = Res.string.home_summary_attention,
             warning = inventory.attentionProductCount > 0,
             onClick = onOpenInventory,
         ),
         SummaryValue(
             value = dashboard.overview.drafts.openCount.toString(),
-            labelRes = R.string.home_dashboard_metric_drafts,
+            labelRes = Res.string.home_dashboard_metric_drafts,
         ),
     )
 
@@ -329,7 +329,7 @@ private fun MainActions(
                 shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = spacing.md, vertical = spacing.sm),
             ) {
-                ActionContent(R.drawable.ic_sale, R.string.action_new_sale)
+                ActionContent(Res.drawable.ic_sale, Res.string.action_new_sale)
             }
         } else {
             OutlinedButton(
@@ -341,7 +341,7 @@ private fun MainActions(
                 shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = spacing.md, vertical = spacing.sm),
             ) {
-                ActionContent(R.drawable.ic_sale, R.string.action_new_sale)
+                ActionContent(Res.drawable.ic_sale, Res.string.action_new_sale)
             }
         }
     }
@@ -357,7 +357,7 @@ private fun MainActions(
                 shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = spacing.md, vertical = spacing.sm),
             ) {
-                ActionContent(R.drawable.ic_add_document, R.string.action_scan_invoice)
+                ActionContent(Res.drawable.ic_add_document, Res.string.action_scan_invoice)
             }
         } else {
             Button(
@@ -370,7 +370,7 @@ private fun MainActions(
                 shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = spacing.md, vertical = spacing.sm),
             ) {
-                ActionContent(R.drawable.ic_add_document, R.string.action_scan_invoice)
+                ActionContent(Res.drawable.ic_add_document, Res.string.action_scan_invoice)
             }
         }
     }
@@ -395,7 +395,7 @@ private fun MainActions(
 }
 
 @Composable
-private fun ActionContent(@DrawableRes iconRes: Int, @StringRes labelRes: Int) {
+private fun ActionContent(iconRes: DrawableResource, labelRes: StringResource) {
     val spacing = FacturaStockDesign.spacing
     Icon(
         painter = painterResource(iconRes),
@@ -418,22 +418,22 @@ private fun SecondaryLinks(
 ) {
     val links: @Composable (Modifier) -> Unit = { modifier ->
         SecondaryLink(
-            iconRes = R.drawable.ic_products,
-            labelRes = R.string.home_shortcut_products,
+            iconRes = Res.drawable.ic_products,
+            labelRes = Res.string.home_shortcut_products,
             tag = HomeTestTags.SHORTCUT_PRODUCTS,
             onClick = onOpenProducts,
             modifier = modifier,
         )
         SecondaryLink(
-            iconRes = R.drawable.ic_receipt,
-            labelRes = R.string.action_view_purchases,
+            iconRes = Res.drawable.ic_receipt,
+            labelRes = Res.string.action_view_purchases,
             tag = HomeTestTags.SHORTCUT_PURCHASES,
             onClick = onOpenPurchases,
             modifier = modifier,
         )
         SecondaryLink(
-            iconRes = R.drawable.ic_debtors,
-            labelRes = R.string.home_shortcut_debtors,
+            iconRes = Res.drawable.ic_debtors,
+            labelRes = Res.string.home_shortcut_debtors,
             tag = HomeTestTags.SHORTCUT_DEBTORS,
             onClick = onOpenDebtors,
             modifier = modifier,
@@ -456,8 +456,8 @@ private fun SecondaryLinks(
 
 @Composable
 private fun SecondaryLink(
-    @DrawableRes iconRes: Int,
-    @StringRes labelRes: Int,
+    iconRes: DrawableResource,
+    labelRes: StringResource,
     tag: String,
     onClick: () -> Unit,
     modifier: Modifier,
@@ -503,12 +503,12 @@ private fun SyncIssue(count: Int, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_warning),
+                painter = painterResource(Res.drawable.ic_warning),
                 contentDescription = null,
                 modifier = Modifier.size(spacing.iconSmall),
             )
             Text(
-                text = pluralStringResource(R.plurals.home_sync_issues, count, count),
+                text = pluralStringResource(Res.plurals.home_sync_issues, count, count),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
             )

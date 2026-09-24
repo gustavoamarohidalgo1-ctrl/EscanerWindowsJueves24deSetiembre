@@ -1,16 +1,16 @@
 package com.facturastock.app.feature.preparation
 
+import com.facturastock.app.resources.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.facturastock.app.domain.model.id.PurchaseId
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.ui.components.LoadingState
-import com.facturastock.app.R
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun PreparationRoute(
@@ -19,7 +19,7 @@ fun PreparationRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PreparationViewModel = hiltViewModel(),
+    viewModel: PreparationViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -42,9 +42,9 @@ fun PreparationRoute(
         LoadingState(
             message = stringResource(
                 if (state.isCheckingDuplicates) {
-                    R.string.purchase_duplicate_checking
+                    Res.string.purchase_duplicate_checking
                 } else {
-                    R.string.feature_loading_message
+                    Res.string.feature_loading_message
                 },
             ),
             modifier = modifier,

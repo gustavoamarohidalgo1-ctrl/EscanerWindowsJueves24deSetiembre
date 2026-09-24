@@ -7,11 +7,8 @@ import com.facturastock.app.domain.config.TaxRate
 import com.facturastock.app.domain.model.RucValidator
 import com.facturastock.app.domain.usecase.CompleteOnboardingUseCase
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.math.BigDecimal
 import javax.inject.Inject
-
-@HiltViewModel
 class OnboardingViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val completeOnboardingUseCase: CompleteOnboardingUseCase,

@@ -1,6 +1,6 @@
 package com.facturastock.app.data.repository
 
-import androidx.room.withTransaction
+import com.facturastock.app.data.local.withTransaction
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.data.local.FacturaStockDatabase
 import com.facturastock.app.data.local.codec.ParsedInvoiceAuditCodec

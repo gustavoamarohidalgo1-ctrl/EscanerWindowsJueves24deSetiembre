@@ -1,6 +1,6 @@
 package com.facturastock.app.data.local
 
-import androidx.sqlite.db.SupportSQLiteDatabase
+import com.facturastock.app.data.local.sqlite.SupportSQLiteDatabase
 
 private val SALES_TRIGGER_NAMES = listOf(
     "sales_block_replace",

@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.sales
 
-import androidx.activity.compose.BackHandler
+import com.facturastock.app.resources.*
+import com.facturastock.app.ui.navigation.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,13 +19,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.core.input.KeyboardWedgeReadError
 import com.facturastock.app.core.input.KeyboardWedgeRouter
 import com.facturastock.app.feature.common.CollectUiEffects
@@ -49,13 +49,13 @@ fun SalesRoute(
     onRegisterProduct: (SalesContract.ProductRegistrationRequest) -> Unit = {},
     registrationResult: SalesContract.ProductRegistrationResult? = null,
     onRegistrationResultConsumed: () -> Unit = {},
-    viewModel: SalesViewModel = hiltViewModel(),
+    viewModel: SalesViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val associatedMessage = stringResource(R.string.sales_message_barcode_associated)
-    val postedMessage = stringResource(R.string.sales_message_posted)
+    val associatedMessage = stringResource(Res.string.sales_message_barcode_associated)
+    val postedMessage = stringResource(Res.string.sales_message_posted)
     val currentExitRegistration by rememberUpdatedState(onExitRequestAvailable)
     val lifecycleOwner = LocalLifecycleOwner.current
     val consumeRegistrationResult by rememberUpdatedState(onRegistrationResultConsumed)
@@ -242,14 +242,14 @@ fun SalesRoute(
                         onCode = { value ->
                             viewModel.onAction(SalesContract.Action.BarcodeScanned(value))
                         },
-                        submitLabelRes = if (state.unifiedInput) R.string.sales_unified_add_code else R.string.sales_scanner_add_product,
+                        submitLabelRes = if (state.unifiedInput) Res.string.sales_unified_add_code else Res.string.sales_scanner_add_product,
                         searchQuery = state.query.takeIf { state.unifiedInput },
                         onSearchQueryChange = if (state.unifiedInput) {
                             { value -> viewModel.onAction(SalesContract.Action.SearchChanged(value)) }
                         } else null,
                         isOtherTextInputFocused = state.unifiedInput && state.isTextInputFocused,
-                        labelRes = if (state.unifiedInput) R.string.sales_unified_input_label else R.string.scanner_code_label,
-                        hintRes = if (state.unifiedInput) R.string.sales_unified_input_hint else R.string.scanner_code_hint,
+                        labelRes = if (state.unifiedInput) Res.string.sales_unified_input_label else Res.string.scanner_code_label,
+                        hintRes = if (state.unifiedInput) Res.string.sales_unified_input_hint else Res.string.scanner_code_hint,
                         modifier = Modifier.padding(FacturaStockDesign.spacing.md),
                     )
                 }

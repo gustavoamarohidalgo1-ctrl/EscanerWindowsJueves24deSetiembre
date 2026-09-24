@@ -1,5 +1,8 @@
 package com.facturastock.app.feature.inventory
 
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,10 +15,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import org.jetbrains.compose.resources.stringResource
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.ProductId
 import com.facturastock.app.domain.model.id.PurchaseId
 import com.facturastock.app.feature.common.CollectUiEffects
@@ -39,7 +41,7 @@ fun InventoryRoute(
     onRegisterSpecialProduct: () -> Unit = {},
     onEditProduct: (ProductId) -> Unit = {},
     onTopBarActionsAvailable: (List<FacturaStockTopBarAction>) -> Unit = {},
-    viewModel: InventoryViewModel = hiltViewModel(),
+    viewModel: InventoryViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val diagnosticFailed = state.failure == InventoryContract.Failure.DIAGNOSTIC_FAILED
@@ -99,9 +101,9 @@ fun InventoryRoute(
 
     if (state.failure == InventoryContract.Failure.PRODUCT_NOT_FOUND && state.detail == null) {
         RecoverableError(
-            title = stringResource(R.string.inventory_product_not_found_title),
-            message = stringResource(R.string.inventory_product_not_found_message),
-            actionLabel = stringResource(R.string.action_return_inventory),
+            title = stringResource(Res.string.inventory_product_not_found_title),
+            message = stringResource(Res.string.inventory_product_not_found_message),
+            actionLabel = stringResource(Res.string.action_return_inventory),
             onAction = onCloseInvalidRoute,
             modifier = modifier,
         )
@@ -114,7 +116,7 @@ fun InventoryRoute(
                 Column(Modifier.padding(FacturaStockDesign.spacing.md)) {
                     InventoryProductActionError(failure)
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.inventory_product_dismiss_error),
+                        text = stringResource(Res.string.inventory_product_dismiss_error),
                         onClick = { viewModel.onAction(InventoryContract.Action.DismissProductActionFailure) },
                     )
                 }
@@ -137,10 +139,11 @@ fun InventoryRoute(
                                     onCode = scanner.submit,
                                     searchQuery = state.query,
                                     onSearchQueryChange = { viewModel.onAction(InventoryContract.Action.SearchChanged(it)) },
-                                    labelRes = R.string.inventory_unified_input_label,
-                                    hintRes = R.string.inventory_unified_input_hint,
-                                    supportingTextRes = R.string.inventory_unified_input_help,
+                                    labelRes = Res.string.inventory_unified_input_label,
+                                    hintRes = Res.string.inventory_unified_input_hint,
+                                    supportingTextRes = Res.string.inventory_unified_input_help,
                                     showActions = false,
+                                    unconfirmedScanResetMillis = INVENTORY_IDLE_READ_RESET_MILLIS,
                                     modifier = Modifier.padding(FacturaStockDesign.spacing.md),
                                 )
                             }
@@ -160,7 +163,7 @@ fun InventoryRoute(
                             }
                             if (state.scannerFailure == InventoryContract.ScannerFailure.LOOKUP_FAILED) {
                                 FacturaStockSecondaryButton(
-                                    text = stringResource(R.string.action_retry),
+                                    text = stringResource(Res.string.action_retry),
                                     onClick = { viewModel.onAction(InventoryContract.Action.Retry) },
                                     enabled = !state.isBarcodeLookupRunning,
                                     modifier = Modifier.padding(horizontal = FacturaStockDesign.spacing.md),
@@ -226,9 +229,9 @@ private fun InventoryTopBarActions(
     onRegisterSpecialProduct: () -> Unit,
     onTopBarActionsAvailable: (List<FacturaStockTopBarAction>) -> Unit,
 ) {
-    val registerProductsLabel = stringResource(R.string.inventory_register_products)
-    val registerManualLabel = stringResource(R.string.inventory_register_manual)
-    val registerSpecialLabel = stringResource(R.string.inventory_register_special_product)
+    val registerProductsLabel = stringResource(Res.string.inventory_register_products)
+    val registerManualLabel = stringResource(Res.string.inventory_register_manual)
+    val registerSpecialLabel = stringResource(Res.string.inventory_register_special_product)
     val currentOnRegisterProducts by rememberUpdatedState(onRegisterProducts)
     val currentOnRegisterManual by rememberUpdatedState(onRegisterManual)
     val currentOnRegisterSpecialProduct by rememberUpdatedState(onRegisterSpecialProduct)
@@ -241,21 +244,21 @@ private fun InventoryTopBarActions(
         } else {
             listOf(
                 FacturaStockTopBarAction(
-                    iconRes = R.drawable.ic_scanner_gun,
+                    iconRes = Res.drawable.ic_scanner_gun,
                     contentDescription = registerProductsLabel,
                     onClick = { currentOnRegisterProducts() },
                     enabled = enabled,
                     testTag = InventoryTestTags.REGISTER_PRODUCTS,
                 ),
                 FacturaStockTopBarAction(
-                    iconRes = R.drawable.ic_hand_writing,
+                    iconRes = Res.drawable.ic_hand_writing,
                     contentDescription = registerManualLabel,
                     onClick = { currentOnRegisterManual() },
                     enabled = enabled,
                     testTag = InventoryTestTags.REGISTER_MANUAL,
                 ),
                 FacturaStockTopBarAction(
-                    iconRes = R.drawable.ic_rice,
+                    iconRes = Res.drawable.ic_rice,
                     contentDescription = registerSpecialLabel,
                     onClick = { currentOnRegisterSpecialProduct() },
                     enabled = enabled,
@@ -271,9 +274,9 @@ private fun InventoryTopBarActions(
 }
 
 /** Mensaje del lector en el listado: nulo mientras sólo espera lecturas o carga la pantalla. */
-internal fun inventoryListScannerMessage(state: InventoryContract.State): Int? =
+internal fun inventoryListScannerMessage(state: InventoryContract.State): StringResource? =
     inventoryScannerMessage(state).takeUnless { messageRes ->
-        messageRes == R.string.inventory_registration_ready ||
-            messageRes == R.string.inventory_scanner_inactive ||
-            messageRes == R.string.feature_loading_message
+        messageRes == Res.string.inventory_registration_ready ||
+            messageRes == Res.string.inventory_scanner_inactive ||
+            messageRes == Res.string.feature_loading_message
     }

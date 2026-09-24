@@ -1,6 +1,8 @@
 package com.facturastock.app.feature.matching
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,13 +45,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.InvoiceMatchUnitChoice
 import com.facturastock.app.domain.model.Product
 import com.facturastock.app.domain.model.ScannedItemMatch
@@ -76,7 +77,7 @@ fun InvoiceMatchingScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = stringResource(R.string.matching_title),
+                        text = stringResource(Res.string.matching_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -84,8 +85,8 @@ fun InvoiceMatchingScreen(
                 navigationIcon = {
                     IconButton(onClick = { onAction(Action.BackSelected) }) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_back),
-                            contentDescription = stringResource(R.string.action_cancel),
+                            painter = painterResource(Res.drawable.ic_back),
+                            contentDescription = stringResource(Res.string.action_cancel),
                         )
                     }
                 },
@@ -105,7 +106,7 @@ fun InvoiceMatchingScreen(
                     FacturaStockPrimaryButton(
                         text =
                             stringResource(
-                                R.string.matching_action_save_to_warehouse,
+                                Res.string.matching_action_save_to_warehouse,
                                 state.readyCount,
                             ),
                         onClick = { onAction(Action.SaveToWarehouse) },
@@ -120,7 +121,7 @@ fun InvoiceMatchingScreen(
         when {
             state.isLoading -> {
                 LoadingState(
-                    message = stringResource(R.string.linking_loading),
+                    message = stringResource(Res.string.linking_loading),
                     modifier =
                         Modifier
                             .fillMaxSize()
@@ -138,9 +139,9 @@ fun InvoiceMatchingScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     RecoverableError(
-                        title = stringResource(R.string.feature_load_error_title),
+                        title = stringResource(Res.string.feature_load_error_title),
                         message = stringResource(matchingFailureMessage(state.failure)),
-                        actionLabel = stringResource(R.string.action_retry),
+                        actionLabel = stringResource(Res.string.action_retry),
                         onAction = { onAction(Action.Start) },
                     )
                 }
@@ -157,13 +158,13 @@ fun InvoiceMatchingScreen(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        text = stringResource(R.string.matching_empty_lines_action),
+                        text = stringResource(Res.string.matching_empty_lines_action),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = spacing.md),
                     )
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.matching_add_product_cta),
+                        text = stringResource(Res.string.matching_add_product_cta),
                         onClick = { onAction(Action.OpenAddNewProductDialog) },
                     )
                 }
@@ -180,7 +181,7 @@ fun InvoiceMatchingScreen(
                 ) {
                     item(key = "header_subtitle") {
                         Text(
-                            text = stringResource(R.string.matching_subtitle),
+                            text = stringResource(Res.string.matching_subtitle),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = spacing.xs),
@@ -194,9 +195,9 @@ fun InvoiceMatchingScreen(
                     if (state.saveFailure != null) {
                         item(key = "save_failure") {
                             RecoverableError(
-                                title = stringResource(R.string.feature_load_error_title),
+                                title = stringResource(Res.string.feature_load_error_title),
                                 message = stringResource(matchingFailureMessage(state.saveFailure)),
-                                actionLabel = stringResource(R.string.action_retry),
+                                actionLabel = stringResource(Res.string.action_retry),
                                 onAction = { onAction(Action.SaveToWarehouse) },
                             )
                         }
@@ -221,7 +222,7 @@ fun InvoiceMatchingScreen(
 
                     item(key = "add_another_product") {
                         FacturaStockSecondaryButton(
-                            text = stringResource(R.string.matching_add_another_product_cta),
+                            text = stringResource(Res.string.matching_add_another_product_cta),
                             onClick = { onAction(Action.OpenAddNewProductDialog) },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -321,10 +322,10 @@ private fun ScannedItemCard(
                         text =
                             item.quantity?.let { quantity ->
                                 stringResource(
-                                    R.string.matching_line_quantity,
+                                    Res.string.matching_line_quantity,
                                     quantity.stripTrailingZeros().toPlainString(),
                                 )
-                            } ?: stringResource(R.string.matching_line_quantity_unknown),
+                            } ?: stringResource(Res.string.matching_line_quantity_unknown),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xxs),
@@ -341,7 +342,7 @@ private fun ScannedItemCard(
                         Text(
                             text =
                                 stringResource(
-                                    R.string.matching_line_cost,
+                                    Res.string.matching_line_cost,
                                     cost.stripTrailingZeros().toPlainString(),
                                 ),
                             style = MaterialTheme.typography.bodySmall,
@@ -350,14 +351,14 @@ private fun ScannedItemCard(
                     }
                     item.printedCode?.let { code ->
                         Text(
-                            text = stringResource(R.string.matching_line_code, code),
+                            text = stringResource(Res.string.matching_line_code, code),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     item.barcode?.let { code ->
                         Text(
-                            text = stringResource(R.string.catalog_barcode_label) + ": $code",
+                            text = stringResource(Res.string.catalog_barcode_label) + ": $code",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -383,14 +384,14 @@ private fun ScannedItemCard(
                         modifier = Modifier.weight(1f),
                     ) {
                         Icon(
-                            painter = painterResource(if (ready) R.drawable.ic_check_circle else R.drawable.ic_warning),
+                            painter = painterResource(if (ready) Res.drawable.ic_check_circle else Res.drawable.ic_warning),
                             contentDescription = null,
                             tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         )
                         Text(
                             text =
                                 stringResource(
-                                    if (ready) R.string.matching_status_ready else R.string.matching_review_linked,
+                                    if (ready) Res.string.matching_status_ready else Res.string.matching_review_linked,
                                     item.matchedProduct.name,
                                 ),
                             style = MaterialTheme.typography.bodyMedium,
@@ -399,14 +400,14 @@ private fun ScannedItemCard(
                         )
                     }
                     TextButton(onClick = onLink) {
-                        Text(stringResource(R.string.matching_action_change))
+                        Text(stringResource(Res.string.matching_action_change))
                     }
                 }
             } else {
                 // Sugerencias rápidas si se encontraron nombres parecidos
                 if (item.suggestedProducts.isNotEmpty()) {
                     Text(
-                        text = stringResource(R.string.matching_suggestions_label),
+                        text = stringResource(Res.string.matching_suggestions_label),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -438,19 +439,19 @@ private fun ScannedItemCard(
                         onClick = onLink,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(stringResource(R.string.matching_action_link))
+                        Text(stringResource(Res.string.matching_action_link))
                     }
                     OutlinedButton(
                         onClick = onCreate,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(stringResource(R.string.matching_action_create))
+                        Text(stringResource(Res.string.matching_action_create))
                     }
                 }
             }
 
             TextButton(onClick = onReview, modifier = Modifier.testTag("matching_review_${item.lineIndex}")) {
-                Text(stringResource(if (ready) R.string.matching_edit_numbers else R.string.matching_review_required))
+                Text(stringResource(if (ready) Res.string.matching_edit_numbers else Res.string.matching_review_required))
             }
         }
     }
@@ -469,11 +470,11 @@ private fun LineReviewDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(item.rawDescription, style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.matching_review_explanation), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(Res.string.matching_review_explanation), style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     value = state.editQuantity,
                     onValueChange = { onAction(Action.EditQuantityChanged(it)) },
-                    label = { Text(stringResource(R.string.catalog_product_quantity_label)) },
+                    label = { Text(stringResource(Res.string.catalog_product_quantity_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("matching_edit_quantity"),
@@ -481,7 +482,7 @@ private fun LineReviewDialog(
                 OutlinedTextField(
                     value = state.editCost,
                     onValueChange = { onAction(Action.EditCostChanged(it)) },
-                    label = { Text(stringResource(R.string.matching_review_cost)) },
+                    label = { Text(stringResource(Res.string.matching_review_cost)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("matching_edit_cost"),
@@ -489,12 +490,12 @@ private fun LineReviewDialog(
                 OutlinedTextField(
                     value = state.editCurrency,
                     onValueChange = { onAction(Action.EditCurrencyChanged(it)) },
-                    label = { Text(stringResource(R.string.matching_review_currency, state.businessCurrency.value)) },
+                    label = { Text(stringResource(Res.string.matching_review_currency, state.businessCurrency.value)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("matching_edit_currency"),
                 )
-                Text(stringResource(R.string.matching_review_currency_help), style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.matching_review_unit, item.sourceUnitCode ?: "—"))
+                Text(stringResource(Res.string.matching_review_currency_help), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(Res.string.matching_review_unit, item.sourceUnitCode ?: "—"))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().clickable { onAction(Action.EditUnitChoiceChanged(InvoiceMatchUnitChoice.INVENTORY)) },
@@ -503,7 +504,7 @@ private fun LineReviewDialog(
                         selected = state.editUnitChoice == InvoiceMatchUnitChoice.INVENTORY,
                         onClick = { onAction(Action.EditUnitChoiceChanged(InvoiceMatchUnitChoice.INVENTORY)) },
                     )
-                    Text(stringResource(R.string.matching_review_inventory_unit, item.inventoryUnitCode ?: "—"))
+                    Text(stringResource(Res.string.matching_review_inventory_unit, item.inventoryUnitCode ?: "—"))
                 }
                 if (item.matchedProduct?.purchaseUnitId != null) {
                     Row(
@@ -516,7 +517,7 @@ private fun LineReviewDialog(
                         )
                         Text(
                             stringResource(
-                                R.string.matching_review_purchase_unit,
+                                Res.string.matching_review_purchase_unit,
                                 item.purchaseUnitCode ?: "—",
                                 item.matchedProduct.purchaseFactor
                                     ?.stripTrailingZeros()
@@ -529,12 +530,12 @@ private fun LineReviewDialog(
                 state.recoveryMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.action_cancel),
+                        text = stringResource(Res.string.action_cancel),
                         onClick = { onAction(Action.CloseLineEditor) },
                         modifier = Modifier.weight(1f),
                     )
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.action_save),
+                        text = stringResource(Res.string.action_save),
                         onClick = { onAction(Action.SubmitLineEdit) },
                         modifier = Modifier.weight(1f).testTag("matching_save_review"),
                     )
@@ -571,7 +572,7 @@ private fun ProductSearchDialog(
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 Text(
-                    text = stringResource(R.string.matching_dialog_link_title),
+                    text = stringResource(Res.string.matching_dialog_link_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -579,18 +580,18 @@ private fun ProductSearchDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = onQueryChanged,
-                    placeholder = { Text(stringResource(R.string.matching_search_placeholder)) },
+                    placeholder = { Text(stringResource(Res.string.matching_search_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 if (isSearching) {
-                    LoadingState(message = stringResource(R.string.matching_search_loading))
+                    LoadingState(message = stringResource(Res.string.matching_search_loading))
                 } else if (searchFailed) {
                     RecoverableError(
-                        title = stringResource(R.string.feature_load_error_title),
-                        message = stringResource(R.string.matching_search_error),
-                        actionLabel = stringResource(R.string.action_retry),
+                        title = stringResource(Res.string.feature_load_error_title),
+                        message = stringResource(Res.string.matching_search_error),
+                        actionLabel = stringResource(Res.string.action_retry),
                         onAction = onRetry,
                     )
                 } else if (results.isEmpty()) {
@@ -603,7 +604,7 @@ private fun ProductSearchDialog(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = stringResource(R.string.matching_dialog_link_no_results),
+                            text = stringResource(Res.string.matching_dialog_link_no_results),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -635,7 +636,7 @@ private fun ProductSearchDialog(
                                     )
                                     product.barcode?.let { code ->
                                         Text(
-                                            text = stringResource(R.string.catalog_barcode_label) + ": $code",
+                                            text = stringResource(Res.string.catalog_barcode_label) + ": $code",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -651,7 +652,7 @@ private fun ProductSearchDialog(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.action_cancel))
+                        Text(stringResource(Res.string.action_cancel))
                     }
                 }
             }
@@ -687,7 +688,7 @@ private fun ProductCreateDialog(
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 Text(
-                    text = stringResource(R.string.matching_dialog_create_title),
+                    text = stringResource(Res.string.matching_dialog_create_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -704,7 +705,7 @@ private fun ProductCreateDialog(
                     value = barcode,
                     onValueChange = onBarcodeChanged,
                     enabled = !isSaving,
-                    label = { Text(stringResource(R.string.catalog_barcode_label)) },
+                    label = { Text(stringResource(Res.string.catalog_barcode_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -713,7 +714,7 @@ private fun ProductCreateDialog(
                     value = name,
                     onValueChange = onNameChanged,
                     enabled = !isSaving,
-                    label = { Text(stringResource(R.string.catalog_name_label)) },
+                    label = { Text(stringResource(Res.string.catalog_name_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -722,7 +723,7 @@ private fun ProductCreateDialog(
                     value = price,
                     onValueChange = onPriceChanged,
                     enabled = !isSaving,
-                    label = { Text(stringResource(R.string.catalog_product_price_label)) },
+                    label = { Text(stringResource(Res.string.catalog_product_price_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -732,7 +733,7 @@ private fun ProductCreateDialog(
                     value = quantity,
                     onValueChange = onQuantityChanged,
                     enabled = !isSaving,
-                    label = { Text(stringResource(R.string.catalog_product_quantity_label)) },
+                    label = { Text(stringResource(Res.string.catalog_product_quantity_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -746,13 +747,13 @@ private fun ProductCreateDialog(
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.action_cancel),
+                        text = stringResource(Res.string.action_cancel),
                         onClick = onDismiss,
                         enabled = !isSaving,
                         modifier = Modifier.weight(1f),
                     )
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.action_save),
+                        text = stringResource(Res.string.action_save),
                         onClick = onSubmit,
                         enabled = name.isNotBlank() && !isSaving,
                         modifier = Modifier.weight(1f),
@@ -763,29 +764,28 @@ private fun ProductCreateDialog(
     }
 }
 
-@StringRes
-private fun matchingFailureMessage(failure: Failure?): Int =
+private fun matchingFailureMessage(failure: Failure?): StringResource =
     when (failure) {
-        Failure.NO_ACTIVE_BUSINESS -> R.string.matching_error_no_business
+        Failure.NO_ACTIVE_BUSINESS -> Res.string.matching_error_no_business
 
-        Failure.INVALID_DRAFT_ID -> R.string.matching_error_invalid_draft
+        Failure.INVALID_DRAFT_ID -> Res.string.matching_error_invalid_draft
 
-        Failure.CLOUD_BOUND -> R.string.matching_error_cloud_bound
+        Failure.CLOUD_BOUND -> Res.string.matching_error_cloud_bound
 
-        Failure.UNRESOLVED_LINES -> R.string.matching_error_unresolved
+        Failure.UNRESOLVED_LINES -> Res.string.matching_error_unresolved
 
-        Failure.NOTHING_TO_APPLY -> R.string.matching_error_nothing_to_apply
+        Failure.NOTHING_TO_APPLY -> Res.string.matching_error_nothing_to_apply
 
-        Failure.MISSING_LOCATION -> R.string.matching_error_missing_location
+        Failure.MISSING_LOCATION -> Res.string.matching_error_missing_location
 
-        Failure.REVIEW_REQUIRED -> R.string.matching_error_review_required
+        Failure.REVIEW_REQUIRED -> Res.string.matching_error_review_required
 
-        Failure.DRAFT_CHANGED -> R.string.matching_error_draft_changed
+        Failure.DRAFT_CHANGED -> Res.string.matching_error_draft_changed
 
-        Failure.LEGACY_CONFLICT -> R.string.matching_error_legacy_conflict
+        Failure.LEGACY_CONFLICT -> Res.string.matching_error_legacy_conflict
 
         Failure.SAVE_FAILED,
         Failure.LOAD_FAILED,
         null,
-        -> R.string.feature_load_error_message
+        -> Res.string.feature_load_error_message
     }

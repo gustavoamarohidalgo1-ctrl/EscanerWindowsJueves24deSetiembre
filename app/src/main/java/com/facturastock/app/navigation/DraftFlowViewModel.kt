@@ -8,7 +8,6 @@ import com.facturastock.app.domain.usecase.DeleteDraftUseCase
 import com.facturastock.app.domain.usecase.ObserveInvoiceDraftUseCase
 import com.facturastock.app.domain.usecase.StartInvoiceDraftUseCase
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
@@ -20,7 +19,6 @@ import kotlinx.coroutines.flow.first
  * primero el registro durable: si el insert ya concluyó se reutiliza y, si no, se reanuda con el
  * mismo ID. Los pendientes solo se limpian después de que la UI haya cambiado de destino.
  */
-@HiltViewModel
 class DraftFlowViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val startInvoiceDraftUseCase: StartInvoiceDraftUseCase,

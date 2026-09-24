@@ -1,11 +1,13 @@
 package com.facturastock.app.data.demo
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
-import androidx.core.graphics.createBitmap
+import com.facturastock.app.data.files.DesktopImageCodec
+import java.awt.BasicStroke
+import java.awt.Color
+import java.awt.Font
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import java.awt.geom.Rectangle2D
+import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 
 /**
@@ -13,33 +15,62 @@ import java.io.ByteArrayOutputStream
  *
  * El resultado no contiene EXIF ni datos externos y puede entrar por la sobrecarga de captura
  * (`ImportDraftImageUseCase` con bytes JPEG). Después del preprocesado también es una entrada
- * legible para ML Kit; el recorrido determinista puede usar directamente [DemoInvoiceFixture].
+ * legible para el OCR; el recorrido determinista puede usar directamente [DemoInvoiceFixture].
+ *
+ * En escritorio se dibuja con Java2D sobre un [BufferedImage] RGB con la misma geometría,
+ * colores, tamaños de texto y calidad JPEG que la versión Android. La tipografía es la sans
+ * serif lógica del sistema (Arial/Segoe en Windows) en lugar de Roboto, por lo que los píxeles
+ * del texto no son idénticos, pero sí su posición, alineación y centrado vertical.
  */
 object DemoInvoiceImageGenerator {
     fun jpegBytes(quality: Int = DEFAULT_JPEG_QUALITY): ByteArray {
         require(quality in MIN_JPEG_QUALITY..MAX_JPEG_QUALITY) {
             "La calidad JPEG demo debe estar entre $MIN_JPEG_QUALITY y $MAX_JPEG_QUALITY"
         }
-        val bitmap = createBitmap(
+        val bitmap = BufferedImage(
             DemoInvoiceFixture.BASE_PAGE_WIDTH_PX,
             DemoInvoiceFixture.BASE_PAGE_HEIGHT_PX,
-            Bitmap.Config.ARGB_8888,
+            BufferedImage.TYPE_INT_RGB,
         )
         return try {
-            drawInvoice(Canvas(bitmap))
+            val canvas = bitmap.createGraphics()
+            try {
+                drawInvoice(canvas)
+            } finally {
+                canvas.dispose()
+            }
             ByteArrayOutputStream().use { output ->
-                check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                check(DesktopImageCodec.compressJpeg(bitmap, quality, output)) {
                     "No se pudo comprimir la factura demo"
                 }
                 output.toByteArray()
             }
         } finally {
-            bitmap.recycle()
+            bitmap.flush()
         }
     }
 
-    private fun drawInvoice(canvas: Canvas) {
-        canvas.drawColor(Color.WHITE)
+    private fun drawInvoice(canvas: Graphics2D) {
+        // Geometría exacta: sin normalización de trazos, como el Canvas de Android.
+        canvas.setRenderingHint(
+            RenderingHints.KEY_STROKE_CONTROL,
+            RenderingHints.VALUE_STROKE_PURE,
+        )
+        canvas.setRenderingHint(
+            RenderingHints.KEY_TEXT_ANTIALIASING,
+            RenderingHints.VALUE_TEXT_ANTIALIAS_ON,
+        )
+        canvas.setRenderingHint(
+            RenderingHints.KEY_FRACTIONALMETRICS,
+            RenderingHints.VALUE_FRACTIONALMETRICS_ON,
+        )
+        canvas.color = Color.WHITE
+        canvas.fillRect(
+            0,
+            0,
+            DemoInvoiceFixture.BASE_PAGE_WIDTH_PX,
+            DemoInvoiceFixture.BASE_PAGE_HEIGHT_PX,
+        )
         val cells = DemoInvoiceFixture.canonicalCells()
         cells.forEach { cell ->
             drawCellBackground(canvas, cell)
@@ -49,7 +80,7 @@ object DemoInvoiceImageGenerator {
         drawPageFrame(canvas)
     }
 
-    private fun drawCellBackground(canvas: Canvas, cell: DemoInvoiceCell) {
+    private fun drawCellBackground(canvas: Graphics2D, cell: DemoInvoiceCell) {
         val background = when (cell.style) {
             DemoInvoiceCellStyle.TABLE_HEADER -> HEADER_BACKGROUND
             DemoInvoiceCellStyle.SUMMARY_MONEY -> TOTAL_BACKGROUND
@@ -57,18 +88,18 @@ object DemoInvoiceImageGenerator {
             else -> Color.WHITE
         }
         if (background == Color.WHITE) return
-        canvas.drawRect(
-            cell.box.leftPx.toFloat(),
-            cell.box.topPx.toFloat(),
-            cell.box.rightPx.toFloat(),
-            cell.box.bottomPx.toFloat(),
-            fillPaint(background),
-        )
+        // Relleno sin antialias, como el `Paint()` sin ANTI_ALIAS_FLAG de Android.
+        canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+        canvas.color = background
+        canvas.fill(cell.box.toRectangle())
     }
 
-    private fun drawCellText(canvas: Canvas, cell: DemoInvoiceCell) {
-        val textPaint = textPaint(cell.style)
-        val baseline = centeredBaseline(cell.box, textPaint)
+    private fun drawCellText(canvas: Graphics2D, cell: DemoInvoiceCell) {
+        val font = textFont(cell.style)
+        canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        canvas.font = font
+        canvas.color = textColor(cell.style)
+        val baseline = centeredBaseline(canvas, cell.box, font, cell.text)
         val x = when (cell.style) {
             DemoInvoiceCellStyle.TABLE_MONEY,
             DemoInvoiceCellStyle.SUMMARY_MONEY,
@@ -76,15 +107,19 @@ object DemoInvoiceImageGenerator {
 
             else -> cell.box.leftPx + CELL_HORIZONTAL_PADDING_PX
         }
-        canvas.drawText(cell.text, x.toFloat(), baseline, textPaint)
+        // Paint.Align.RIGHT: el ancho de avance del texto termina exactamente en `x`.
+        val drawX = if (isRightAligned(cell.style)) {
+            x - font.getStringBounds(cell.text, canvas.fontRenderContext).width.toFloat()
+        } else {
+            x.toFloat()
+        }
+        canvas.drawString(cell.text, drawX, baseline)
     }
 
-    private fun drawTableGrid(canvas: Canvas, cells: List<DemoInvoiceCell>) {
-        val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = GRID_COLOR
-            style = Paint.Style.STROKE
-            strokeWidth = GRID_STROKE_WIDTH_PX
-        }
+    private fun drawTableGrid(canvas: Graphics2D, cells: List<DemoInvoiceCell>) {
+        canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        canvas.color = GRID_COLOR
+        canvas.stroke = strokeOf(GRID_STROKE_WIDTH_PX)
         cells.asSequence()
             .filter { cell ->
                 cell.style == DemoInvoiceCellStyle.TABLE_HEADER ||
@@ -93,43 +128,41 @@ object DemoInvoiceImageGenerator {
                     cell.style == DemoInvoiceCellStyle.SUMMARY_LABEL ||
                     cell.style == DemoInvoiceCellStyle.SUMMARY_MONEY
             }
-            .forEach { cell ->
-                canvas.drawRect(
-                    cell.box.leftPx.toFloat(),
-                    cell.box.topPx.toFloat(),
-                    cell.box.rightPx.toFloat(),
-                    cell.box.bottomPx.toFloat(),
-                    gridPaint,
-                )
-            }
+            .forEach { cell -> canvas.draw(cell.box.toRectangle()) }
     }
 
-    private fun drawPageFrame(canvas: Canvas) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = FRAME_COLOR
-            style = Paint.Style.STROKE
-            strokeWidth = FRAME_STROKE_WIDTH_PX
-        }
-        canvas.drawRect(
-            PAGE_FRAME_INSET_PX,
-            PAGE_FRAME_INSET_PX,
-            DemoInvoiceFixture.BASE_PAGE_WIDTH_PX - PAGE_FRAME_INSET_PX,
-            DemoInvoiceFixture.BASE_PAGE_HEIGHT_PX - PAGE_FRAME_INSET_PX,
-            paint,
+    private fun drawPageFrame(canvas: Graphics2D) {
+        canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        canvas.color = FRAME_COLOR
+        canvas.stroke = strokeOf(FRAME_STROKE_WIDTH_PX)
+        canvas.draw(
+            Rectangle2D.Float(
+                PAGE_FRAME_INSET_PX,
+                PAGE_FRAME_INSET_PX,
+                DemoInvoiceFixture.BASE_PAGE_WIDTH_PX - PAGE_FRAME_INSET_PX * 2,
+                DemoInvoiceFixture.BASE_PAGE_HEIGHT_PX - PAGE_FRAME_INSET_PX * 2,
+            ),
         )
     }
 
-    private fun fillPaint(colorValue: Int): Paint = Paint().apply {
-        color = colorValue
-        style = Paint.Style.FILL
+    /** Trazo centrado en el borde, extremo plano y unión en inglete (defaults de `Paint`). */
+    private fun strokeOf(width: Float): BasicStroke =
+        BasicStroke(width, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, ANDROID_MITER_LIMIT)
+
+    private fun DemoInvoiceBox.toRectangle(): Rectangle2D.Float = Rectangle2D.Float(
+        leftPx.toFloat(),
+        topPx.toFloat(),
+        (rightPx - leftPx).toFloat(),
+        (bottomPx - topPx).toFloat(),
+    )
+
+    private fun textColor(style: DemoInvoiceCellStyle): Color = when (style) {
+        DemoInvoiceCellStyle.DISCLAIMER -> DISCLAIMER_TEXT_COLOR
+        else -> Color.BLACK
     }
 
-    private fun textPaint(style: DemoInvoiceCellStyle): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = when (style) {
-            DemoInvoiceCellStyle.DISCLAIMER -> DISCLAIMER_TEXT_COLOR
-            else -> Color.BLACK
-        }
-        textSize = when (style) {
+    private fun textFont(style: DemoInvoiceCellStyle): Font {
+        val size = when (style) {
             DemoInvoiceCellStyle.ISSUER -> 30f
             DemoInvoiceCellStyle.DOCUMENT_TITLE -> 28f
             DemoInvoiceCellStyle.HEADER -> 23f
@@ -143,28 +176,41 @@ object DemoInvoiceImageGenerator {
             DemoInvoiceCellStyle.SUMMARY_MONEY,
             -> 25f
         }
-        typeface = when (style) {
+        val weight = when (style) {
             DemoInvoiceCellStyle.ISSUER,
             DemoInvoiceCellStyle.DOCUMENT_TITLE,
             DemoInvoiceCellStyle.TABLE_HEADER,
             DemoInvoiceCellStyle.SUMMARY_MONEY,
-            -> Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            -> Font.BOLD
 
-            else -> Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            else -> Font.PLAIN
         }
-        textAlign = when (style) {
-            DemoInvoiceCellStyle.TABLE_MONEY,
-            DemoInvoiceCellStyle.SUMMARY_MONEY,
-            -> Paint.Align.RIGHT
-
-            else -> Paint.Align.LEFT
-        }
+        // Sobre un BufferedImage sin transformación, 1 pt de Java2D equivale a 1 px, igual que
+        // `Paint.textSize`.
+        return Font(Font.SANS_SERIF, weight, 1).deriveFont(size)
     }
 
-    private fun centeredBaseline(box: DemoInvoiceBox, paint: Paint): Float {
-        val metrics = paint.fontMetrics
+    private fun isRightAligned(style: DemoInvoiceCellStyle): Boolean = when (style) {
+        DemoInvoiceCellStyle.TABLE_MONEY,
+        DemoInvoiceCellStyle.SUMMARY_MONEY,
+        -> true
+
+        else -> false
+    }
+
+    /**
+     * Misma fórmula que Android: `centerY - (ascent + descent) / 2`, donde el ascent de Android
+     * es negativo. Java2D lo expresa positivo, de ahí `centerY + (ascent - descent) / 2`.
+     */
+    private fun centeredBaseline(
+        canvas: Graphics2D,
+        box: DemoInvoiceBox,
+        font: Font,
+        text: String,
+    ): Float {
+        val metrics = font.getLineMetrics(text, canvas.fontRenderContext)
         val centerY = box.topPx + (box.bottomPx - box.topPx) / 2f
-        return centerY - (metrics.ascent + metrics.descent) / 2f
+        return centerY + (metrics.ascent - metrics.descent) / 2f
     }
 
     private const val DEFAULT_JPEG_QUALITY = 94
@@ -174,11 +220,12 @@ object DemoInvoiceImageGenerator {
     private const val GRID_STROKE_WIDTH_PX = 1f
     private const val FRAME_STROKE_WIDTH_PX = 3f
     private const val PAGE_FRAME_INSET_PX = 18f
+    private const val ANDROID_MITER_LIMIT = 4f
 
-    private val HEADER_BACKGROUND = Color.rgb(232, 238, 244)
-    private val TOTAL_BACKGROUND = Color.rgb(228, 235, 248)
-    private val DISCLAIMER_BACKGROUND = Color.rgb(255, 246, 210)
-    private val DISCLAIMER_TEXT_COLOR = Color.rgb(116, 76, 0)
-    private val GRID_COLOR = Color.rgb(150, 150, 150)
-    private val FRAME_COLOR = Color.rgb(65, 65, 65)
+    private val HEADER_BACKGROUND = Color(232, 238, 244)
+    private val TOTAL_BACKGROUND = Color(228, 235, 248)
+    private val DISCLAIMER_BACKGROUND = Color(255, 246, 210)
+    private val DISCLAIMER_TEXT_COLOR = Color(116, 76, 0)
+    private val GRID_COLOR = Color(150, 150, 150)
+    private val FRAME_COLOR = Color(65, 65, 65)
 }

@@ -10,8 +10,6 @@ import com.facturastock.app.core.time.SystemAppClock
 import com.facturastock.app.domain.config.RegionalSettings
 import dagger.Module
 import dagger.Provides
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +20,6 @@ import kotlinx.coroutines.SupervisorJob
 annotation class InitialRegionalSettings
 
 @Module
-@InstallIn(SingletonComponent::class)
 object CoreModule {
     @Provides
     @Singleton

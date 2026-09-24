@@ -19,7 +19,6 @@ import com.facturastock.app.domain.usecase.RetryActivePurchaseBackupResult
 import com.facturastock.app.domain.usecase.RetryPurchaseBackupUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -27,8 +26,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.sync.Mutex
-
-@HiltViewModel
 class PurchasesViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observePurchaseHistory: ObservePurchaseHistoryUseCase,

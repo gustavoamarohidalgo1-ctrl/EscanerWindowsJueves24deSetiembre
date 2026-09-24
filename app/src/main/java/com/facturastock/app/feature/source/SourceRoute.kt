@@ -1,18 +1,12 @@
 package com.facturastock.app.feature.source
 
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
+import com.facturastock.app.ui.platform.pickImageFile
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.facturastock.app.di.appViewModel
 import com.facturastock.app.domain.model.id.CaptureId
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.model.id.ImageId
@@ -35,32 +29,9 @@ fun SourceRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: SourceViewModel = hiltViewModel(),
+    viewModel: SourceViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        viewModel.onAction(
-            SourceContract.Action.CameraPermissionResult(
-                granted = granted,
-                permanentlyDenied = !granted && context.isCameraPermissionPermanentlyDenied(),
-            ),
-        )
-    }
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        viewModel.onAction(
-            if (uri != null) {
-                SourceContract.Action.ImagePicked(uri.toString())
-            } else {
-                SourceContract.Action.PickCancelled
-            },
-        )
-    }
 
     LaunchedEffect(viewModel) {
         viewModel.onAction(SourceContract.Action.Start)
@@ -68,24 +39,19 @@ fun SourceRoute(
 
     CollectUiEffects(viewModel.effects) { effect ->
         when (effect) {
-            SourceContract.Effect.RequestCameraPermission -> {
-                val alreadyGranted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.CAMERA,
-                ) == PackageManager.PERMISSION_GRANTED
-                if (alreadyGranted) {
-                    viewModel.onAction(
-                        SourceContract.Action.CameraPermissionResult(granted = true),
-                    )
-                } else {
-                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                }
-            }
+            // Sin cámara controlable en Windows: igual que un permiso denegado de forma permanente.
+            SourceContract.Effect.RequestCameraPermission -> viewModel.onAction(
+                SourceContract.Action.CameraPermissionResult(
+                    granted = false,
+                    permanentlyDenied = isCameraPermissionPermanentlyDenied(),
+                ),
+            )
 
-            SourceContract.Effect.OpenAppSettings -> context.openAppPermissionSettings()
+            SourceContract.Effect.OpenAppSettings -> openAppPermissionSettings()
 
-            SourceContract.Effect.LaunchImagePicker -> imagePickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            SourceContract.Effect.LaunchImagePicker -> viewModel.onAction(
+                pickImageFile()?.let(SourceContract.Action::ImagePicked)
+                    ?: SourceContract.Action.PickCancelled,
             )
 
             is SourceContract.Effect.OpenCamera -> onOpenCamera(effect.draftId, effect.replaceImageId)

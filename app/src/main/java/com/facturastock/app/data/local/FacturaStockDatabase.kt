@@ -1,6 +1,11 @@
 package com.facturastock.app.data.local
 
-import android.content.Context
+import com.facturastock.app.data.local.sqlite.FullSynchronousSQLiteDriver
+import com.facturastock.app.data.local.sqlite.TranslatingSQLiteDriver
+import androidx.sqlite.SQLiteDriver
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import kotlinx.coroutines.Dispatchers
+import java.io.File
 import com.facturastock.app.data.local.dao.InvoiceInventoryReceiptDao
 import com.facturastock.app.data.local.entity.InvoiceInventoryReceiptEntity
 import com.facturastock.app.data.local.entity.PendingSaleCheckoutEntity
@@ -8,8 +13,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
-import androidx.sqlite.db.SupportSQLiteOpenHelper
+import com.facturastock.app.data.local.sqlite.LegacyMigration
+import com.facturastock.app.data.local.sqlite.SupportSQLiteDatabase
 import com.facturastock.app.data.local.dao.BusinessDao
 import com.facturastock.app.data.local.dao.AuditEventDao
 import com.facturastock.app.data.local.dao.CapturedPagePublicationDao
@@ -193,7 +198,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         const val NAME = "facturastock.db"
 
         /** v29 añade anulaciones de venta sin reescribir ventas, deudas, cobros ni stock histórico. */
-        val MIGRATION_28_29 = object : Migration(28, 29) {
+        val MIGRATION_28_29 = object : LegacyMigration(28, 29) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `sale_voids` (" +
@@ -220,7 +225,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v28 añade recibos de ingreso y confirmaciones pendientes sin alterar filas históricas. */
-        val MIGRATION_27_28 = object : Migration(27, 28) {
+        val MIGRATION_27_28 = object : LegacyMigration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `invoice_inventory_receipts` (" +
@@ -261,7 +266,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * tabla conservando los datos y se reconstruye el índice único (los `NULL` no
          * colisionan). La migración destructiva sigue prohibida.
          */
-        val MIGRATION_1_2 = object : Migration(1, 2) {
+        val MIGRATION_1_2 = object : LegacyMigration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `businesses_new` (" +
@@ -296,7 +301,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * 0..10000; los `NULL` (sin recorte) se conservan. Se recrea la tabla porque SQLite
          * no renombra columnas de forma portable en el rango de API soportado.
          */
-        val MIGRATION_2_3 = object : Migration(2, 3) {
+        val MIGRATION_2_3 = object : LegacyMigration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `invoice_images_new` (" +
@@ -364,14 +369,14 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v3 → v4: token nullable que protege el commit/cancelación de cada ejecución OCR. */
-        val MIGRATION_3_4 = object : Migration(3, 4) {
+        val MIGRATION_3_4 = object : LegacyMigration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `invoice_drafts` ADD COLUMN `activeOcrRunId` TEXT")
             }
         }
 
         /** v4 → v5: snapshot OCR reemplazable, dividido en una BLOB versionada por página. */
-        val MIGRATION_4_5 = object : Migration(4, 5) {
+        val MIGRATION_4_5 = object : LegacyMigration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `invoice_ocr_snapshots` (" +
@@ -411,7 +416,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v5 → v6: audit trail versionado del parser, ligado 1:1 al snapshot OCR. */
-        val MIGRATION_5_6 = object : Migration(5, 6) {
+        val MIGRATION_5_6 = object : LegacyMigration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS " +
@@ -442,7 +447,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v6 → v7: proyección ampliada y formulario parcial durable de revisión de cabecera. */
-        val MIGRATION_6_7 = object : Migration(6, 7) {
+        val MIGRATION_6_7 = object : LegacyMigration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `invoice_drafts` ADD COLUMN `supplierLegalNameRaw` TEXT")
                 db.execSQL(
@@ -466,7 +471,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v7 → v8: snapshot CAS del editor de líneas y tombstones restaurables. */
-        val MIGRATION_7_8 = object : Migration(7, 8) {
+        val MIGRATION_7_8 = object : LegacyMigration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `invoice_lines` ADD COLUMN `codeRaw` TEXT")
                 db.execSQL("ALTER TABLE `invoice_lines` ADD COLUMN `codeNormalized` TEXT")
@@ -496,7 +501,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * recrea la tabla conservando los datos (ambas columnas nacen `NULL`) y se reconstruyen
          * los índices. La migración destructiva sigue prohibida.
          */
-        val MIGRATION_8_9 = object : Migration(8, 9) {
+        val MIGRATION_8_9 = object : LegacyMigration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `products_new` (" +
@@ -565,7 +570,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * los UPDATE condicionales de `PreparedPurchaseDao`; no hace falta tocar `invoice_drafts`
          * porque `READY_TO_POST` ya existe en el enum persistido por nombre.
          */
-        val MIGRATION_9_10 = object : Migration(9, 10) {
+        val MIGRATION_9_10 = object : LegacyMigration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `prepared_purchases` (" +
@@ -590,7 +595,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * antiguo `confirmedPurchaseId` también se limpia porque v10 no tenía una tabla destino.
          * Unicidad, claves foráneas y triggers forman la barrera de idempotencia y auditoría.
          */
-        val MIGRATION_10_11 = object : Migration(10, 11) {
+        val MIGRATION_10_11 = object : LegacyMigration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // v10 no tenía tabla de compras ni FK para este campo. Un valor no nulo solo
                 // podía provenir de un workflow provisional y no puede apuntar a una compra v11.
@@ -796,7 +801,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * Si dos valores antiguos colapsan, conserva la clave en el id lexicográficamente menor
          * y limpia a NULL los opcionales restantes, sin borrar ninguna fila ni referencia.
          */
-        val MIGRATION_11_12 = object : Migration(11, 12) {
+        val MIGRATION_11_12 = object : LegacyMigration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 val supplierRucs = readCatalogKeys(
                     db = db,
@@ -858,7 +863,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * está en la validación de entidad y permite que un saldo importado/ajustado negativo se
          * recupere mediante la regla explícita del servicio de costos.
          */
-        val MIGRATION_12_13 = object : Migration(12, 13) {
+        val MIGRATION_12_13 = object : LegacyMigration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `purchase_lines` ADD COLUMN `appliedUnitCost` TEXT")
                 db.execSQL("ALTER TABLE `purchase_lines` ADD COLUMN `purchaseUnitFactor` TEXT")
@@ -885,7 +890,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * el objetivo `POSTED/VOIDED`, y esos estados ya son indelebles por las invariantes del
          * libro. Así los cinco `ALTER TABLE` son aditivos y seguros para bases con historia.
          */
-        val MIGRATION_13_14 = object : Migration(13, 14) {
+        val MIGRATION_13_14 = object : LegacyMigration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `purchases` ADD COLUMN " +
@@ -946,7 +951,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * históricos quedan con lease NULL: la recuperación lease-aware los trata como vencidos.
          * Los tres `ALTER` son aditivos; ninguna fila cambia de estado ni de contenido.
          */
-        val MIGRATION_14_15 = object : Migration(14, 15) {
+        val MIGRATION_14_15 = object : LegacyMigration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `outbox_operations` ADD COLUMN " +
@@ -966,7 +971,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * con la operación local (solo IDs, nunca contenido) para la resolución explícita.
          * Los cuatro `ALTER` son aditivos; ninguna fila cambia de estado ni de contenido.
          */
-        val MIGRATION_15_16 = object : Migration(15, 16) {
+        val MIGRATION_15_16 = object : LegacyMigration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `products` ADD COLUMN `version` INTEGER NOT NULL DEFAULT 1",
@@ -989,7 +994,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * El mapper cloud deja así de reconstruir un mismo hecho desde catálogos editables.
          * Las filas existentes se rellenan desde las FK vigentes en la propia migración.
          */
-        val MIGRATION_16_17 = object : Migration(16, 17) {
+        val MIGRATION_16_17 = object : LegacyMigration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `purchase_lines` ADD COLUMN `productNameSnapshot` TEXT")
                 db.execSQL("ALTER TABLE `purchase_lines` ADD COLUMN `unitCodeSnapshot` TEXT")
@@ -1013,7 +1018,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * confirmacion. La historia previa queda UNKNOWN_LEGACY: nunca se reconstruye a partir
          * de timestamps ni de coincidencias actuales del catalogo.
          */
-        val MIGRATION_17_18 = object : Migration(17, 18) {
+        val MIGRATION_17_18 = object : LegacyMigration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `purchase_lines` ADD COLUMN `productProvenance` " +
@@ -1028,7 +1033,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * del pull. Las operaciones históricas conservan su payload y clave: solo reciben la
          * identidad PURCHASE y una versión causal derivada del tipo (alta=1, anulación=2).
          */
-        val MIGRATION_18_19 = object : Migration(18, 19) {
+        val MIGRATION_18_19 = object : LegacyMigration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `outbox_operations` ADD COLUMN " +
@@ -1162,7 +1167,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * de DataStore salieron. Solo la transacción explícita de primer enlace puede fijar
          * operaciones PENDING que nunca consumieron un intento.
          */
-        val MIGRATION_19_20 = object : Migration(19, 20) {
+        val MIGRATION_19_20 = object : LegacyMigration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `outbox_operations` ADD COLUMN `targetCloudBusinessId` TEXT",
@@ -1192,7 +1197,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * v20 -> v21: añade carritos/ventas locales y enlaza sus salidas al libro append-only.
          * Las filas históricas conservan identidad, decimales y claves sin reinterpretación.
          */
-        val MIGRATION_20_21 = object : Migration(20, 21) {
+        val MIGRATION_20_21 = object : LegacyMigration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `sales` (" +
@@ -1316,7 +1321,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * existentes conservan todos sus datos y reciben NULL/NULL hasta que una persona fija
          * el precio; no se infiere precio de venta desde el costo promedio.
          */
-        val MIGRATION_21_22 = object : Migration(21, 22) {
+        val MIGRATION_21_22 = object : LegacyMigration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `products` ADD COLUMN `salePriceMinorUnits` INTEGER")
                 db.execSQL("ALTER TABLE `products` ADD COLUMN `salePriceCurrencyCode` TEXT")
@@ -1332,7 +1337,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * reescribe tablas ni filas. Los índices cortos reemplazados siguen cubiertos por el
          * prefijo de sus sucesores; el índice de movimientos remotos era redundante con la PK.
          */
-        val MIGRATION_22_23 = object : Migration(22, 23) {
+        val MIGRATION_22_23 = object : LegacyMigration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 requireV23TenantGraphsAreConsistent(db)
                 listOf(
@@ -1407,7 +1412,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * vacía para filas legacy: no inventa intenciones APPEND/REPLACE que el esquema anterior
          * nunca registró. Los nuevos recibos se escriben atómicamente junto con `invoice_images`.
          */
-        val MIGRATION_23_24 = object : Migration(23, 24) {
+        val MIGRATION_23_24 = object : LegacyMigration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `captured_page_publications` (" +
@@ -1455,7 +1460,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
          * mantiene primero los predicados de igualdad y deja `createdAt` al final para resolver
          * MIN desde el índice sin materializar payloads ni recorrer la tabla.
          */
-        val MIGRATION_24_25 = object : Migration(24, 25) {
+        val MIGRATION_24_25 = object : LegacyMigration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS " +
@@ -1467,7 +1472,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v25 -> v26: cursor independiente para el stream append-only de inventario/ventas. */
-        val MIGRATION_25_26 = object : Migration(25, 26) {
+        val MIGRATION_25_26 = object : LegacyMigration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE `remote_sync_states` ADD COLUMN " +
@@ -1481,7 +1486,7 @@ abstract class FacturaStockDatabase : RoomDatabase() {
         }
 
         /** v26 -> v27: cuenta por cobrar por venta y pagos append-only con transición CAS. */
-        val MIGRATION_26_27 = object : Migration(26, 27) {
+        val MIGRATION_26_27 = object : LegacyMigration(26, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `debts` (" +
@@ -1592,20 +1597,20 @@ abstract class FacturaStockDatabase : RoomDatabase() {
             check(!hasMismatch) { "v23 tenant graph preflight failed" }
         }
 
-        fun build(
-            context: Context,
-            openHelperFactory: SupportSQLiteOpenHelper.Factory,
-        ): FacturaStockDatabase = buildNamed(context, openHelperFactory, NAME)
+        fun build(databaseFile: File): FacturaStockDatabase = buildAt(databaseFile)
 
-        /** Builder aislado para validación/migración en un nombre que nunca sea [NAME]. */
-        internal fun buildNamed(
-            context: Context,
-            openHelperFactory: SupportSQLiteOpenHelper.Factory,
-            databaseName: String,
+        /**
+         * Builder aislado para validación/migración en un archivo que nunca sea [NAME].
+         * [driver] solo se sustituye en pruebas (p. ej. para registrar el SQL preparado).
+         */
+        internal fun buildAt(
+            databaseFile: File,
+            driver: SQLiteDriver = TranslatingSQLiteDriver(BundledSQLiteDriver()),
         ): FacturaStockDatabase {
-            require(databaseName.isNotBlank() && '/' !in databaseName && '\\' !in databaseName)
-            return Room.databaseBuilder(context, FacturaStockDatabase::class.java, databaseName)
-                .openHelperFactory(openHelperFactory)
+            databaseFile.parentFile?.mkdirs()
+            return Room.databaseBuilder<FacturaStockDatabase>(databaseFile.absolutePath)
+                .setDriver(FullSynchronousSQLiteDriver(driver))
+                .setQueryCoroutineContext(Dispatchers.IO)
                 .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
                 .addMigrations(
                     MIGRATION_1_2,
@@ -1663,8 +1668,8 @@ abstract class FacturaStockDatabase : RoomDatabase() {
                     val raw = if (cursor.isNull(2)) null else cursor.getString(2)
                     add(
                         CatalogKeyRow(
-                            id = cursor.getString(0),
-                            businessId = cursor.getString(1),
+                            id = requireNotNull(cursor.getString(0)),
+                            businessId = requireNotNull(cursor.getString(1)),
                             raw = raw,
                             canonical = canonicalize(raw),
                         ),

@@ -1,7 +1,8 @@
 package com.facturastock.app.data.local
 
 import androidx.room.RoomDatabase
-import androidx.sqlite.db.SupportSQLiteDatabase
+import com.facturastock.app.data.local.sqlite.SupportSQLiteDatabase
+import androidx.sqlite.SQLiteConnection
 
 private val PERSISTENCE_TRIGGER_NAMES = listOf(
     "catalog_suppliers_block_referenced_delete",
@@ -1014,7 +1015,8 @@ private fun SupportSQLiteDatabase.tableHasColumn(table: String, column: String):
 /** Callback de producción para bases nuevas y reparación idempotente al abrir. */
 internal val postingPersistenceCallback: RoomDatabase.Callback =
     object : RoomDatabase.Callback() {
-        override fun onCreate(db: SupportSQLiteDatabase) {
+        override fun onCreate(connection: SQLiteConnection) {
+            val db = SupportSQLiteDatabase(connection)
             installPostingPersistenceInvariants(db)
             installSalesPersistenceInvariants(db)
             installSaleVoidPersistenceInvariants(db)
@@ -1023,7 +1025,8 @@ internal val postingPersistenceCallback: RoomDatabase.Callback =
             installCheckoutPersistenceInvariants(db)
         }
 
-        override fun onOpen(db: SupportSQLiteDatabase) {
+        override fun onOpen(connection: SQLiteConnection) {
+            val db = SupportSQLiteDatabase(connection)
             enforceWriteDurability(db)
             installPostingPersistenceInvariants(db)
             installSalesPersistenceInvariants(db)

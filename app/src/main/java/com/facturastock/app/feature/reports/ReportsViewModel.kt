@@ -19,7 +19,6 @@ import com.facturastock.app.domain.usecase.ExportReportPdfUseCase
 import com.facturastock.app.domain.usecase.VoidSaleUseCase
 import com.facturastock.app.domain.usecase.currentSalesReportRange
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Duration
 import java.time.ZoneId
 import java.util.UUID
@@ -30,8 +29,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-
-@HiltViewModel
 class ReportsViewModel @Inject constructor(
     private val observeSalesReport: ObserveSalesReportUseCase,
     private val clock: AppClock,

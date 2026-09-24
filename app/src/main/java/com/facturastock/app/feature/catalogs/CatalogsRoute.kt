@@ -1,8 +1,9 @@
 package com.facturastock.app.feature.catalogs
 
-import androidx.activity.compose.BackHandler
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
+import com.facturastock.app.ui.navigation.BackHandler
 
-import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,8 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -59,9 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.core.input.suppressScannerTrailingKeys
 import com.facturastock.app.domain.model.BarcodeValue
 import com.facturastock.app.domain.model.CatalogStatus
@@ -93,7 +93,7 @@ import com.facturastock.app.ui.theme.FacturaStockDesign
 fun CatalogsRoute(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: CatalogsViewModel = hiltViewModel(),
+    viewModel: CatalogsViewModel = appViewModel(),
     onProductSaved: (CatalogsContract.Effect.ProductSaved) -> Unit = { onBack() },
     isSalesRegistration: Boolean = false,
     isManualRegistration: Boolean = false,
@@ -156,7 +156,7 @@ fun CatalogsScreen(
                 modifier = Modifier.weight(1f),
             )
             FacturaStockPrimaryButton(
-                text = stringResource(R.string.catalog_add),
+                text = stringResource(Res.string.catalog_add),
                 onClick = { onAction(Action.AddSelected) },
                 enabled = state.failure != Failure.NO_ACTIVE_BUSINESS &&
                     state.failure != Failure.LOAD_FAILED && !state.isSaving,
@@ -176,7 +176,7 @@ fun CatalogsScreen(
     }
     if (state.isScannerEntryPending || state.isInventoryEntryPending || state.isSpecialEntryPending) {
         CatalogModal(
-            title = stringResource(R.string.catalog_products),
+            title = stringResource(Res.string.catalog_products),
             onDismiss = { onAction(Action.CloseForm) },
             testTag = CatalogsTestTags.FORM,
             opaqueBackdrop = specialBackdrop,
@@ -187,17 +187,17 @@ fun CatalogsScreen(
                 else -> state.scannerEntryFailure
             }
             if (failure == null) {
-                LoadingState(message = stringResource(R.string.feature_loading_message))
+                LoadingState(message = stringResource(Res.string.feature_loading_message))
             } else {
                 Text(stringResource(failure.messageRes()))
                 FacturaStockPrimaryButton(
-                    text = stringResource(R.string.action_retry),
+                    text = stringResource(Res.string.action_retry),
                     onClick = { onAction(Action.Retry) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.action_cancel),
+                text = stringResource(Res.string.action_cancel),
                 onClick = { onAction(Action.CloseForm) },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -207,27 +207,27 @@ fun CatalogsScreen(
         val archive = pending.target == CatalogStatus.ARCHIVED
         FacturaStockDialog(
             title = stringResource(
-                if (archive) R.string.catalog_status_dialog_archive_title
-                else R.string.catalog_status_dialog_restore_title,
+                if (archive) Res.string.catalog_status_dialog_archive_title
+                else Res.string.catalog_status_dialog_restore_title,
             ),
             message = stringResource(
-                if (archive) R.string.catalog_status_dialog_archive_message
-                else R.string.catalog_status_dialog_restore_message,
+                if (archive) Res.string.catalog_status_dialog_archive_message
+                else Res.string.catalog_status_dialog_restore_message,
             ),
             confirmLabel = stringResource(
-                if (archive) R.string.catalog_action_archive else R.string.catalog_action_restore,
+                if (archive) Res.string.catalog_action_archive else Res.string.catalog_action_restore,
             ),
-            dismissLabel = stringResource(R.string.action_cancel),
+            dismissLabel = stringResource(Res.string.action_cancel),
             onConfirm = { onAction(Action.ConfirmStatusChange) },
             onDismiss = { onAction(Action.DismissStatusChange) },
         )
     }
     if (state.showRucChecksumWarning) {
         FacturaStockDialog(
-            title = stringResource(R.string.catalog_ruc_checksum_title),
-            message = stringResource(R.string.catalog_ruc_checksum_message),
-            confirmLabel = stringResource(R.string.action_save),
-            dismissLabel = stringResource(R.string.action_cancel),
+            title = stringResource(Res.string.catalog_ruc_checksum_title),
+            message = stringResource(Res.string.catalog_ruc_checksum_message),
+            confirmLabel = stringResource(Res.string.action_save),
+            dismissLabel = stringResource(Res.string.action_cancel),
             onConfirm = { onAction(Action.AcceptRucChecksumAndSave) },
             onDismiss = { onAction(Action.DismissRucChecksumWarning) },
         )
@@ -241,7 +241,7 @@ private fun ManualProductRegistrationScreen(
     modifier: Modifier = Modifier,
 ) {
     val spacing = FacturaStockDesign.spacing
-    val title = stringResource(R.string.manual_product_title)
+    val title = stringResource(Res.string.manual_product_title)
     val form = (state.form as? Form.ProductForm)?.takeIf { it.isManualRegistration }
     val isPreparing = state.isManualEntryPending || state.manualEntryFailure != null || form == null
     val failure = state.manualEntryFailure ?: state.failure
@@ -271,19 +271,19 @@ private fun ManualProductRegistrationScreen(
             onAction = onAction,
         )
         if (isPreparing && failure == null) {
-            LoadingState(message = stringResource(R.string.manual_product_loading))
+            LoadingState(message = stringResource(Res.string.manual_product_loading))
         }
         failure?.let {
             StatusCard(
-                statusLabel = stringResource(R.string.catalog_form_error_status),
-                title = stringResource(R.string.catalog_form_error_title),
+                statusLabel = stringResource(Res.string.catalog_form_error_status),
+                title = stringResource(Res.string.catalog_form_error_title),
                 message = stringResource(it.messageRes()),
                 tone = StatusTone.ERROR,
-                iconRes = R.drawable.ic_warning,
+                iconRes = Res.drawable.ic_warning,
             )
             if (isPreparing || failure == Failure.LOAD_FAILED || failure == Failure.NO_ACTIVE_BUSINESS) {
                 FacturaStockPrimaryButton(
-                    text = stringResource(R.string.action_retry),
+                    text = stringResource(Res.string.action_retry),
                     onClick = { onAction(Action.Retry) },
                     enabled = !state.isSaving,
                     modifier = Modifier.fillMaxWidth(),
@@ -291,14 +291,14 @@ private fun ManualProductRegistrationScreen(
             }
         }
         FacturaStockPrimaryButton(
-            text = stringResource(if (state.isSaving) R.string.action_saving else R.string.action_save),
+            text = stringResource(if (state.isSaving) Res.string.action_saving else Res.string.action_save),
             onClick = { onAction(Action.SaveForm) },
             enabled = !isPreparing && !state.isSaving && form?.hasRequiredFields(state) == true &&
                 failure != Failure.LOAD_FAILED && failure != Failure.NO_ACTIVE_BUSINESS,
             modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.SAVE_FORM),
         )
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_cancel),
+            text = stringResource(Res.string.action_cancel),
             onClick = { onAction(Action.CloseForm) },
             enabled = !state.isSaving,
             modifier = Modifier.fillMaxWidth(),
@@ -315,7 +315,7 @@ private fun ManualProductFormFields(
 ) {
     FormTextField(
         value = form.title,
-        labelRes = R.string.manual_product_name,
+        labelRes = Res.string.manual_product_name,
         required = true,
         showRequiredError = state.failure == Failure.INVALID_FIELDS,
         enabled = enabled && !state.isSaving,
@@ -323,7 +323,7 @@ private fun ManualProductFormFields(
     ) { onAction(Action.ProductNameChanged(it)) }
     ProductDecimalField(
         value = form.quantity,
-        labelRes = R.string.manual_product_quantity,
+        labelRes = Res.string.manual_product_quantity,
         required = true,
         state = state,
         enabled = enabled,
@@ -332,7 +332,7 @@ private fun ManualProductFormFields(
     )
     ProductDecimalField(
         value = form.purchasePrice,
-        labelRes = R.string.manual_product_purchase_price,
+        labelRes = Res.string.manual_product_purchase_price,
         required = true,
         state = state,
         enabled = enabled,
@@ -342,7 +342,7 @@ private fun ManualProductFormFields(
     )
     ProductDecimalField(
         value = form.salePrice,
-        labelRes = R.string.manual_product_sale_price,
+        labelRes = Res.string.manual_product_sale_price,
         required = true,
         state = state,
         enabled = enabled,
@@ -385,7 +385,7 @@ private fun CatalogSearchAndFilters(
         OutlinedTextField(
             value = state.query,
             onValueChange = { onAction(Action.QueryChanged(it)) },
-            label = { Text(stringResource(R.string.catalog_search_hint)) },
+            label = { Text(stringResource(Res.string.catalog_search_hint)) },
             singleLine = true,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.SEARCH),
@@ -411,7 +411,7 @@ private fun CatalogSearchAndFilters(
         }
         Text(
             text = pluralStringResource(
-                R.plurals.catalog_result_count,
+                Res.plurals.catalog_result_count,
                 state.total,
                 state.total,
             ),
@@ -426,7 +426,7 @@ private fun CatalogFeedback(state: State, onAction: (Action) -> Unit) {
     val spacing = FacturaStockDesign.spacing
     if (state.savedFeedback) {
         Text(
-            text = stringResource(R.string.catalog_saved),
+            text = stringResource(Res.string.catalog_saved),
             color = FacturaStockDesign.semanticColors.success,
             modifier = Modifier
                 .padding(horizontal = spacing.md)
@@ -440,19 +440,19 @@ private fun CatalogFeedback(state: State, onAction: (Action) -> Unit) {
             RecoverableError(
                 title = stringResource(
                     if (showingCachedRows) {
-                        R.string.feature_stale_error_title
+                        Res.string.feature_stale_error_title
                     } else {
-                        R.string.feature_load_error_title
+                        Res.string.feature_load_error_title
                     },
                 ),
                 message = stringResource(
                     if (showingCachedRows) {
-                        R.string.feature_stale_error_message
+                        Res.string.feature_stale_error_message
                     } else {
                         messageRes
                     },
                 ),
-                actionLabel = stringResource(R.string.action_retry),
+                actionLabel = stringResource(Res.string.action_retry),
                 onAction = { onAction(Action.Retry) },
                 modifier = Modifier.padding(horizontal = spacing.md),
             )
@@ -475,7 +475,7 @@ private fun CatalogList(state: State, onAction: (Action) -> Unit, modifier: Modi
             Box(modifier = modifier.fillMaxSize())
 
         state.isLoading -> LoadingState(
-            message = stringResource(R.string.feature_loading_message),
+            message = stringResource(Res.string.feature_loading_message),
             modifier = modifier.fillMaxSize(),
         )
         state.rows.isEmpty() -> EmptyCatalog(
@@ -508,7 +508,7 @@ private fun CatalogList(state: State, onAction: (Action) -> Unit, modifier: Modi
             if (state.hasMore) {
                 item(key = "catalog_load_more", contentType = "load_more") {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.catalog_load_more),
+                        text = stringResource(Res.string.catalog_load_more),
                         onClick = { onAction(Action.LoadMore) },
                         enabled = !state.isLoadingMore,
                         modifier = Modifier.fillMaxWidth(),
@@ -529,13 +529,13 @@ private fun EmptyCatalog(
 ) {
     val hasActiveFilters = query.isNotBlank() || statusFilter != StatusFilter.ALL
     val (title, message) = if (hasActiveFilters) {
-        R.string.catalog_empty_search_title to R.string.catalog_empty_search_message
+        Res.string.catalog_empty_search_title to Res.string.catalog_empty_search_message
     } else {
         when (section) {
-            Section.PRODUCTS -> R.string.products_empty_title to R.string.products_empty_message
-            Section.SUPPLIERS -> R.string.catalog_empty_supplier_title to R.string.catalog_empty_supplier_message
-            Section.UNITS -> R.string.catalog_empty_unit_title to R.string.catalog_empty_unit_message
-            Section.LOCATIONS -> R.string.catalog_empty_location_title to R.string.catalog_empty_location_message
+            Section.PRODUCTS -> Res.string.products_empty_title to Res.string.products_empty_message
+            Section.SUPPLIERS -> Res.string.catalog_empty_supplier_title to Res.string.catalog_empty_supplier_message
+            Section.UNITS -> Res.string.catalog_empty_unit_title to Res.string.catalog_empty_unit_message
+            Section.LOCATIONS -> Res.string.catalog_empty_location_title to Res.string.catalog_empty_location_message
         }
     }
     Column(
@@ -558,9 +558,9 @@ private fun EmptyCatalog(
             FacturaStockPrimaryButton(
                 text = stringResource(
                     if (statusFilter == StatusFilter.ALL) {
-                        R.string.action_clear_search
+                        Res.string.action_clear_search
                     } else {
-                        R.string.action_clear_filters
+                        Res.string.action_clear_filters
                     },
                 ),
                 onClick = onClearFilters,
@@ -617,26 +617,26 @@ private fun CatalogRowCard(row: Row, onClick: () -> Unit) {
 @Composable
 private fun CatalogDetailDialog(detail: Detail, onAction: (Action) -> Unit) {
     CatalogModal(
-        title = stringResource(R.string.catalog_detail),
+        title = stringResource(Res.string.catalog_detail),
         onDismiss = { onAction(Action.CloseDetail) },
         testTag = CatalogsTestTags.DETAIL,
     ) {
         Text(
-            text = stringResource(R.string.catalog_detail),
+            text = stringResource(Res.string.catalog_detail),
             modifier = Modifier.semantics { heading() },
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(text = detail.row.title, style = MaterialTheme.typography.titleLarge)
         if (detail !is Detail.ProductDetail) {
             StatusCard(
-                statusLabel = stringResource(R.string.catalog_detail),
+                statusLabel = stringResource(Res.string.catalog_detail),
                 title = stringResource(detail.row.status.labelRes()),
                 message = stringResource(
-                    if (detail.row.status == CatalogStatus.ACTIVE) R.string.catalog_filter_active
-                    else R.string.catalog_filter_archived,
+                    if (detail.row.status == CatalogStatus.ACTIVE) Res.string.catalog_filter_active
+                    else Res.string.catalog_filter_archived,
                 ),
                 tone = if (detail.row.status == CatalogStatus.ACTIVE) StatusTone.SUCCESS else StatusTone.NEUTRAL,
-                iconRes = if (detail.row.status == CatalogStatus.ACTIVE) R.drawable.ic_check_circle else R.drawable.ic_info,
+                iconRes = if (detail.row.status == CatalogStatus.ACTIVE) Res.drawable.ic_check_circle else Res.drawable.ic_info,
             )
         }
         when (detail) {
@@ -646,22 +646,22 @@ private fun CatalogDetailDialog(detail: Detail, onAction: (Action) -> Unit) {
             is Detail.LocationDetail -> Unit
         }
         FacturaStockPrimaryButton(
-            text = stringResource(R.string.catalog_action_edit),
+            text = stringResource(Res.string.catalog_action_edit),
             onClick = { onAction(Action.EditSelected) },
             modifier = Modifier.fillMaxWidth(),
         )
         if (detail !is Detail.ProductDetail) {
             FacturaStockSecondaryButton(
                 text = stringResource(
-                    if (detail.row.status == CatalogStatus.ACTIVE) R.string.catalog_action_archive
-                    else R.string.catalog_action_restore,
+                    if (detail.row.status == CatalogStatus.ACTIVE) Res.string.catalog_action_archive
+                    else Res.string.catalog_action_restore,
                 ),
                 onClick = { onAction(Action.RequestStatusChange) },
                 modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.STATUS),
             )
         }
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_back),
+            text = stringResource(Res.string.action_back),
             onClick = { onAction(Action.CloseDetail) },
             modifier = Modifier.fillMaxWidth(),
         )
@@ -671,38 +671,38 @@ private fun CatalogDetailDialog(detail: Detail, onAction: (Action) -> Unit) {
 @Composable
 private fun ProductDetailContent(detail: Detail.ProductDetail) {
     val value = detail.row.value
-    value.sku?.let { Text(stringResource(R.string.catalog_product_sku, it)) }
-    value.barcode?.let { Text(stringResource(R.string.catalog_product_barcode, it)) }
+    value.sku?.let { Text(stringResource(Res.string.catalog_product_sku, it)) }
+    value.barcode?.let { Text(stringResource(Res.string.catalog_product_barcode, it)) }
     when {
-        detail.isLoading -> LoadingState(message = stringResource(R.string.feature_loading_message))
+        detail.isLoading -> LoadingState(message = stringResource(Res.string.feature_loading_message))
         detail.loadFailed -> Text(
-            text = stringResource(R.string.catalog_product_detail_error),
+            text = stringResource(Res.string.catalog_product_detail_error),
             color = MaterialTheme.colorScheme.error,
         )
         else -> detail.catalogDetail?.let { loaded ->
-            SectionTitle(R.string.catalog_product_inventory_title)
+            SectionTitle(Res.string.catalog_product_inventory_title)
             Text(
                 stringResource(
-                    R.string.catalog_product_unit_value,
+                    Res.string.catalog_product_unit_value,
                     loaded.unit.symbol ?: loaded.unit.code,
                 ),
             )
             Text(
                 stringResource(
-                    R.string.catalog_product_total_stock,
+                    Res.string.catalog_product_total_stock,
                     loaded.inventory.totalQuantityOnHand.toPlainString(),
                     loaded.unit.symbol ?: loaded.unit.code,
                 ),
             )
             loaded.inventory.averageUnitCost?.let { cost ->
-                Text(stringResource(R.string.catalog_product_average_cost, cost.toCatalogCostText()))
+                Text(stringResource(Res.string.catalog_product_average_cost, cost.toCatalogCostText()))
             } ?: loaded.inventory.averageUnitCostsByCurrency.forEach { (currency, cost) ->
                 Text(
                     if (cost == null) {
-                        stringResource(R.string.catalog_polish_average_cost_unavailable, currency.value)
+                        stringResource(Res.string.catalog_polish_average_cost_unavailable, currency.value)
                     } else {
                         stringResource(
-                            R.string.catalog_product_average_cost_currency,
+                            Res.string.catalog_product_average_cost_currency,
                             currency.value,
                             cost.amount.toCatalogAmountText(),
                         )
@@ -710,23 +710,23 @@ private fun ProductDetailContent(detail: Detail.ProductDetail) {
                 )
             }
             if (loaded.inventory.averageUnitCostsByCurrency.isEmpty()) {
-                Text(stringResource(R.string.catalog_product_average_cost_unavailable))
+                Text(stringResource(Res.string.catalog_product_average_cost_unavailable))
             }
             if (detail.positions.isEmpty()) {
-                Text(stringResource(R.string.catalog_product_no_stock))
+                Text(stringResource(Res.string.catalog_product_no_stock))
             } else {
                 detail.positions.forEach { position ->
                     Text(
                         if (detail.positions.size > 1) {
                             stringResource(
-                                R.string.catalog_product_position,
+                                Res.string.catalog_product_position,
                                 position.locationName,
                                 position.quantity,
                                 position.averageCost,
                             )
                         } else {
                             stringResource(
-                                R.string.catalog_product_position_single,
+                                Res.string.catalog_product_position_single,
                                 position.quantity,
                                 position.averageCost,
                             )
@@ -734,9 +734,9 @@ private fun ProductDetailContent(detail: Detail.ProductDetail) {
                     )
                 }
             }
-            SectionTitle(R.string.catalog_product_aliases_title)
+            SectionTitle(Res.string.catalog_product_aliases_title)
             if (loaded.aliases.isEmpty()) {
-                Text(stringResource(R.string.catalog_product_no_aliases))
+                Text(stringResource(Res.string.catalog_product_no_aliases))
             } else {
                 loaded.aliases.forEach { alias -> Text(alias.alias) }
             }
@@ -748,11 +748,11 @@ private fun ProductDetailContent(detail: Detail.ProductDetail) {
 private fun SupplierDetailContent(detail: Detail.SupplierDetail) {
     val supplier = detail.row.value
     supplier.tradeName?.let {
-        Text(stringResource(R.string.catalog_supplier_trade_name, it))
+        Text(stringResource(Res.string.catalog_supplier_trade_name, it))
     }
-    supplier.ruc?.let { Text(stringResource(R.string.catalog_supplier_ruc, it)) }
+    supplier.ruc?.let { Text(stringResource(Res.string.catalog_supplier_ruc, it)) }
     Text(
-        text = stringResource(R.string.catalog_ruc_local_notice),
+        text = stringResource(Res.string.catalog_ruc_local_notice),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
     )
@@ -760,9 +760,9 @@ private fun SupplierDetailContent(detail: Detail.SupplierDetail) {
 
 @Composable
 private fun UnitDetailContent(detail: Detail.UnitDetail) {
-    Text(stringResource(R.string.catalog_unit_code, detail.row.value.code))
+    Text(stringResource(Res.string.catalog_unit_code, detail.row.value.code))
     detail.row.value.symbol?.let {
-        Text(stringResource(R.string.catalog_unit_symbol, it))
+        Text(stringResource(Res.string.catalog_unit_symbol, it))
     }
 }
 
@@ -796,23 +796,23 @@ private fun CatalogFormDialog(
         }
         state.failure?.messageRes()?.let { messageRes ->
             StatusCard(
-                statusLabel = stringResource(R.string.catalog_form_error_status),
-                title = stringResource(R.string.catalog_form_error_title),
+                statusLabel = stringResource(Res.string.catalog_form_error_status),
+                title = stringResource(Res.string.catalog_form_error_title),
                 message = stringResource(messageRes),
                 tone = StatusTone.ERROR,
-                iconRes = R.drawable.ic_warning,
+                iconRes = Res.drawable.ic_warning,
             )
         }
         FacturaStockPrimaryButton(
             text = stringResource(
-                if (state.isSaving) R.string.action_saving else R.string.action_save,
+                if (state.isSaving) Res.string.action_saving else Res.string.action_save,
             ),
             onClick = { onAction(Action.SaveForm) },
             enabled = !state.isSaving && form.hasRequiredFields(state),
             modifier = Modifier.fillMaxWidth().testTag(CatalogsTestTags.SAVE_FORM),
         )
         FacturaStockSecondaryButton(
-            text = stringResource(R.string.action_cancel),
+            text = stringResource(Res.string.action_cancel),
             onClick = { onAction(Action.CloseForm) },
             enabled = !state.isSaving,
             modifier = Modifier.fillMaxWidth(),
@@ -823,7 +823,7 @@ private fun CatalogFormDialog(
 @Composable
 private fun InventoryProductEditorDialog(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
     val spacing = FacturaStockDesign.spacing
-    val title = stringResource(R.string.catalog_edit_product)
+    val title = stringResource(Res.string.catalog_edit_product)
     Dialog(
         onDismissRequest = { if (!state.isSaving) onAction(Action.CloseForm) },
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -852,7 +852,7 @@ private fun InventoryProductEditorDialog(state: State, form: Form.ProductForm, o
                 Column(Modifier.padding(spacing.lg), verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                     Text(
-                        stringResource(R.string.inventory_stock_editor_scroll_help),
+                        stringResource(Res.string.inventory_stock_editor_scroll_help),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -876,13 +876,13 @@ private fun InventoryProductEditorDialog(state: State, form: Form.ProductForm, o
                     HorizontalDivider()
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                         FacturaStockSecondaryButton(
-                            text = stringResource(R.string.action_cancel),
+                            text = stringResource(Res.string.action_cancel),
                             onClick = { onAction(Action.CloseForm) },
                             enabled = !state.isSaving,
                             modifier = Modifier.weight(1f),
                         )
                         FacturaStockPrimaryButton(
-                            text = stringResource(if (state.isSaving) R.string.action_saving else R.string.action_save),
+                            text = stringResource(if (state.isSaving) Res.string.action_saving else Res.string.action_save),
                             onClick = { onAction(Action.SaveForm) },
                             enabled = !state.isSaving && !state.isInventoryBalanceLoading &&
                                 state.inventoryBalanceFailure == null && form.hasRequiredFields(state),
@@ -908,7 +908,7 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
     FormTextField(
         value = form.barcode,
         hasInvalidValue = form.isInventoryOrigin && (form.isBarcodeInputTooLong || !BarcodeValue.isValidOptional(form.barcode)),
-        labelRes = if (form.isScannerOrigin) R.string.catalog_scanned_barcode_label else R.string.catalog_barcode_label,
+        labelRes = if (form.isScannerOrigin) Res.string.catalog_scanned_barcode_label else Res.string.catalog_barcode_label,
         readOnly = form.isScannerOrigin,
         enabled = !state.isSaving,
         modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_BARCODE),
@@ -919,7 +919,7 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
         FormTextField(
             value = form.sku,
             hasInvalidValue = form.isSkuInputTooLong || form.sku.trim().length > 64,
-            labelRes = R.string.catalog_sku_label,
+            labelRes = Res.string.catalog_sku_label,
             enabled = !state.isSaving,
             modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_SKU),
         ) {
@@ -928,14 +928,14 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
     }
     if (form.isScannedRegistration) {
         Text(
-            text = stringResource(R.string.catalog_scanned_product_help),
+            text = stringResource(Res.string.catalog_scanned_product_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     FormTextField(
         value = form.title,
-        labelRes = R.string.catalog_name_label,
+        labelRes = Res.string.catalog_name_label,
         required = true,
         showRequiredError = state.failure == Failure.INVALID_FIELDS,
         enabled = !state.isSaving,
@@ -947,9 +947,9 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
         ProductDecimalField(
             value = form.quantity,
             labelRes = when {
-                form.isScannedRegistration -> R.string.catalog_registration_quantity_label
-                form.isScannerOrigin -> R.string.catalog_product_total_quantity_label
-                else -> R.string.catalog_product_quantity_label
+                form.isScannedRegistration -> Res.string.catalog_registration_quantity_label
+                form.isScannerOrigin -> Res.string.catalog_product_total_quantity_label
+                else -> Res.string.catalog_product_quantity_label
             },
             required = form.isScannedRegistration,
             state = state,
@@ -960,7 +960,7 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
     if (form.isScannedRegistration) {
         ProductDecimalField(
             value = form.purchasePrice,
-            labelRes = R.string.catalog_registration_purchase_price_label,
+            labelRes = Res.string.catalog_registration_purchase_price_label,
             required = true,
             state = state,
             testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
@@ -969,7 +969,7 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
     }
     ProductDecimalField(
         value = form.salePrice,
-        labelRes = if (form.isScannedRegistration) R.string.catalog_registration_sale_price_label else R.string.catalog_product_price_label,
+        labelRes = if (form.isScannedRegistration) Res.string.catalog_registration_sale_price_label else Res.string.catalog_product_price_label,
         required = form.isScannedRegistration,
         state = state,
         testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
@@ -979,32 +979,32 @@ private fun ProductFormFields(state: State, form: Form.ProductForm, onAction: (A
 
 @Composable
 private fun SpecialProductFormFields(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
-    Text(stringResource(R.string.catalog_special_product_help), style = MaterialTheme.typography.bodySmall)
+    Text(stringResource(Res.string.catalog_special_product_help), style = MaterialTheme.typography.bodySmall)
     FormTextField(
-        value = form.title, labelRes = R.string.catalog_name_label,
+        value = form.title, labelRes = Res.string.catalog_name_label,
         required = true, showRequiredError = state.failure == Failure.INVALID_FIELDS,
         enabled = !state.isSaving, modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_NAME),
     ) { onAction(Action.ProductNameChanged(it)) }
     ProductDecimalField(
-        value = form.quantity, labelRes = R.string.catalog_special_product_quantity,
+        value = form.quantity, labelRes = Res.string.catalog_special_product_quantity,
         required = true, state = state, testTag = CatalogsTestTags.PRODUCT_QUANTITY,
         onValueChange = { onAction(Action.ProductQuantityChanged(it)) },
     )
     ProductDecimalField(
-        value = form.purchasePrice, labelRes = R.string.catalog_special_product_cost_label,
+        value = form.purchasePrice, labelRes = Res.string.catalog_special_product_cost_label,
         required = true, state = state, currency = "${state.currency.value}/kg",
         testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
         onValueChange = { onAction(Action.ProductPurchasePriceChanged(it)) },
     )
     ProductDecimalField(
-        value = form.salePrice, labelRes = R.string.catalog_special_product_price_label,
+        value = form.salePrice, labelRes = Res.string.catalog_special_product_price_label,
         required = true, state = state, currency = "${state.currency.value}/kg",
         testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
         onValueChange = { onAction(Action.ProductPriceChanged(it)) },
     )
     // Unidad (kg) y almacén no se muestran: la unidad es fija y el almacén es el primero activo.
     if (state.locationOptions.none { it.locationId == form.locationId && it.status == com.facturastock.app.domain.model.CatalogStatus.ACTIVE }) {
-        Text(stringResource(R.string.catalog_special_product_location_required), color = MaterialTheme.colorScheme.error)
+        Text(stringResource(Res.string.catalog_special_product_location_required), color = MaterialTheme.colorScheme.error)
     }
 }
 
@@ -1012,7 +1012,7 @@ private fun SpecialProductFormFields(state: State, form: Form.ProductForm, onAct
 private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
     FormTextField(
         value = form.title,
-        labelRes = R.string.catalog_name_label,
+        labelRes = Res.string.catalog_name_label,
         required = true,
         showRequiredError = state.failure == Failure.INVALID_FIELDS,
         enabled = !state.isSaving,
@@ -1025,7 +1025,7 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
     val originalPosition = form.inventorySnapshot?.positions?.firstOrNull { it.locationId == form.locationId }
     ProductDecimalField(
         value = form.quantity,
-        labelRes = R.string.inventory_stock_editor_quantity,
+        labelRes = Res.string.inventory_stock_editor_quantity,
         required = false,
         state = state,
         enabled = canEditBalance,
@@ -1038,7 +1038,7 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
     )
     ProductDecimalField(
         value = form.purchasePrice,
-        labelRes = R.string.inventory_stock_editor_purchase_price,
+        labelRes = Res.string.inventory_stock_editor_purchase_price,
         required = false,
         state = state,
         enabled = canEditBalance,
@@ -1046,7 +1046,7 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
         currency = form.inventoryCurrency?.value,
         testTag = CatalogsTestTags.PRODUCT_PURCHASE_PRICE,
         errorMessage = if (canEditBalance && originalPosition?.averageUnitCost != null && form.purchasePrice.isBlank()) {
-            stringResource(R.string.catalog_polish_purchase_price_required)
+            stringResource(Res.string.catalog_polish_purchase_price_required)
         } else null,
         unchangedValue = form.purchasePrice.replace(',', '.').toBigDecimalOrNull()?.let {
             originalPosition?.averageUnitCost?.compareTo(it) == 0
@@ -1055,7 +1055,7 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
     )
     if (canEditBalance && originalPosition?.averageUnitCost == null && form.purchasePrice.isBlank()) {
         Text(
-            text = stringResource(R.string.inventory_stock_editor_missing_cost_help),
+            text = stringResource(Res.string.inventory_stock_editor_missing_cost_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1067,14 +1067,14 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
     val invalidSalePrice = form.salePrice.isNotBlank() && salePrice?.let(ProductSalePricePolicy::supports) != true
     ProductDecimalField(
         value = form.salePrice,
-        labelRes = R.string.inventory_stock_editor_sale_price,
+        labelRes = Res.string.inventory_stock_editor_sale_price,
         required = false,
         state = state,
         currency = saleCurrency.value,
         testTag = CatalogsTestTags.PRODUCT_SALE_PRICE,
         errorMessage = if (invalidSalePrice) {
             stringResource(
-                R.string.catalog_polish_sale_price_error,
+                Res.string.catalog_polish_sale_price_error,
                 Money.ofMinor(ProductSalePricePolicy.MAX_MINOR_UNITS, saleCurrency).toMajor().toPlainString(),
                 saleCurrency.value,
                 saleCurrency.defaultFractionDigits,
@@ -1085,16 +1085,16 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
     val unit = state.unitOptions.firstOrNull { it.unitId == form.unitId }
     Text(
         text = stringResource(
-            R.string.inventory_stock_editor_unit,
-            unit?.code ?: stringResource(R.string.inventory_stock_editor_unknown_unit),
+            Res.string.inventory_stock_editor_unit,
+            unit?.code ?: stringResource(Res.string.inventory_stock_editor_unknown_unit),
         ),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Text(
         text = stringResource(
-            if (state.isInventoryStockEditable) R.string.inventory_stock_editor_adjustment_help
-            else R.string.inventory_stock_editor_shared_help,
+            if (state.isInventoryStockEditable) Res.string.inventory_stock_editor_adjustment_help
+            else Res.string.inventory_stock_editor_shared_help,
         ),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1103,7 +1103,7 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
     FormTextField(
         value = form.sku,
         hasInvalidValue = form.isSkuInputTooLong || form.sku.trim().length > 64,
-        labelRes = R.string.catalog_sku_label,
+        labelRes = Res.string.catalog_sku_label,
         enabled = !state.isSaving,
         modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_SKU),
     ) { onAction(Action.ProductSkuChanged(it)) }
@@ -1111,7 +1111,7 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
         value = form.barcode,
         hasInvalidValue = form.isBarcodeInputTooLong ||
             (form.barcode != form.original?.barcode.orEmpty() && !BarcodeValue.isValidOptional(form.barcode)),
-        labelRes = R.string.catalog_barcode_label,
+        labelRes = Res.string.catalog_barcode_label,
         enabled = !state.isSaving,
         modifier = Modifier.testTag(CatalogsTestTags.PRODUCT_BARCODE),
     ) { onAction(Action.ProductBarcodeChanged(it)) }
@@ -1120,13 +1120,13 @@ private fun InventoryProductFormFields(state: State, form: Form.ProductForm, onA
 @Composable
 private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAction: (Action) -> Unit) {
     if (state.isInventoryBalanceLoading) {
-        LoadingState(message = stringResource(R.string.inventory_stock_editor_loading))
+        LoadingState(message = stringResource(Res.string.inventory_stock_editor_loading))
     }
     state.inventoryBalanceFailure?.let {
         RecoverableError(
-            title = stringResource(R.string.inventory_stock_editor_load_failed_title),
-            message = stringResource(R.string.inventory_stock_editor_load_failed),
-            actionLabel = stringResource(R.string.action_retry),
+            title = stringResource(Res.string.inventory_stock_editor_load_failed_title),
+            message = stringResource(Res.string.inventory_stock_editor_load_failed),
+            actionLabel = stringResource(Res.string.action_retry),
             onAction = { onAction(Action.Retry) },
         )
     }
@@ -1136,13 +1136,13 @@ private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAct
         if (quantities.all { it != null }) {
             val total = quantities.fold(java.math.BigDecimal.ZERO) { sum, quantity -> sum + requireNotNull(quantity) }
             Text(
-                text = stringResource(R.string.inventory_stock_editor_all_locations_total, total.stripTrailingZeros().toPlainString()),
+                text = stringResource(Res.string.inventory_stock_editor_all_locations_total, total.stripTrailingZeros().toPlainString()),
                 modifier = Modifier.testTag(InventoryProductStockEditorTags.TOTAL),
                 style = MaterialTheme.typography.bodyMedium,
             )
         } else {
             Text(
-                text = stringResource(R.string.inventory_stock_editor_total_unknown),
+                text = stringResource(Res.string.inventory_stock_editor_total_unknown),
                 modifier = Modifier.testTag(InventoryProductStockEditorTags.TOTAL),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1150,7 +1150,7 @@ private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAct
         var expanded by remember { mutableStateOf(false) }
         Box {
             FacturaStockSecondaryButton(
-                text = selected?.locationName ?: stringResource(R.string.inventory_stock_editor_choose_location),
+                text = selected?.locationName ?: stringResource(Res.string.inventory_stock_editor_choose_location),
                 onClick = { expanded = true },
                 enabled = !state.isSaving && !state.isInventoryBalanceLoading && state.inventoryBalanceFailure == null,
                 modifier = Modifier.fillMaxWidth().testTag(InventoryProductStockEditorTags.LOCATION),
@@ -1163,10 +1163,10 @@ private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAct
                                 Text(balance.locationName)
                                 Text(
                                     stringResource(
-                                        R.string.inventory_stock_editor_location_balance,
-                                        balance.quantity.ifBlank { stringResource(R.string.inventory_stock_editor_unknown_quantity) },
+                                        Res.string.inventory_stock_editor_location_balance,
+                                        balance.quantity.ifBlank { stringResource(Res.string.inventory_stock_editor_unknown_quantity) },
                                         balance.currency?.value.orEmpty(),
-                                        balance.unitCost.ifBlank { stringResource(R.string.inventory_stock_editor_unknown_cost) },
+                                        balance.unitCost.ifBlank { stringResource(Res.string.inventory_stock_editor_unknown_cost) },
                                     ),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
@@ -1181,7 +1181,7 @@ private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAct
             }
         }
         Text(
-            stringResource(R.string.inventory_stock_editor_location_help),
+            stringResource(Res.string.inventory_stock_editor_location_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1189,7 +1189,7 @@ private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAct
         val locationName = selected?.locationName
             ?: state.locationOptions.firstOrNull { it.locationId == form.locationId }?.label
         locationName?.let {
-            Text(stringResource(R.string.inventory_stock_editor_location, it), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(Res.string.inventory_stock_editor_location, it), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -1197,7 +1197,7 @@ private fun InventoryBalanceSelector(state: State, form: Form.ProductForm, onAct
 @Composable
 private fun ProductDecimalField(
     value: String,
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     required: Boolean,
     state: State,
     testTag: String,
@@ -1219,7 +1219,7 @@ private fun ProductDecimalField(
         supportingText = if (errorMessage != null) {
             { Text(errorMessage) }
         } else if (required) {
-            { Text(stringResource(R.string.catalog_field_required)) }
+            { Text(stringResource(Res.string.catalog_field_required)) }
         } else null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
@@ -1231,26 +1231,26 @@ private fun ProductDecimalField(
 private fun SupplierFormFields(form: Form.SupplierForm, failure: Failure?, onAction: (Action) -> Unit, enabled: Boolean) {
     FormTextField(
         value = form.title,
-        labelRes = R.string.catalog_legal_name_label,
+        labelRes = Res.string.catalog_legal_name_label,
         enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
     ) {
         onAction(Action.SupplierLegalNameChanged(it))
     }
-    FormTextField(form.tradeName, R.string.catalog_trade_name_label, enabled = enabled) {
+    FormTextField(form.tradeName, Res.string.catalog_trade_name_label, enabled = enabled) {
         onAction(Action.SupplierTradeNameChanged(it))
     }
     OutlinedTextField(
         value = form.ruc,
         enabled = enabled,
         onValueChange = { onAction(Action.SupplierRucChanged(it)) },
-        label = { Text(stringResource(R.string.catalog_ruc_label)) },
+        label = { Text(stringResource(Res.string.catalog_ruc_label)) },
         supportingText = {
             Text(
                 stringResource(
-                    if (failure == Failure.INVALID_RUC) R.string.catalog_ruc_invalid
-                    else R.string.catalog_ruc_local_notice,
+                    if (failure == Failure.INVALID_RUC) Res.string.catalog_ruc_invalid
+                    else Res.string.catalog_ruc_local_notice,
                 ),
             )
         },
@@ -1266,7 +1266,7 @@ private fun SupplierFormFields(form: Form.SupplierForm, failure: Failure?, onAct
 private fun UnitFormFields(form: Form.UnitForm, failure: Failure?, onAction: (Action) -> Unit, enabled: Boolean) {
     FormTextField(
         value = form.title,
-        labelRes = R.string.catalog_name_label,
+        labelRes = Res.string.catalog_name_label,
         enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
@@ -1275,14 +1275,14 @@ private fun UnitFormFields(form: Form.UnitForm, failure: Failure?, onAction: (Ac
     }
     FormTextField(
         value = form.code,
-        labelRes = R.string.catalog_unit_code_label,
+        labelRes = Res.string.catalog_unit_code_label,
         enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
     ) {
         onAction(Action.UnitCodeChanged(it))
     }
-    FormTextField(form.symbol, R.string.catalog_unit_symbol_label, enabled = enabled) {
+    FormTextField(form.symbol, Res.string.catalog_unit_symbol_label, enabled = enabled) {
         onAction(Action.UnitSymbolChanged(it))
     }
 }
@@ -1291,7 +1291,7 @@ private fun UnitFormFields(form: Form.UnitForm, failure: Failure?, onAction: (Ac
 private fun LocationFormFields(form: Form.LocationForm, failure: Failure?, onAction: (Action) -> Unit, enabled: Boolean) {
     FormTextField(
         value = form.title,
-        labelRes = R.string.catalog_name_label,
+        labelRes = Res.string.catalog_name_label,
         enabled = enabled,
         required = true,
         showRequiredError = failure == Failure.INVALID_FIELDS,
@@ -1303,7 +1303,7 @@ private fun LocationFormFields(form: Form.LocationForm, failure: Failure?, onAct
 @Composable
 private fun FormTextField(
     value: String,
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     required: Boolean = false,
     showRequiredError: Boolean = false,
     hasInvalidValue: Boolean = false,
@@ -1321,9 +1321,9 @@ private fun FormTextField(
         label = { Text(stringResource(labelRes)) },
         isError = hasInvalidValue || (missingRequiredValue && showRequiredError),
         supportingText = if (hasInvalidValue) {
-            { Text(stringResource(R.string.catalog_error_invalid)) }
+            { Text(stringResource(Res.string.catalog_error_invalid)) }
         } else if (required) {
-            { Text(stringResource(R.string.catalog_field_required)) }
+            { Text(stringResource(Res.string.catalog_field_required)) }
         } else {
             null
         },
@@ -1345,7 +1345,7 @@ private fun Form.hasRequiredFields(state: State): Boolean = when (this) {
 @Suppress("UnusedPrivateMember", "unused")
 @Composable
 private fun UnitSelector(
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     selected: UnitId?,
     options: List<CatalogsContract.UnitOption>,
     allowNone: Boolean,
@@ -1355,20 +1355,20 @@ private fun UnitSelector(
     val option = options.firstOrNull { it.unitId == selected }
     Selector(
         label = stringResource(labelRes),
-        value = option?.let { stringResource(R.string.catalog_unit_option, it.code, it.name) }
-            ?: stringResource(if (allowNone) R.string.catalog_option_none else R.string.catalog_select_option),
+        value = option?.let { stringResource(Res.string.catalog_unit_option, it.code, it.name) }
+            ?: stringResource(if (allowNone) Res.string.catalog_option_none else Res.string.catalog_select_option),
         onClick = { expanded = true },
     ) {
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (allowNone) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.catalog_option_none)) },
+                    text = { Text(stringResource(Res.string.catalog_option_none)) },
                     onClick = { expanded = false; onSelected(null) },
                 )
             }
             options.forEach { item ->
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.catalog_unit_option, item.code, item.name)) },
+                    text = { Text(stringResource(Res.string.catalog_unit_option, item.code, item.name)) },
                     onClick = { expanded = false; onSelected(item.unitId) },
                 )
             }
@@ -1384,18 +1384,18 @@ private fun LocationSelector(
     onSelected: (LocationId?) -> Unit,
     enabled: Boolean = true,
     allowNone: Boolean = true,
-    @StringRes labelRes: Int = R.string.catalog_location_label,
+    labelRes: StringResource = Res.string.catalog_location_label,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Selector(
         label = stringResource(labelRes),
         value = options.firstOrNull { it.locationId == selected }?.label
-            ?: stringResource(R.string.catalog_option_none),
+            ?: stringResource(Res.string.catalog_option_none),
         onClick = { if (enabled) expanded = true },
     ) {
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (allowNone) DropdownMenuItem(
-                text = { Text(stringResource(R.string.catalog_option_none)) },
+                text = { Text(stringResource(Res.string.catalog_option_none)) },
                 onClick = { expanded = false; onSelected(null) },
             )
             options.forEach { item ->
@@ -1474,7 +1474,7 @@ private fun CatalogModal(
 }
 
 @Composable
-private fun SectionTitle(@StringRes titleRes: Int) {
+private fun SectionTitle(titleRes: StringResource) {
     Text(
         text = stringResource(titleRes),
         modifier = Modifier.semantics { heading() },
@@ -1483,63 +1483,58 @@ private fun SectionTitle(@StringRes titleRes: Int) {
     )
 }
 
-@StringRes
-private fun Section.labelRes(): Int = when (this) {
-    Section.PRODUCTS -> R.string.catalog_products
-    Section.SUPPLIERS -> R.string.catalog_suppliers
-    Section.UNITS -> R.string.catalog_units
-    Section.LOCATIONS -> R.string.catalog_locations
+private fun Section.labelRes(): StringResource = when (this) {
+    Section.PRODUCTS -> Res.string.catalog_products
+    Section.SUPPLIERS -> Res.string.catalog_suppliers
+    Section.UNITS -> Res.string.catalog_units
+    Section.LOCATIONS -> Res.string.catalog_locations
 }
 
-@StringRes
-private fun StatusFilter.labelRes(): Int = when (this) {
-    StatusFilter.ALL -> R.string.catalog_filter_all
-    StatusFilter.ACTIVE -> R.string.catalog_filter_active
-    StatusFilter.ARCHIVED -> R.string.catalog_filter_archived
+private fun StatusFilter.labelRes(): StringResource = when (this) {
+    StatusFilter.ALL -> Res.string.catalog_filter_all
+    StatusFilter.ACTIVE -> Res.string.catalog_filter_active
+    StatusFilter.ARCHIVED -> Res.string.catalog_filter_archived
 }
 
-@StringRes
-private fun CatalogStatus.labelRes(): Int = when (this) {
-    CatalogStatus.ACTIVE -> R.string.catalog_status_active
-    CatalogStatus.ARCHIVED -> R.string.catalog_status_archived
+private fun CatalogStatus.labelRes(): StringResource = when (this) {
+    CatalogStatus.ACTIVE -> Res.string.catalog_status_active
+    CatalogStatus.ARCHIVED -> Res.string.catalog_status_archived
 }
 
-private fun Row.subtitle(): Pair<Int, String>? = when (this) {
-    is Row.ProductRow -> value.sku?.let { R.string.catalog_product_sku to it }
-        ?: value.barcode?.let { R.string.catalog_product_barcode to it }
-    is Row.SupplierRow -> value.ruc?.let { R.string.catalog_supplier_ruc to it }
-        ?: value.tradeName?.let { R.string.catalog_supplier_trade_name to it }
-    is Row.UnitRow -> R.string.catalog_unit_code to value.code
+private fun Row.subtitle(): Pair<StringResource, String>? = when (this) {
+    is Row.ProductRow -> value.sku?.let { Res.string.catalog_product_sku to it }
+        ?: value.barcode?.let { Res.string.catalog_product_barcode to it }
+    is Row.SupplierRow -> value.ruc?.let { Res.string.catalog_supplier_ruc to it }
+        ?: value.tradeName?.let { Res.string.catalog_supplier_trade_name to it }
+    is Row.UnitRow -> Res.string.catalog_unit_code to value.code
     is Row.LocationRow -> null
 }
 
-@StringRes
-private fun Form.titleRes(): Int = when (this) {
+private fun Form.titleRes(): StringResource = when (this) {
     is Form.ProductForm -> when {
-        isManualRegistration -> R.string.manual_product_title
-        isSpecialRegistration -> R.string.catalog_special_product_title
-        isEditing -> R.string.catalog_edit_product
-        else -> R.string.catalog_create_product
+        isManualRegistration -> Res.string.manual_product_title
+        isSpecialRegistration -> Res.string.catalog_special_product_title
+        isEditing -> Res.string.catalog_edit_product
+        else -> Res.string.catalog_create_product
     }
-    is Form.SupplierForm -> if (isEditing) R.string.catalog_edit_supplier else R.string.catalog_create_supplier
-    is Form.UnitForm -> if (isEditing) R.string.catalog_edit_unit else R.string.catalog_create_unit
-    is Form.LocationForm -> if (isEditing) R.string.catalog_edit_location else R.string.catalog_create_location
+    is Form.SupplierForm -> if (isEditing) Res.string.catalog_edit_supplier else Res.string.catalog_create_supplier
+    is Form.UnitForm -> if (isEditing) Res.string.catalog_edit_unit else Res.string.catalog_create_unit
+    is Form.LocationForm -> if (isEditing) Res.string.catalog_edit_location else Res.string.catalog_create_location
 }
 
-@StringRes
-private fun Failure.messageRes(): Int = when (this) {
-    Failure.NO_ACTIVE_BUSINESS -> R.string.catalog_no_business
-    Failure.LOAD_FAILED -> R.string.feature_load_error_message
-    Failure.SAVE_FAILED -> R.string.catalog_error_save
-    Failure.NOT_FOUND -> R.string.catalog_error_not_found
-    Failure.STALE -> R.string.catalog_polish_stale
-    Failure.INVALID_FIELDS -> R.string.catalog_error_invalid
-    Failure.INVALID_RUC -> R.string.catalog_ruc_invalid
-    Failure.DUPLICATE_RUC -> R.string.catalog_duplicate_ruc
-    Failure.DUPLICATE_SKU -> R.string.catalog_duplicate_sku
-    Failure.DUPLICATE_BARCODE -> R.string.catalog_duplicate_barcode
-    Failure.DUPLICATE_CODE -> R.string.catalog_duplicate_code
-    Failure.DUPLICATE_NAME -> R.string.catalog_duplicate_name
+private fun Failure.messageRes(): StringResource = when (this) {
+    Failure.NO_ACTIVE_BUSINESS -> Res.string.catalog_no_business
+    Failure.LOAD_FAILED -> Res.string.feature_load_error_message
+    Failure.SAVE_FAILED -> Res.string.catalog_error_save
+    Failure.NOT_FOUND -> Res.string.catalog_error_not_found
+    Failure.STALE -> Res.string.catalog_polish_stale
+    Failure.INVALID_FIELDS -> Res.string.catalog_error_invalid
+    Failure.INVALID_RUC -> Res.string.catalog_ruc_invalid
+    Failure.DUPLICATE_RUC -> Res.string.catalog_duplicate_ruc
+    Failure.DUPLICATE_SKU -> Res.string.catalog_duplicate_sku
+    Failure.DUPLICATE_BARCODE -> Res.string.catalog_duplicate_barcode
+    Failure.DUPLICATE_CODE -> Res.string.catalog_duplicate_code
+    Failure.DUPLICATE_NAME -> Res.string.catalog_duplicate_name
 }
 
 object InventoryProductStockEditorTags {

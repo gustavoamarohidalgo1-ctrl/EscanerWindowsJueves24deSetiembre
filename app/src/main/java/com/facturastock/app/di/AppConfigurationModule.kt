@@ -4,8 +4,6 @@ import com.facturastock.app.data.settings.DataStoreAppConfigurationRepository
 import com.facturastock.app.domain.repository.AppConfigurationRepository
 import dagger.Binds
 import dagger.Module
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
@@ -13,7 +11,6 @@ import javax.inject.Singleton
  * reemplazan con `@TestInstallIn` sin tocar los demás bindings de repositorios.
  */
 @Module
-@InstallIn(SingletonComponent::class)
 abstract class AppConfigurationModule {
     @Binds
     @Singleton

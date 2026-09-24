@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.onboarding
 
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,16 +33,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.config.CostPolicy
 import com.facturastock.app.feature.common.CollectUiEffects
 import com.facturastock.app.ui.components.FacturaStockPrimaryButton
@@ -54,7 +54,7 @@ import com.facturastock.app.ui.theme.FacturaStockDesign
 fun OnboardingRoute(
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: OnboardingViewModel = hiltViewModel(),
+    viewModel: OnboardingViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -99,7 +99,7 @@ fun OnboardingScreen(
                 .testTag(OnboardingTestTags.SCREEN),
             verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
-            OnboardingSectionTitle(R.string.onboarding_section_business)
+            OnboardingSectionTitle(Res.string.onboarding_section_business)
 
             OutlinedTextField(
                 value = state.businessName,
@@ -110,11 +110,11 @@ fun OnboardingScreen(
                         ),
                     )
                 },
-                label = { Text(stringResource(R.string.onboarding_business_name_label)) },
+                label = { Text(stringResource(Res.string.onboarding_business_name_label)) },
                 supportingText = {
                     Text(
                         stringResource(
-                            R.string.onboarding_business_name_help_counter,
+                            Res.string.onboarding_business_name_help_counter,
                             state.businessName.length,
                             OnboardingContract.BUSINESS_NAME_MAX_LENGTH,
                         ),
@@ -139,11 +139,11 @@ fun OnboardingScreen(
                         ),
                     )
                 },
-                label = { Text(stringResource(R.string.onboarding_ruc_label)) },
+                label = { Text(stringResource(Res.string.onboarding_ruc_label)) },
                 singleLine = true,
                 isError = !state.isRucWellFormed,
                 supportingText = if (!state.isRucWellFormed) {
-                    { Text(stringResource(R.string.ruc_error_invalid)) }
+                    { Text(stringResource(Res.string.ruc_error_invalid)) }
                 } else {
                     null
                 },
@@ -160,7 +160,7 @@ fun OnboardingScreen(
             )
 
             OnboardingDivider()
-            OnboardingSectionTitle(R.string.onboarding_section_tax)
+            OnboardingSectionTitle(Res.string.onboarding_section_tax)
 
             OutlinedTextField(
                 value = state.taxRatePercent,
@@ -171,11 +171,11 @@ fun OnboardingScreen(
                         ),
                     )
                 },
-                label = { Text(stringResource(R.string.tax_rate_label)) },
+                label = { Text(stringResource(Res.string.tax_rate_label)) },
                 singleLine = true,
                 isError = !state.isTaxRateValid,
                 supportingText = if (!state.isTaxRateValid) {
-                    { Text(stringResource(R.string.tax_rate_error_invalid)) }
+                    { Text(stringResource(Res.string.tax_rate_error_invalid)) }
                 } else {
                     null
                 },
@@ -192,7 +192,7 @@ fun OnboardingScreen(
             )
 
             Text(
-                text = stringResource(R.string.cost_policy_label),
+                text = stringResource(Res.string.cost_policy_label),
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.labelLarge,
             )
@@ -204,7 +204,7 @@ fun OnboardingScreen(
             ) {
                 CostPolicyOption(
                     selected = state.costPolicy == CostPolicy.NET,
-                    labelRes = R.string.cost_policy_net,
+                    labelRes = Res.string.cost_policy_net,
                     onSelect = {
                         onAction(OnboardingContract.Action.CostPolicySelected(CostPolicy.NET))
                     },
@@ -212,7 +212,7 @@ fun OnboardingScreen(
                 )
                 CostPolicyOption(
                     selected = state.costPolicy == CostPolicy.GROSS,
-                    labelRes = R.string.cost_policy_gross,
+                    labelRes = Res.string.cost_policy_gross,
                     onSelect = {
                         onAction(OnboardingContract.Action.CostPolicySelected(CostPolicy.GROSS))
                     },
@@ -222,28 +222,28 @@ fun OnboardingScreen(
 
             if (state.rucChecksumWarning) {
                 StatusCard(
-                    statusLabel = stringResource(R.string.ruc_checksum_warning_label),
-                    title = stringResource(R.string.ruc_checksum_warning_title),
-                    message = stringResource(R.string.ruc_checksum_warning),
+                    statusLabel = stringResource(Res.string.ruc_checksum_warning_label),
+                    title = stringResource(Res.string.ruc_checksum_warning_title),
+                    message = stringResource(Res.string.ruc_checksum_warning),
                     tone = StatusTone.WARNING,
-                    iconRes = R.drawable.ic_warning,
+                    iconRes = Res.drawable.ic_warning,
                 )
             }
 
             if (state.failure != null) {
                 RecoverableError(
-                    title = stringResource(R.string.save_error_title),
-                    message = stringResource(R.string.save_error_message),
-                    actionLabel = stringResource(R.string.action_retry),
+                    title = stringResource(Res.string.save_error_title),
+                    message = stringResource(Res.string.save_error_message),
+                    actionLabel = stringResource(Res.string.action_retry),
                     onAction = { onAction(OnboardingContract.Action.Save) },
                 )
             } else {
                 FacturaStockPrimaryButton(
                     text = stringResource(
                         if (state.isSaving) {
-                            R.string.action_saving
+                            Res.string.action_saving
                         } else {
-                            R.string.action_start_onboarding
+                            Res.string.action_start_onboarding
                         },
                     ),
                     onClick = { onAction(OnboardingContract.Action.Save) },
@@ -259,7 +259,7 @@ fun OnboardingScreen(
 }
 
 @Composable
-private fun OnboardingSectionTitle(@StringRes titleRes: Int) {
+private fun OnboardingSectionTitle(titleRes: StringResource) {
     Text(
         text = stringResource(titleRes),
         modifier = Modifier.semantics { heading() },
@@ -280,7 +280,7 @@ private fun OnboardingDivider() {
 @Composable
 private fun CostPolicyOption(
     selected: Boolean,
-    @StringRes labelRes: Int,
+    labelRes: StringResource,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {

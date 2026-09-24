@@ -7,12 +7,12 @@ import com.facturastock.app.data.files.LocalImageQualityAnalyzer
 import com.facturastock.app.data.files.LocalInvoiceImagePreprocessor
 import com.facturastock.app.data.files.LocalRetainedImageStore
 import com.facturastock.app.data.files.LocalRetentionFileSweep
-import com.facturastock.app.data.export.AndroidReportPdfWriter
+import com.facturastock.app.data.export.DesktopReportPdfWriter
 import com.facturastock.app.data.repository.RoomReportPdfRepository
 import com.facturastock.app.domain.repository.ReportPdfRepository
 import com.facturastock.app.domain.repository.ReportPdfWriter
-import com.facturastock.app.data.export.ContentResolverUserDataExportWriter
-import com.facturastock.app.data.privacy.WorkManagerPrivacyMaintenanceScheduler
+import com.facturastock.app.data.export.DesktopUserDataExportWriter
+import com.facturastock.app.data.privacy.DesktopPrivacyMaintenanceScheduler
 import com.facturastock.app.data.demo.LocalDemoInvoiceSource
 import com.facturastock.app.data.repository.RoomDraftWorkflowRepository
 import com.facturastock.app.data.repository.RoomDocumentBackupLifecycleRepository
@@ -56,7 +56,7 @@ import com.facturastock.app.data.repository.RoomSupplierProductAliasRepository
 import com.facturastock.app.data.repository.RoomSupplierRepository
 import com.facturastock.app.data.repository.RoomSyncReconciliationRepository
 import com.facturastock.app.data.repository.RoomUnitRepository
-import com.facturastock.app.data.sync.WorkManagerPurchaseBackupScheduler
+import com.facturastock.app.data.sync.NoOpPurchaseBackupScheduler
 import com.facturastock.app.domain.repository.BusinessRepository
 import com.facturastock.app.domain.repository.CatalogSyncBootstrapRepository
 import com.facturastock.app.domain.repository.DraftFileStore
@@ -109,12 +109,9 @@ import com.facturastock.app.domain.repository.UnitRepository
 import com.facturastock.app.domain.repository.UserDataExportWriter
 import dagger.Binds
 import dagger.Module
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 @Module
-@InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
     @Binds
     @Singleton
@@ -125,7 +122,7 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindPrivacyMaintenanceScheduler(
-        implementation: WorkManagerPrivacyMaintenanceScheduler,
+        implementation: DesktopPrivacyMaintenanceScheduler,
     ): PrivacyMaintenanceScheduler
 
     @Binds
@@ -161,7 +158,7 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindPurchaseBackupScheduler(
-        implementation: WorkManagerPurchaseBackupScheduler,
+        implementation: NoOpPurchaseBackupScheduler,
     ): PurchaseBackupScheduler
 
     @Binds
@@ -416,12 +413,12 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindReportPdfWriter(implementation: AndroidReportPdfWriter): ReportPdfWriter
+    abstract fun bindReportPdfWriter(implementation: DesktopReportPdfWriter): ReportPdfWriter
 
     @Binds
     @Singleton
     abstract fun bindUserDataExportWriter(
-        implementation: ContentResolverUserDataExportWriter,
+        implementation: DesktopUserDataExportWriter,
     ): UserDataExportWriter
 
     @Binds

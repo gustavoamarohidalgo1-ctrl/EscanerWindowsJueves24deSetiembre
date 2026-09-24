@@ -13,12 +13,9 @@ import com.facturastock.app.domain.usecase.ObserveHomeDashboardUseCase
 import com.facturastock.app.domain.usecase.RetryDraftOcrUseCase
 import com.facturastock.app.domain.usecase.StartInvoiceDraftUseCase
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-
-@HiltViewModel
 class HomeViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val observeHomeDashboardUseCase: ObserveHomeDashboardUseCase,

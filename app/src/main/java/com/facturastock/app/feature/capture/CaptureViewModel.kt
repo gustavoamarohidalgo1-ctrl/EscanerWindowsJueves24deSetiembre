@@ -22,7 +22,6 @@ import com.facturastock.app.domain.usecase.ObserveDraftImagesUseCase
 import com.facturastock.app.domain.usecase.ObserveInvoiceDraftUseCase
 import com.facturastock.app.feature.common.RouteArgumentKeys
 import com.facturastock.app.feature.common.UdfViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
@@ -37,7 +36,6 @@ import kotlinx.coroutines.flow.collect
  * se ignora, de modo que un toque genera como máximo una imagen; `isCapturing` solo se libera
  * con el éxito (que navega al procesamiento) o con un fallo (captura o importación).
  */
-@HiltViewModel
 class CaptureViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val importDraftImageUseCase: ImportDraftImageUseCase,

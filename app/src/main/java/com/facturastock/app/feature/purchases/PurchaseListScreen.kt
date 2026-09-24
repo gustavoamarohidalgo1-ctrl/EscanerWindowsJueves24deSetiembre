@@ -1,6 +1,7 @@
 package com.facturastock.app.feature.purchases
 
-import androidx.annotation.StringRes
+import com.facturastock.app.resources.*
+import org.jetbrains.compose.resources.StringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,11 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.PurchaseReadSummary
 import com.facturastock.app.domain.model.PurchaseStatus
 import com.facturastock.app.domain.model.PurchaseSyncState
@@ -92,7 +92,7 @@ fun PurchaseListScreen(
             item(key = "count", contentType = "count") {
                 Text(
                     text = pluralStringResource(
-                        R.plurals.purchases_result_count,
+                        Res.plurals.purchases_result_count,
                         purchases.size,
                         purchases.size,
                     ),
@@ -103,7 +103,7 @@ fun PurchaseListScreen(
             when {
                 isLoading -> item(key = "loading", contentType = "loading") {
                     LoadingState(
-                        message = stringResource(R.string.feature_loading_message),
+                        message = stringResource(Res.string.feature_loading_message),
                         modifier = Modifier.testTag(PurchaseListTestTags.LOADING),
                     )
                 }
@@ -112,21 +112,21 @@ fun PurchaseListScreen(
                     EmptyState(
                         title = stringResource(
                             if (filtered) {
-                                R.string.purchases_empty_filtered_title
+                                Res.string.purchases_empty_filtered_title
                             } else {
-                                R.string.purchases_empty_title
+                                Res.string.purchases_empty_title
                             },
                         ),
                         message = stringResource(
                             if (filtered) {
-                                R.string.purchases_empty_filtered_message
+                                Res.string.purchases_empty_filtered_message
                             } else {
-                                R.string.purchases_empty_message
+                                Res.string.purchases_empty_message
                             },
                         ),
-                        iconRes = R.drawable.ic_receipt,
+                        iconRes = Res.drawable.ic_receipt,
                         actionLabel = if (filtered) {
-                            stringResource(R.string.action_clear_filters)
+                            stringResource(Res.string.action_clear_filters)
                         } else {
                             null
                         },
@@ -161,9 +161,9 @@ fun PurchaseListScreen(
                             FacturaStockSecondaryButton(
                                 text = stringResource(
                                     if (isLoadingMore) {
-                                        R.string.purchases_loading_more
+                                        Res.string.purchases_loading_more
                                     } else {
-                                        R.string.purchases_load_more
+                                        Res.string.purchases_load_more
                                     },
                                 ),
                                 onClick = onLoadMore,
@@ -183,12 +183,12 @@ fun PurchaseListScreen(
 @Composable
 private fun PurchaseListHeader(onNewPurchase: () -> Unit) {
     FacturaStockPrimaryButton(
-        text = stringResource(R.string.action_register_purchase),
+        text = stringResource(Res.string.action_register_purchase),
         onClick = onNewPurchase,
         modifier = Modifier
             .fillMaxWidth()
             .testTag(PurchaseListTestTags.NEW_PURCHASE),
-        leadingIconRes = R.drawable.ic_add_document,
+        leadingIconRes = Res.drawable.ic_add_document,
     )
 }
 
@@ -206,13 +206,13 @@ private fun PurchaseFilters(
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            label = { Text(stringResource(R.string.purchases_search_label)) },
+            label = { Text(stringResource(Res.string.purchases_search_label)) },
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(PurchaseListTestTags.SEARCH),
         )
-        FilterHeading(R.string.purchases_status_filter_title)
+        FilterHeading(Res.string.purchases_status_filter_title)
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -229,10 +229,10 @@ private fun PurchaseFilters(
                         Text(
                             stringResource(
                                 when (status) {
-                                    null -> R.string.purchases_filter_all
-                                    PurchaseStatus.POSTED -> R.string.purchases_filter_posted
-                                    PurchaseStatus.VOIDED -> R.string.purchases_filter_voided
-                                    PurchaseStatus.DRAFT -> R.string.purchase_status_draft
+                                    null -> Res.string.purchases_filter_all
+                                    PurchaseStatus.POSTED -> Res.string.purchases_filter_posted
+                                    PurchaseStatus.VOIDED -> Res.string.purchases_filter_voided
+                                    PurchaseStatus.DRAFT -> Res.string.purchase_status_draft
                                 },
                             ),
                         )
@@ -241,7 +241,7 @@ private fun PurchaseFilters(
                 )
             }
         }
-        FilterHeading(R.string.purchases_sync_filter_title)
+        FilterHeading(Res.string.purchases_sync_filter_title)
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -257,7 +257,7 @@ private fun PurchaseFilters(
                     label = {
                         Text(
                             stringResource(
-                                state?.filterLabelRes() ?: R.string.purchases_sync_filter_all,
+                                state?.filterLabelRes() ?: Res.string.purchases_sync_filter_all,
                             ),
                         )
                     },
@@ -269,7 +269,7 @@ private fun PurchaseFilters(
 }
 
 @Composable
-private fun FilterHeading(@StringRes labelRes: Int) {
+private fun FilterHeading(labelRes: StringResource) {
     Text(
         text = stringResource(labelRes),
         modifier = Modifier.semantics { heading() },
@@ -310,7 +310,7 @@ private fun PurchaseSummaryCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.purchases_card_document,
+                        Res.string.purchases_card_document,
                         stringResource(purchase.documentType.labelRes()),
                         purchase.canonicalDocumentNumber,
                     ),
@@ -319,7 +319,7 @@ private fun PurchaseSummaryCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.purchase_duplicate_date,
+                        Res.string.purchase_duplicate_date,
                         formattedIssueDate,
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -327,7 +327,7 @@ private fun PurchaseSummaryCard(
                 )
                 Text(
                     text = stringResource(
-                        R.string.purchases_card_total,
+                        Res.string.purchases_card_total,
                         formattedTotal,
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
@@ -339,7 +339,7 @@ private fun PurchaseSummaryCard(
                 )
                 if (backupRetryFailed) {
                     Text(
-                        text = stringResource(R.string.purchase_backup_retry_failed),
+                        text = stringResource(Res.string.purchase_backup_retry_failed),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -348,9 +348,9 @@ private fun PurchaseSummaryCard(
                     FacturaStockSecondaryButton(
                         text = stringResource(
                             if (isRetryingBackup) {
-                                R.string.action_retrying_backup
+                                Res.string.action_retrying_backup
                             } else {
-                                R.string.action_retry_backup
+                                Res.string.action_retry_backup
                             },
                         ),
                         onClick = onRetryBackup,
@@ -385,15 +385,14 @@ private fun PurchaseBadges(
     }
 }
 
-@StringRes
-private fun PurchaseSyncState.filterLabelRes(): Int = when (this) {
-    PurchaseSyncState.DRAFT -> R.string.purchases_sync_filter_draft
-    PurchaseSyncState.PENDING_SYNC -> R.string.purchases_sync_filter_pending
-    PurchaseSyncState.SYNCING -> R.string.purchases_sync_filter_syncing
-    PurchaseSyncState.SYNCED -> R.string.purchases_sync_filter_synced
-    PurchaseSyncState.ERROR -> R.string.purchases_sync_filter_error
-    PurchaseSyncState.CONFLICT -> R.string.purchases_sync_filter_conflict
-    PurchaseSyncState.RESOLVED -> R.string.purchases_sync_filter_resolved
+private fun PurchaseSyncState.filterLabelRes(): StringResource = when (this) {
+    PurchaseSyncState.DRAFT -> Res.string.purchases_sync_filter_draft
+    PurchaseSyncState.PENDING_SYNC -> Res.string.purchases_sync_filter_pending
+    PurchaseSyncState.SYNCING -> Res.string.purchases_sync_filter_syncing
+    PurchaseSyncState.SYNCED -> Res.string.purchases_sync_filter_synced
+    PurchaseSyncState.ERROR -> Res.string.purchases_sync_filter_error
+    PurchaseSyncState.CONFLICT -> Res.string.purchases_sync_filter_conflict
+    PurchaseSyncState.RESOLVED -> Res.string.purchases_sync_filter_resolved
 }
 
 private val STATUS_FILTERS: List<PurchaseStatus?> = listOf(

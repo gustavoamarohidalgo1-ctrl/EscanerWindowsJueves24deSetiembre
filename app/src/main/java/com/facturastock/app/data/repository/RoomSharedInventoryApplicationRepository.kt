@@ -1,6 +1,6 @@
 package com.facturastock.app.data.repository
 
-import androidx.room.withTransaction
+import com.facturastock.app.data.local.withTransaction
 import com.facturastock.app.core.coroutines.DispatcherProvider
 import com.facturastock.app.data.local.FacturaStockDatabase
 import com.facturastock.app.data.local.dao.SaleWithLines
@@ -954,7 +954,7 @@ private fun validatePage(expectedPreviousSeq: Long, page: SharedInventoryPullPag
 private fun sharedLocationDisplayName(value: String): String =
     java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
         .trim()
-        .replace(Regex("\\s+"), " ")
+        .replace(Regex("(?U)\\s+"), " ")
         .also { display ->
             if (display.isEmpty() || display.length > 100) throw InventoryApplicationConflict()
         }

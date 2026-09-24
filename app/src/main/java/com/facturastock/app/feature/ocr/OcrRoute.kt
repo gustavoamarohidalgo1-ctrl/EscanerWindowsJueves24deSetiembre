@@ -1,6 +1,8 @@
 package com.facturastock.app.feature.ocr
 
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,12 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.facturastock.app.di.appViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.id.DraftId
 import com.facturastock.app.domain.usecase.InvoiceOcrStage
 import com.facturastock.app.feature.common.CollectUiEffects
@@ -39,7 +40,7 @@ fun OcrRoute(
     onBack: () -> Unit,
     onCloseInvalidRoute: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: OcrViewModel = hiltViewModel(),
+    viewModel: OcrViewModel = appViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -108,7 +109,7 @@ fun OcrScreen(
     ) {
         item {
             Text(
-                text = stringResource(R.string.purchase_processing_title),
+                text = stringResource(Res.string.purchase_processing_title),
                 modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.headlineLarge,
@@ -119,11 +120,11 @@ fun OcrScreen(
             OcrContract.Failure.INVALID_DRAFT_ID -> {
                 item {
                     StatusCard(
-                        statusLabel = stringResource(R.string.ocr_error_status),
-                        title = stringResource(R.string.ocr_invalid_route_title),
-                        message = stringResource(R.string.ocr_invalid_route_message),
+                        statusLabel = stringResource(Res.string.ocr_error_status),
+                        title = stringResource(Res.string.ocr_invalid_route_title),
+                        message = stringResource(Res.string.ocr_invalid_route_message),
                         tone = StatusTone.ERROR,
-                        iconRes = R.drawable.ic_warning,
+                        iconRes = Res.drawable.ic_warning,
                         modifier = Modifier.testTag(OcrTestTags.ERROR),
                     )
                 }
@@ -132,11 +133,11 @@ fun OcrScreen(
             OcrContract.Failure.INTERRUPTED -> {
                 item {
                     StatusCard(
-                        statusLabel = stringResource(R.string.ocr_interrupted_status),
-                        title = stringResource(R.string.ocr_interrupted_title),
-                        message = stringResource(R.string.ocr_interrupted_message),
+                        statusLabel = stringResource(Res.string.ocr_interrupted_status),
+                        title = stringResource(Res.string.ocr_interrupted_title),
+                        message = stringResource(Res.string.ocr_interrupted_message),
                         tone = StatusTone.WARNING,
-                        iconRes = R.drawable.ic_warning,
+                        iconRes = Res.drawable.ic_warning,
                         modifier = Modifier.testTag(OcrTestTags.ERROR),
                     )
                 }
@@ -144,9 +145,9 @@ fun OcrScreen(
                     FacturaStockPrimaryButton(
                         text = stringResource(
                             if (state.isRecoveringInterruptedOcr) {
-                                R.string.ocr_recovering
+                                Res.string.ocr_recovering
                             } else {
-                                R.string.action_retry
+                                Res.string.action_retry
                             },
                         ),
                         onClick = { onAction(OcrContract.Action.Retry) },
@@ -161,23 +162,23 @@ fun OcrScreen(
             OcrContract.Failure.RECOGNITION_FAILED -> {
                 item {
                     StatusCard(
-                        statusLabel = stringResource(R.string.ocr_error_status),
-                        title = stringResource(R.string.ocr_recognition_error_title),
+                        statusLabel = stringResource(Res.string.ocr_error_status),
+                        title = stringResource(Res.string.ocr_recognition_error_title),
                         message = stringResource(
                             if (state.manualEntryFailed) {
-                                R.string.ocr_manual_entry_error_message
+                                Res.string.ocr_manual_entry_error_message
                             } else {
-                                R.string.ocr_recognition_error_message
+                                Res.string.ocr_recognition_error_message
                             },
                         ),
                         tone = StatusTone.ERROR,
-                        iconRes = R.drawable.ic_warning,
+                        iconRes = Res.drawable.ic_warning,
                         modifier = Modifier.testTag(OcrTestTags.ERROR),
                     )
                 }
                 item {
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.action_retry),
+                        text = stringResource(Res.string.action_retry),
                         onClick = { onAction(OcrContract.Action.Retry) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -190,23 +191,23 @@ fun OcrScreen(
             OcrContract.Failure.PARSING_FAILED -> {
                 item {
                     StatusCard(
-                        statusLabel = stringResource(R.string.ocr_parse_error_status),
-                        title = stringResource(R.string.ocr_parse_error_title),
+                        statusLabel = stringResource(Res.string.ocr_parse_error_status),
+                        title = stringResource(Res.string.ocr_parse_error_title),
                         message = stringResource(
                             if (state.manualEntryFailed) {
-                                R.string.ocr_manual_entry_error_message
+                                Res.string.ocr_manual_entry_error_message
                             } else {
-                                R.string.ocr_parse_error_message
+                                Res.string.ocr_parse_error_message
                             },
                         ),
                         tone = StatusTone.ERROR,
-                        iconRes = R.drawable.ic_warning,
+                        iconRes = Res.drawable.ic_warning,
                         modifier = Modifier.testTag(OcrTestTags.ERROR),
                     )
                 }
                 item {
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.action_retry),
+                        text = stringResource(Res.string.action_retry),
                         onClick = { onAction(OcrContract.Action.Retry) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -219,18 +220,18 @@ fun OcrScreen(
             OcrContract.Failure.NO_PRODUCTS_FOUND -> {
                 item {
                     StatusCard(
-                        statusLabel = stringResource(R.string.ocr_no_products_status),
-                        title = stringResource(R.string.ocr_no_products_title),
-                        message = stringResource(R.string.ocr_no_products_message),
+                        statusLabel = stringResource(Res.string.ocr_no_products_status),
+                        title = stringResource(Res.string.ocr_no_products_title),
+                        message = stringResource(Res.string.ocr_no_products_message),
                         tone = StatusTone.WARNING,
-                        iconRes = R.drawable.ic_warning,
+                        iconRes = Res.drawable.ic_warning,
                         modifier = Modifier
                             .testTag(OcrTestTags.ERROR),
                     )
                 }
                 item {
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.action_retry),
+                        text = stringResource(Res.string.action_retry),
                         onClick = { onAction(OcrContract.Action.Retry) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -239,7 +240,7 @@ fun OcrScreen(
                 }
                 item {
                     FacturaStockSecondaryButton(
-                        text = stringResource(R.string.ocr_action_continue_manual),
+                        text = stringResource(Res.string.ocr_action_continue_manual),
                         onClick = { onAction(OcrContract.Action.ContinueToMatching) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -249,17 +250,17 @@ fun OcrScreen(
             OcrContract.Failure.PRODUCT_SAVE_FAILED -> {
                 item {
                     StatusCard(
-                        statusLabel = stringResource(R.string.ocr_product_save_error_status),
-                        title = stringResource(R.string.ocr_product_save_error_title),
-                        message = stringResource(R.string.ocr_product_save_error_message),
+                        statusLabel = stringResource(Res.string.ocr_product_save_error_status),
+                        title = stringResource(Res.string.ocr_product_save_error_title),
+                        message = stringResource(Res.string.ocr_product_save_error_message),
                         tone = StatusTone.ERROR,
-                        iconRes = R.drawable.ic_warning,
+                        iconRes = Res.drawable.ic_warning,
                         modifier = Modifier.testTag(OcrTestTags.ERROR),
                     )
                 }
                 item {
                     FacturaStockPrimaryButton(
-                        text = stringResource(R.string.action_retry),
+                        text = stringResource(Res.string.action_retry),
                         onClick = { onAction(OcrContract.Action.Retry) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -274,11 +275,11 @@ fun OcrScreen(
                     state.completedPageCount > 0
                 ) {
                     item {
-                        Text(text = stringResource(R.string.matching_ocr_complete))
+                        Text(text = stringResource(Res.string.matching_ocr_complete))
                     }
                     item {
                         FacturaStockPrimaryButton(
-                            text = stringResource(R.string.matching_resume_review),
+                            text = stringResource(Res.string.matching_resume_review),
                             onClick = { onAction(OcrContract.Action.ContinueToMatching) },
                             modifier = Modifier.fillMaxWidth().testTag(OcrTestTags.CONTINUE_REVIEW),
                         )
@@ -289,10 +290,10 @@ fun OcrScreen(
                         LoadingState(
                             message = when {
                                 state.isSavingProducts -> {
-                                    stringResource(R.string.ocr_saving_products)
+                                    stringResource(Res.string.ocr_saving_products)
                                 }
 
-                                state.isCancelling -> stringResource(R.string.ocr_cancelling)
+                                state.isCancelling -> stringResource(Res.string.ocr_cancelling)
                                 else -> stageMessage
                             },
                         )
@@ -300,7 +301,7 @@ fun OcrScreen(
                 }
                 item {
                     Text(
-                        text = stringResource(R.string.purchase_processing_message),
+                        text = stringResource(Res.string.purchase_processing_message),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -309,9 +310,9 @@ fun OcrScreen(
                     item {
                         FacturaStockPrimaryButton(
                             text = if (state.isCancelling) {
-                                stringResource(R.string.ocr_cancelling)
+                                stringResource(Res.string.ocr_cancelling)
                             } else {
-                                stringResource(R.string.action_cancel)
+                                stringResource(Res.string.action_cancel)
                             },
                             onClick = { onAction(OcrContract.Action.Cancel) },
                             modifier = Modifier
@@ -338,9 +339,9 @@ fun OcrScreen(
                 FacturaStockSecondaryButton(
                     text = stringResource(
                         if (state.failure == OcrContract.Failure.INVALID_DRAFT_ID) {
-                            R.string.action_previous_step
+                            Res.string.action_previous_step
                         } else {
-                            R.string.action_retake_invoice_photo
+                            Res.string.action_retake_invoice_photo
                         },
                     ),
                     onClick = { onAction(OcrContract.Action.BackSelected) },
@@ -364,9 +365,8 @@ object OcrTestTags {
     const val CONTINUE_REVIEW = "ocr_continue_review"
 }
 
-@StringRes
-private fun InvoiceOcrStage.messageRes(): Int = when (this) {
-    InvoiceOcrStage.PREPARING -> R.string.ocr_stage_preparing
-    InvoiceOcrStage.READING -> R.string.ocr_stage_reading
-    InvoiceOcrStage.MERGING_PAGES -> R.string.ocr_stage_merging_pages
+private fun InvoiceOcrStage.messageRes(): StringResource = when (this) {
+    InvoiceOcrStage.PREPARING -> Res.string.ocr_stage_preparing
+    InvoiceOcrStage.READING -> Res.string.ocr_stage_reading
+    InvoiceOcrStage.MERGING_PAGES -> Res.string.ocr_stage_merging_pages
 }

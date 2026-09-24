@@ -1,7 +1,9 @@
 package com.facturastock.app.feature.purchases
 
-import androidx.activity.compose.BackHandler
-import androidx.annotation.StringRes
+import org.jetbrains.compose.resources.StringResource
+
+import com.facturastock.app.resources.*
+import com.facturastock.app.ui.navigation.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,12 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import com.facturastock.app.R
 import com.facturastock.app.domain.model.PurchaseOverrideRole
 import com.facturastock.app.domain.model.PurchaseVoidImpact
 import com.facturastock.app.domain.model.PurchaseVoidPreview
@@ -58,7 +59,7 @@ internal fun PurchaseVoidScreen(
     ) {
         when {
             state.isLoading && state.preview == null -> LoadingState(
-                message = stringResource(R.string.purchase_void_loading),
+                message = stringResource(Res.string.purchase_void_loading),
                 modifier = Modifier.weight(1f),
             )
             state.preview == null -> PurchaseVoidBlockingContent(
@@ -82,8 +83,8 @@ internal fun PurchaseVoidScreen(
             if (state.preview != null) {
                 FacturaStockPrimaryButton(
                     text = stringResource(
-                        if (state.isSubmitting) R.string.purchase_void_submitting
-                        else R.string.purchase_void_submit,
+                        if (state.isSubmitting) Res.string.purchase_void_submitting
+                        else Res.string.purchase_void_submit,
                     ),
                     onClick = { onAction(PurchaseVoidContract.Action.Submit) },
                     enabled = state.canSubmit,
@@ -93,10 +94,10 @@ internal fun PurchaseVoidScreen(
                 )
             }
             FacturaStockSecondaryButton(
-                text = stringResource(R.string.purchase_void_back),
+                text = stringResource(Res.string.purchase_void_back),
                 onClick = { onAction(PurchaseVoidContract.Action.BackSelected) },
                 enabled = !state.isSubmitting,
-                leadingIconRes = R.drawable.ic_back,
+                leadingIconRes = Res.drawable.ic_back,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(PurchaseVoidTestTags.BACK),
@@ -128,9 +129,9 @@ private fun PurchaseVoidBlockingContent(
         if (failure.canRetry()) {
             item {
                 FacturaStockSecondaryButton(
-                    text = stringResource(R.string.purchase_void_retry),
+                    text = stringResource(Res.string.purchase_void_retry),
                     onClick = onRetry,
-                    leadingIconRes = R.drawable.ic_refresh,
+                    leadingIconRes = Res.drawable.ic_refresh,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(PurchaseVoidTestTags.RETRY),
@@ -168,7 +169,7 @@ private fun PurchaseVoidPreviewContent(
         }
         item(key = "impacts_header", contentType = "section_header") {
             SectionTitle(
-                stringResource(R.string.purchase_void_impact_title, preview.impacts.size),
+                stringResource(Res.string.purchase_void_impact_title, preview.impacts.size),
             )
         }
         items(
@@ -217,13 +218,13 @@ private fun PurchaseVoidPreviewContent(
 private fun PurchaseVoidHeader() {
     Column(verticalArrangement = Arrangement.spacedBy(FacturaStockDesign.spacing.xs)) {
         Text(
-            text = stringResource(R.string.purchase_void_title),
+            text = stringResource(Res.string.purchase_void_title),
             modifier = Modifier.semantics { heading() },
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.headlineLarge,
         )
         Text(
-            text = stringResource(R.string.purchase_void_intro),
+            text = stringResource(Res.string.purchase_void_intro),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyLarge,
         )
@@ -234,14 +235,14 @@ private fun PurchaseVoidHeader() {
 private fun PurchaseVoidDocumentCard(preview: PurchaseVoidPreview) {
     Column(modifier = Modifier.testTag(PurchaseVoidTestTags.DOCUMENT)) {
         StatusCard(
-            statusLabel = stringResource(R.string.purchase_void_authorization_title),
-            title = stringResource(R.string.purchase_void_document, preview.documentNumber),
+            statusLabel = stringResource(Res.string.purchase_void_authorization_title),
+            title = stringResource(Res.string.purchase_void_document, preview.documentNumber),
             message = stringResource(
-                R.string.purchase_void_authorized_role,
+                Res.string.purchase_void_authorized_role,
                 stringResource(preview.actor.role.labelRes()),
             ),
             tone = StatusTone.INFO,
-            iconRes = R.drawable.ic_info,
+            iconRes = Res.drawable.ic_info,
             modifier = Modifier.testTag(PurchaseVoidTestTags.AUTHORIZED_ROLE),
         )
     }
@@ -250,11 +251,11 @@ private fun PurchaseVoidDocumentCard(preview: PurchaseVoidPreview) {
 @Composable
 private fun NegativeStockWarning() {
     StatusCard(
-        statusLabel = stringResource(R.string.purchase_void_negative_label),
-        title = stringResource(R.string.purchase_void_negative_title),
-        message = stringResource(R.string.purchase_void_negative_message),
+        statusLabel = stringResource(Res.string.purchase_void_negative_label),
+        title = stringResource(Res.string.purchase_void_negative_title),
+        message = stringResource(Res.string.purchase_void_negative_message),
         tone = StatusTone.WARNING,
-        iconRes = R.drawable.ic_warning,
+        iconRes = Res.drawable.ic_warning,
         modifier = Modifier.testTag(PurchaseVoidTestTags.NEGATIVE_WARNING),
     )
 }
@@ -303,7 +304,7 @@ private fun PurchaseVoidImpactCard(
                         contentColor = FacturaStockDesign.semanticColors.onWarning,
                     ) {
                         Text(
-                            text = stringResource(R.string.purchase_void_negative_label),
+                            text = stringResource(Res.string.purchase_void_negative_label),
                             modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xxs),
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -312,14 +313,14 @@ private fun PurchaseVoidImpactCard(
             }
             Text(
                 text = stringResource(
-                    R.string.purchase_void_impact_location,
+                    Res.string.purchase_void_impact_location,
                     impact.locationName,
                 ),
                 color = content,
             )
             Text(
                 text = stringResource(
-                    R.string.purchase_void_impact_current,
+                    Res.string.purchase_void_impact_current,
                     impact.currentQuantity.formatQuantity(),
                     impact.unitCode,
                 ),
@@ -327,7 +328,7 @@ private fun PurchaseVoidImpactCard(
             )
             Text(
                 text = stringResource(
-                    R.string.purchase_void_impact_reversal,
+                    Res.string.purchase_void_impact_reversal,
                     impact.reversalQuantity.formatSignedQuantity(),
                     impact.unitCode,
                 ),
@@ -335,7 +336,7 @@ private fun PurchaseVoidImpactCard(
             )
             Text(
                 text = stringResource(
-                    R.string.purchase_void_impact_result,
+                    Res.string.purchase_void_impact_result,
                     impact.resultingQuantity.formatQuantity(),
                     impact.unitCode,
                 ),
@@ -359,12 +360,12 @@ private fun PurchaseVoidReasonField(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(PurchaseVoidTestTags.REASON),
-        label = { Text(stringResource(R.string.purchase_void_reason_label)) },
+        label = { Text(stringResource(Res.string.purchase_void_reason_label)) },
         supportingText = {
             if (isError) {
                 Text(
                     text = stringResource(
-                        R.string.purchase_void_reason_error,
+                        Res.string.purchase_void_reason_error,
                         PurchaseVoidRequest.MIN_REASON_LENGTH,
                         PurchaseVoidRequest.MAX_REASON_LENGTH,
                     ),
@@ -373,14 +374,14 @@ private fun PurchaseVoidReasonField(
                 Column {
                     Text(
                         text = stringResource(
-                            R.string.purchase_void_reason_help,
+                            Res.string.purchase_void_reason_help,
                             PurchaseVoidRequest.MIN_REASON_LENGTH,
                             PurchaseVoidRequest.MAX_REASON_LENGTH,
                         ),
                     )
                     Text(
                         text = stringResource(
-                            R.string.purchase_void_reason_counter,
+                            Res.string.purchase_void_reason_counter,
                             reason.trim().length,
                             PurchaseVoidRequest.MAX_REASON_LENGTH,
                         ),
@@ -423,7 +424,7 @@ private fun PurchaseVoidConfirmation(
             enabled = enabled,
         )
         Text(
-            text = stringResource(R.string.purchase_void_confirmation),
+            text = stringResource(Res.string.purchase_void_confirmation),
             modifier = Modifier.weight(1f),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyMedium,
@@ -434,15 +435,15 @@ private fun PurchaseVoidConfirmation(
 @Composable
 private fun PurchaseVoidFailureCard(failure: PurchaseVoidContract.Failure) {
     StatusCard(
-        statusLabel = stringResource(R.string.purchase_void_failure_status),
-        title = stringResource(R.string.purchase_void_failure_title),
+        statusLabel = stringResource(Res.string.purchase_void_failure_status),
+        title = stringResource(Res.string.purchase_void_failure_title),
         message = stringResource(failure.messageRes()),
         tone = if (failure == PurchaseVoidContract.Failure.IMPACT_CHANGED) {
             StatusTone.WARNING
         } else {
             StatusTone.ERROR
         },
-        iconRes = R.drawable.ic_warning,
+        iconRes = Res.drawable.ic_warning,
     )
 }
 
@@ -458,32 +459,30 @@ private fun SectionTitle(text: String) {
     )
 }
 
-@StringRes
-private fun PurchaseOverrideRole.labelRes(): Int = when (this) {
-    PurchaseOverrideRole.OWNER -> R.string.purchase_void_role_owner
-    PurchaseOverrideRole.MANAGER -> R.string.purchase_void_role_manager
-    PurchaseOverrideRole.OPERATOR -> R.string.purchase_void_role_operator
+private fun PurchaseOverrideRole.labelRes(): StringResource = when (this) {
+    PurchaseOverrideRole.OWNER -> Res.string.purchase_void_role_owner
+    PurchaseOverrideRole.MANAGER -> Res.string.purchase_void_role_manager
+    PurchaseOverrideRole.OPERATOR -> Res.string.purchase_void_role_operator
 }
 
-@StringRes
-private fun PurchaseVoidContract.Failure.messageRes(): Int = when (this) {
+private fun PurchaseVoidContract.Failure.messageRes(): StringResource = when (this) {
     PurchaseVoidContract.Failure.INVALID_PURCHASE_ID,
     PurchaseVoidContract.Failure.NOT_FOUND,
-    -> R.string.purchase_void_failure_not_found
-    PurchaseVoidContract.Failure.LOAD_FAILED -> R.string.purchase_void_failure_load
-    PurchaseVoidContract.Failure.SUBMIT_FAILED -> R.string.purchase_void_failure_submit
-    PurchaseVoidContract.Failure.STORAGE_FULL -> R.string.storage_full_recoverable_message
+    -> Res.string.purchase_void_failure_not_found
+    PurchaseVoidContract.Failure.LOAD_FAILED -> Res.string.purchase_void_failure_load
+    PurchaseVoidContract.Failure.SUBMIT_FAILED -> Res.string.purchase_void_failure_submit
+    PurchaseVoidContract.Failure.STORAGE_FULL -> Res.string.storage_full_recoverable_message
     PurchaseVoidContract.Failure.NO_ACTIVE_BUSINESS ->
-        R.string.purchase_void_failure_no_business
-    PurchaseVoidContract.Failure.NOT_POSTED -> R.string.purchase_void_failure_not_posted
-    PurchaseVoidContract.Failure.UNAUTHORIZED -> R.string.purchase_void_failure_unauthorized
+        Res.string.purchase_void_failure_no_business
+    PurchaseVoidContract.Failure.NOT_POSTED -> Res.string.purchase_void_failure_not_posted
+    PurchaseVoidContract.Failure.UNAUTHORIZED -> Res.string.purchase_void_failure_unauthorized
     PurchaseVoidContract.Failure.CONFIRMATION_REQUIRED ->
-        R.string.purchase_void_failure_confirmation
-    PurchaseVoidContract.Failure.INVALID_REASON -> R.string.purchase_void_failure_reason
+        Res.string.purchase_void_failure_confirmation
+    PurchaseVoidContract.Failure.INVALID_REASON -> Res.string.purchase_void_failure_reason
     PurchaseVoidContract.Failure.IMPACT_CHANGED ->
-        R.string.purchase_void_failure_impact_changed
+        Res.string.purchase_void_failure_impact_changed
     PurchaseVoidContract.Failure.RETRYABLE_CONFLICT ->
-        R.string.purchase_void_failure_conflict
+        Res.string.purchase_void_failure_conflict
 }
 
 private fun PurchaseVoidContract.Failure.canRetry(): Boolean = when (this) {

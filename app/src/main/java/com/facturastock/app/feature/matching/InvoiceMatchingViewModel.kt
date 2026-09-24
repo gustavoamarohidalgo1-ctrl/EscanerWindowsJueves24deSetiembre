@@ -34,15 +34,12 @@ import com.facturastock.app.feature.matching.InvoiceMatchingContract.Action
 import com.facturastock.app.feature.matching.InvoiceMatchingContract.Effect
 import com.facturastock.app.feature.matching.InvoiceMatchingContract.Failure
 import com.facturastock.app.feature.matching.InvoiceMatchingContract.State
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import javax.inject.Inject
-
-@HiltViewModel
 class InvoiceMatchingViewModel
     @Inject
     constructor(

@@ -2,7 +2,7 @@ package com.facturastock.app.feature.common
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
+import coil3.compose.LocalPlatformContext
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 
@@ -12,7 +12,7 @@ import coil3.request.ImageRequest
  */
 @Composable
 fun sensitiveImageRequest(data: Any): ImageRequest {
-    val context = LocalContext.current
+    val context = LocalPlatformContext.current
     return remember(context, data) {
         ImageRequest.Builder(context)
             .data(data)

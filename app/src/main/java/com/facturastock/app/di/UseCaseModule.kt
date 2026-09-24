@@ -170,12 +170,9 @@ import com.facturastock.app.domain.usecase.StartDemoInvoiceScenarioUseCase
 import com.facturastock.app.domain.usecase.StartInvoiceDraftUseCase
 import dagger.Module
 import dagger.Provides
-import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 @Module
-@InstallIn(SingletonComponent::class)
 object UseCaseModule {
     @Provides
     fun provideRunDraftStageUseCase(
