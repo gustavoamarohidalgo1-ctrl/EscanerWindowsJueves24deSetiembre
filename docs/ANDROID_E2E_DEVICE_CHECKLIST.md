@@ -16,8 +16,9 @@ conectividad del dispositivo).
 
 ## Preparación
 
-1. Conectar por USB un teléfono Android físico con cámara posterior y depuración USB autorizada.
-2. Instalar el flavor `localDebug`; no usar datos Firebase ni una cuenta real.
+1. Conectar por USB un teléfono Android físico de pruebas con cámara posterior y depuración USB
+   autorizada. Nunca usar la tablet del negocio: contiene datos reales.
+2. Instalar `localDebug` (`local` es el único flavor); no usar datos ni cuentas reales.
 3. Ejecutar:
 
    ```bash
@@ -45,18 +46,19 @@ otros datos personales.
 5. **Imagen borrosa/OCR fallido:** capturar una hoja deliberadamente desenfocada. Debe aparecer la
    advertencia de calidad y debe ser posible recapturar; un fallo OCR debe ofrecer reintento sin perder
    el borrador.
-6. **Factura demo de 38 líneas:** desde Ajustes activar el modo demo e iniciar su escenario. Confirmar
+6. **Factura demo de 38 líneas:** activar el modo demo e iniciar su escenario. Confirmar
    38 líneas, resolver el producto ambiguo, crear el producto faltante y aceptar explícitamente el
-   ajuste de redondeo de S/ 0.03.
+   ajuste de redondeo de S/ 0.03. Desde el 24 de septiembre de 2026 Ajustes ya no ofrece el modo
+   demo; este punto queda pendiente hasta que exista otro acceso al escenario.
 7. **Doble toque:** tocar dos veces rápidamente `Registrar` y luego confirmar. Debe existir una sola
    compra, un solo conjunto de movimientos PURCHASE y un solo incremento de stock.
 8. **Historial e inventario:** abrir el detalle desde Éxito, volver a Historial y luego Inventario.
    Verificar 38 líneas y que el saldo coincida con la suma de movimientos mostrada.
 9. **Modo avión:** con una operación de respaldo pendiente, activar modo avión. La compra local debe
    seguir disponible y la cola debe permanecer pendiente, sin pérdida ni duplicado.
-10. **Reconexión/conflicto/sesión vencida:** desactivar modo avión y comprobar reintento. En un build
-    cloud de staging con datos sintéticos, validar conflicto recuperable y que una sesión vencida pida
-    reconexión sin borrar compras locales.
+10. **Reconexión:** desactivar modo avión y comprobar que nada cambia: la app no usa red y la
+    operación de respaldo sigue pendiente, sin pérdida ni duplicado. Conflicto y sesión vencida ya no
+    aplican: la variante cloud se retiró el 24 de septiembre de 2026.
 
 Después de cada checkpoint visible ejecutar, por ejemplo:
 

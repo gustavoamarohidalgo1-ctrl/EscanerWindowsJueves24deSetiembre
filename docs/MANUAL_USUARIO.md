@@ -9,9 +9,8 @@ Dos ideas guían el diseño y conviene tenerlas presentes desde el principio:
 
 1. **El escáner automático guarda solo productos seguros.** Nunca convierte la foto en una compra
    ni cambia las existencias, costos o precios.
-2. **El trabajo local funciona sin internet.** Productos, borradores y OCR se guardan en el teléfono.
-   Solo el checkout y los abonos de un negocio cloud enlazado exigen conexión para mantener una
-   única versión compartida del inventario y de las cuentas por cobrar.
+2. **Todo funciona sin internet.** Productos, borradores, OCR, compras, ventas, deudas y abonos se
+   guardan en el propio dispositivo. La app no usa la nube ni comparte datos con otros equipos.
 
 ## Índice
 
@@ -27,16 +26,16 @@ Dos ideas guían el diseño y conviene tenerlas presentes desde el principio:
 10. [Registrar una venta](#10-registrar-una-venta)
    - [Venta a crédito, deudores y abonos](#venta-a-crédito-deudores-y-abonos)
 11. [Trabajar sin conexión](#11-trabajar-sin-conexión)
-12. [Sincronización y respaldo](#12-sincronización-y-respaldo)
+12. [Respaldo de los datos](#12-respaldo-de-los-datos)
 13. [Comprobantes duplicados](#13-comprobantes-duplicados)
 14. [Anular una compra](#14-anular-una-compra)
 15. [Inventario](#15-inventario)
 16. [Privacidad de tus datos](#16-privacidad-de-tus-datos)
-17. [Practicar sin riesgo: modo demostración](#17-practicar-sin-riesgo-modo-demostración)
+17. [Ajustes](#17-ajustes)
 
 La app abre directamente en **Vender**. La barra inferior —lateral en tablet— tiene tres destinos
 permanentes: **Vender**, **Inventario** y **Reportes**. **Ajustes** se abre desde el
-icono de engranaje superior.
+icono de engranaje superior (sección 17).
 
 ## 1. Configurar el negocio
 
@@ -64,9 +63,10 @@ comprobación local. Verifica el número; si es correcto, guarda de nuevo para c
 aviso, no un bloqueo: la app **no consulta SUNAT** y no puede afirmar si un RUC existe o está
 activo.
 
-Todo esto se cambia después en **Ajustes → Negocio**. Un detalle importante: al modificar el IGV o
-la política de costos aparece **«Aplicar solo a cálculos futuros»** — las compras ya registradas no
-se recalculan nunca. Eso es intencional: una compra publicada es historia y no se reescribe.
+El nombre, el RUC, el IGV y la política de costos se cambian después en **Ajustes** (sección 17).
+Un detalle importante: al modificar el IGV o la política de costos aparece **«Aplicar solo a
+cálculos futuros»** — las compras ya registradas no se recalculan nunca. Eso es intencional: una
+compra publicada es historia y no se reescribe.
 
 ## 2. Permisos
 
@@ -103,9 +103,7 @@ hasta que una operación posterior registre stock.
 
 El OCR ocurre dentro del teléfono y la foto de este recorrido no se sube como comprobante. Tras un
 éxito se elimina el borrador temporal y se solicita de inmediato borrar su foto privada; si Android
-no confirma el borrado del archivo, el mantenimiento de privacidad lo vuelve a intentar. En la variante con nube, el producto se guarda
-primero en Room y su outbox se envía cuando la cuenta está enlazada y **«Respaldar registros en la
-nube»** está activo; si no hay conexión, queda pendiente sin perderse.
+no confirma el borrado del archivo, el mantenimiento de privacidad lo vuelve a intentar.
 
 Si no se detectan productos seguros o el guardado falla, se puede reintentar y la foto temporal se
 conserva. Si el OCR se interrumpe por cierre de la app, **Inicio** permite reanudarlo de forma
@@ -408,11 +406,7 @@ Al confirmar, el descuento de stock, los movimientos de salida, la auditoría y 
 venta se escriben juntos. La misma confirmación repetida —incluido un doble toque— no descuenta dos
 veces.
 
-En la versión `local`, o si ese negocio nunca se enlazó a la nube, la venta funciona sin internet.
-En un negocio cloud compartido, confirmar requiere conexión: el servidor reserva el stock antes de
-que Room marque la venta como publicada. Así dos teléfonos no pueden vender simultáneamente la
-última unidad. La venta completa y el saldo final aparecen en el otro dispositivo al sincronizar;
-si se corta la red, el carrito queda como borrador y no se descuenta solo en un teléfono.
+La venta funciona sin internet: la confirmación se guarda completa en el dispositivo.
 
 El JSON contable v4 todavía no incluye cabeceras/líneas de venta, deudas ni abonos, y esta versión tampoco ofrece
 anulación, devolución o reversión de una venta confirmada. El alcance técnico completo está en
@@ -473,15 +467,13 @@ deja de figurar como deuda cobrable. El historial original y los pagos se conser
 solicitud ya completada no vuelve a ingresar stock.
 
 Si cambió el inventario o entró un abono mientras revisabas la confirmación, se muestra el impacto
-actualizado para que vuelvas a revisarlo. Esta opción está disponible para negocios locales con
-permiso de propietario o administrador. Las ventas de un negocio con inventario compartido en
-la nube requieren una anulación coordinada con ese servicio y no se modifican desde esta opción.
+actualizado para que vuelvas a revisarlo. Esta opción exige permiso de propietario o
+administrador; en la app, quien la usa actúa como propietario del negocio.
 
 ## 11. Trabajar sin conexión
 
-El flavor `local` y los negocios que nunca se enlazaron funcionan en modo avión. En un negocio
-cloud compartido se puede seguir trabajando y preparar borradores sin señal, pero la confirmación
-de venta y el registro de abonos esperan conexión para coordinar stock y saldo. Sin señal se puede:
+La app funciona completa en modo avión: no tiene permiso de internet y no depende de ningún
+servidor. Sin señal se puede:
 
 - Configurar el negocio y los catálogos.
 - Tomar la foto o importar la imagen.
@@ -489,98 +481,34 @@ de venta y el registro de abonos esperan conexión para coordinar stock y saldo.
   viene incluido en la app. No consulta ningún servidor.
 - Revisar la cabecera y las líneas, vincular y crear productos.
 - Aceptar el ajuste, preparar y **registrar la compra**.
-- Preparar una venta; confirmarla también si el negocio no está enlazado a inventario compartido.
+- Preparar y confirmar ventas, y registrar abonos de deudores.
 - Ver el inventario actualizado y el detalle de la compra.
 
-En cada punto la app lo dice: «Guardado en este celular», «La compra, sus líneas y el inventario
-están disponibles sin conexión y no se borran si falla el respaldo», «El borrador funciona sin
-conexión; el respaldo se crea al publicar la compra».
+En cada punto la app lo dice: «Guardado en este celular» y «La compra, sus líneas y el inventario
+están disponibles sin conexión y no se borran si falla el respaldo».
 
-Hay una sola versión de la app que además **no tiene permiso de internet en absoluto** (la variante
-sin nube). En ella, Cuenta y Sincronización muestran «Esta versión de FacturaStock guarda todo solo
-en este celular: no hay cuenta ni respaldo en la nube. Tus compras, ventas, deudas, abonos y borradores siguen funcionando
-sin conexión».
+No hay cuenta ni respaldo en la nube: lo registrado en este dispositivo no aparece en otro teléfono
+o tablet. Cómo se protege esa información se explica en la sección siguiente.
 
-Las compras y cambios de catálogo quedan en cola y se envían cuando vuelve la señal. Una venta de
-un negocio compartido no se publica en una cola optimista: exige respuesta de la autoridad cloud.
-Si no hay internet, la app muestra que se necesita conexión y conserva el carrito para reintentar.
+## 12. Respaldo de los datos
 
-## 12. Sincronización y respaldo
+FacturaStock guarda todo **solo en este dispositivo**. No hay sincronización ni copia en la nube, y
+Android tampoco hace una copia automática de la app.
 
-La sincronización en la nube es **opcional** y solo existe en la versión `cloud`. Comparte compras,
-catálogo, inventario, ventas publicadas, deudas y abonos con los miembros autorizados del negocio.
-Las compras usan una cola durable; las ventas y los abonos se autorizan en línea y después se
-replican por un feed incremental.
+- **Respaldo completo.** Lo hace quien mantiene la app, conectando la tablet a su computadora
+  antes de cada actualización. Es la única copia que conserva compras, ventas, deudas, abonos,
+  fotos y borradores.
+- **«Exportar libro contable»** (**Ajustes → Datos**, sección 17) crea un archivo legible con
+  compras, productos e inventario, pero **no incluye ventas, deudas ni abonos** y la app no puede
+  volver a cargarlo. Sirve para consultar o entregar la información, no para restaurarla.
 
-### Activarlo
+En el detalle de una compra, el bloque **«Respaldo»** la muestra como **«Respaldo pendiente»**. Es
+normal: esta versión no tiene un servicio de respaldo en la nube y la compra ya está guardada en el
+dispositivo. No hace falta reintentar nada.
 
-**Ajustes → Cuenta y respaldo**:
-
-1. **«Crear cuenta»** con correo y contraseña (mínimo 6 caracteres), o **«Entrar»** si ya se tiene.
-2. **Verificar el correo.** Aparece **«Verifica tu correo»** con **«Reenviar correo»** y
-   **«Ya verifiqué»**. Sin verificar el correo el respaldo **no** se activa.
-3. **Crear o elegir el negocio en la nube** y dejarlo como negocio activo de este teléfono.
-4. En **Ajustes → Privacidad y diagnóstico**, activar **«Respaldar registros en la nube»** en los
-   dos teléfonos. El respaldo documental es independiente y no hace falta para compartir catálogo,
-   inventario, ventas, deudas o pagos.
-
-Los roles determinan qué puede hacer cada persona: **Propietario**, **Administrador**, **Operador**
-y **Lector**. Se administran en **«Miembros»** (invitar por correo, cambiar rol, eliminar) y las
-invitaciones recibidas en **«Mis invitaciones»**. Estas reglas las aplica el servidor, no el
-teléfono: cambiar algo en la app no otorga permisos que el rol no tenga.
-
-Antes de aceptar una invitación se muestra qué se comparte: «los miembros autorizados podrán
-compartir el respaldo comercial y ver la lista del equipo, incluidos correo e ID, según su rol».
-
-### Cómo se comporta
-
-**Ajustes → Sincronización** muestra el estado real:
-
-| Sección | Qué se ve |
-| --- | --- |
-| **Respaldo pendiente** | Cada operación con su estado: «Pendiente», «Enviando», «Completada», «Falló», «Conflicto», «Resuelta», más los intentos y el «Próximo intento» |
-| **Conflictos** | La versión «En este celular» junto a la «En la nube» |
-| **Sincronización y reconciliación** | «Última sincronización», **«Sincronizar ahora»** y **«Comparar con la nube»** |
-| **Documentos** | Estado derivado de la cola local: «Solo en este celular», «Pendiente», «Enviando», «Respaldada», «Error», «Eliminación de la nube pendiente» o «Eliminada de la nube» |
-
-Al tocar **«Sincronizar ahora»**, la app trae primero el catálogo y luego el feed contiguo de
-inventario. Cada página aplica en una sola transacción el saldo final, los movimientos, la auditoría
-y las ventas, deudas o abonos que se originaron en otro teléfono. Si falta una referencia o el
-cursor tiene un salto, no aplica una página parcial: muestra conflicto y conserva el cursor anterior.
-
-La pantalla distingue los dos consentimientos. Sin ambos, no se crean subidas documentales. Cuando
-están activos y la política todavía conserva la imagen, puede viajar una copia JPEG derivada; nunca
-se envían el texto OCR ni una ruta local. El estado sale de Room, no de una lectura directa de red.
-
-**Al perder la señal** (modo avión, túnel, sin datos) las operaciones quedan en «Pendiente». No hay
-que hacer nada. **Al reconectar**, el envío se reanuda solo con esperas crecientes entre intentos.
-Si se quiere forzar, existe **«Reintentar envío»** y **«Sincronizar ahora»**.
-
-**Si la sesión vence** aparece **«Sesión expirada»**: «Tu sesión dejó de ser válida. Vuelve a entrar
-para reanudar el respaldo; tus datos locales se conservan». La app primero intenta renovar la sesión
-por su cuenta; solo si no puede, muestra el aviso. La cola **no se pierde**: las operaciones esperan
-y se reanudan al entrar de nuevo con **«Volver a entrar»**.
-
-**Cerrar sesión** no borra datos locales: compras, ventas, deudas, abonos y borradores permanecen en Room. Sin
-embargo, si el negocio conserva un enlace cloud durable, no se podrá confirmar una venta nueva hasta
-volver a entrar y reactivar la sincronización; permitirla solo localmente dividiría el inventario.
-
-### Conflictos
-
-Un conflicto ocurre cuando la nube ya tiene ese comprobante, normalmente porque se registró desde
-otro teléfono. La app **nunca decide sola**. Muestra los dos lados —fecha, proveedor, total, estado—
-y ofrece **«Conservar versión de la nube»**, con la consecuencia escrita antes de tocar nada:
-
-> «La operación local queda marcada como resuelta y no se volverá a enviar. Tu compra local **NO se
-> borra**: el documento ya existe en la nube, publicado desde otro dispositivo.»
-
-La decisión queda en la bitácora de la compra como «Conflicto de respaldo resuelto (se conservó la
-nube)».
-
-**«Comparar con la nube»** es una herramienta de diagnóstico: informa cuántas compras coinciden,
-cuáles están solo en la nube y qué diferencias de saldo hay. El aviso es explícito: «La comparación
-es un diagnóstico: no modifica tus datos locales ni los de la nube». Con **«Registrar revisión»**
-queda constancia de que se revisó.
+**Nunca desinstales la app ni borres sus datos desde los ajustes de Android**: se perdería todo lo
+registrado después del último respaldo completo. Si la app falla o hay que cambiar de equipo, avisa
+primero a quien la mantiene.
 
 ## 13. Comprobantes duplicados
 
@@ -672,8 +600,7 @@ En la lista y en el detalle de cada producto están disponibles estas acciones:
   existencias ni registros vinculados, se borra del catálogo; no se envía a Archivados ni puede
   restaurarse desde la aplicación. **Cancelar** conserva el producto.
 - Los productos con ventas, compras, movimientos u otras referencias se conservan para proteger
-  su historial. La aplicación explica el motivo si no puede borrarlos. La eliminación permanente
-  también se bloquea cuando existe vinculación o posible actividad de sincronización remota.
+  su historial. La aplicación explica el motivo si no puede borrarlos.
 - No hay filtros **Activos/Archivados** para productos. El lector se suspende durante la
   confirmación de borrado y vuelve a estar disponible al cerrarla.
 
@@ -718,119 +645,77 @@ pantalla (ver [`RUNBOOK.md`](RUNBOOK.md)).
 
 ## 16. Privacidad de tus datos
 
-Lo esencial en tres frases: el registro y el OCR nacen en el teléfono; cualquier respaldo exige un
-**opt-in apagado de fábrica** y respaldar documentos requiere un segundo opt-in; los diagnósticos
-también están **apagados de fábrica**.
+Lo esencial: el registro y el OCR nacen en el dispositivo y se quedan ahí. La app no tiene permiso
+de internet, no tiene cuenta y no envía diagnósticos ni estadísticas.
 
 | Dato | Dónde vive |
 | --- | --- |
-| Foto del comprobante | En almacenamiento privado. No sale por defecto. Con ambos respaldos activos puede transferirse una copia JPEG derivada por HTTPS; Firebase Storage la cifra de forma administrada en reposo |
-| Texto reconocido por el OCR | Solo en el teléfono. El OCR corre en el dispositivo |
-| Compra, líneas, movimientos, inventario | En el teléfono. En la nube **solo** con respaldo activo y correo verificado |
+| Foto del comprobante | En el almacenamiento privado de la app. No sale del dispositivo |
+| Texto reconocido por el OCR | Solo en el dispositivo. El OCR corre en el dispositivo |
+| Compra, líneas, movimientos, inventario | En el dispositivo |
 | Lectura cruda del lector HID | Solo en memoria mientras Ventas o el modo Escáner físico de Inventario están activos; no se guarda ni se envía |
-| Código asociado a un producto | En el catálogo local. Puede respaldarse como dato del producto si el respaldo de catálogos está activo |
-| Venta y líneas de venta | En Room. Para un negocio cloud enlazado, Functions recibe la venta al confirmar y la replica a los demás miembros junto con el inventario; no se envía el código HID crudo |
-| Nombre del deudor, saldo y abonos | En Room. En un negocio cloud enlazado se comparten con los miembros autorizados y Functions controla cada modificación; no se guardan en Analytics ni Crashlytics |
-| Motivos escritos (ajustes, anulaciones, excepciones) | En el teléfono, junto a la compra |
-| Configuración comercial local (moneda, IGV y política de costos) | Solo en el teléfono. El nombre y la membresía del negocio cloud sí viven en Firebase cuando se crea o enlaza uno |
+| Código asociado a un producto | En el catálogo local |
+| Venta y líneas de venta | En el dispositivo |
+| Nombre del deudor, saldo y abonos | En el dispositivo |
+| Motivos escritos (ajustes, anulaciones, excepciones) | En el dispositivo, junto a la compra |
+| Configuración comercial (moneda, IGV y política de costos) | Solo en el dispositivo |
 
-En **Ajustes → Privacidad y diagnóstico** están estos controles reales:
+Por defecto las fotos de las compras se conservan, y esta versión ya no permite cambiar ese plazo
+ni borrar imágenes desde Ajustes (si en una versión anterior se eligió otro plazo, se sigue
+aplicando). Tras confirmar, la app cifra inmediatamente las fotos retenidas con AES-GCM y una clave
+no exportable de AndroidKeyStore. Antes de esa pasada, y durante un borrador activo, siguen
+protegidas por el sandbox privado de Android. La pantalla descifra los bytes en memoria y no crea
+una copia temporal en claro. Un mantenimiento automático diario limpia temporales, caché y copias
+de trabajo del OCR; nunca borra compras, ventas, movimientos ni la bitácora.
 
-- **«Abrir política de privacidad»**: abre el documento completo.
-- **«Conservación de imágenes»**: permite eliminar tras el OCR, al confirmar, exactamente a los
-  30 o 90 días, o conservar hasta un borrado manual. Esta elección solo toca la foto: compra,
-  líneas, inventario y auditoría permanecen.
-- **«Respaldar registros en la nube»**: opt-in apagado de fábrica. Al apagarlo se guarda la
-  preferencia y se solicita cancelar el trabajo comercial programado; la app muestra si Android
-  confirmó esa cancelación. Nada local se borra. Las solicitudes explícitas de purga conservan un
-  canal mínimo de salida: pausar el respaldo no puede impedir retirar una copia ya solicitada.
-- **«Respaldar documentos cifrados»**: segundo opt-in, también apagado y deshabilitado mientras
-  el respaldo general está apagado. La copia de trabajo local se protege con AES-GCM; por la red
-  viaja el JPEG derivado sobre HTTPS y Firebase Storage aplica cifrado administrado en reposo. No
-  es E2E y no habilita el envío de texto OCR ni de motivos libres.
-- **«Exportar libro contable»**: abre el selector de documentos de Android y escribe un JSON
-  `ACCOUNTING_LEDGER` con `schemaVersion=4` solo
-  después de elegir el destino. Incluye negocio, proveedores, productos, unidades, almacenes,
-  alias, compras/líneas, saldos, movimientos, auditoría completa del negocio y metadatos de
-  imágenes retenidas. Excluye bytes y rutas de fotos, borradores/artefactos OCR, preferencias,
-  cuenta/membresías, estado de sincronización, caché, temporales, credenciales y tokens. El
-  esquema v4 **no incluye cabeceras/líneas de venta, deudas ni abonos**: los saldos y movimientos
-  pueden reflejar parte de su efecto, pero no permiten reconstruirlos. Por eso no es una copia
-  integral de ventas o cuentas por cobrar. El
-  resultado muestra conteos reales; si no puede obtener una instantánea estable, no abre/escribe el
-  destino y pide reintentar. Si falla al escribir y Android no puede confirmar que el destino quedó
-  vacío o eliminado, pide buscarlo y borrarlo manualmente.
-- **«Borrar imágenes de este celular»**: tras confirmar, incluye originales de borradores abiertos
-  y fotos de compras terminales de todos los negocios guardados en la instalación. Informa por
-  separado intentadas, eliminadas, ya ausentes y no confirmadas. No borra registros contables. Para
-  una compra que pudo respaldarse deja primero una solicitud de purga durable, pero no afirma que la
-  nube ya la eliminó hasta ver su ACK en Sincronización.
-- **«Limpiar caché y temporales»**: elimina temporales vencidos, caché, directorios huérfanos y
-  versiones OCR de trabajo; informa cada contador real.
-- **«Bloquear al volver a la app»**: bloqueo opcional con biometría fuerte o la credencial del
-  dispositivo (PIN, patrón o contraseña) como recuperación. Si el dispositivo deja de ofrecer ambos,
-  la app desactiva el ajuste y lo informa para no dejar a la persona encerrada fuera de sus datos.
-- **«Enviar diagnósticos operativos»**: **desactivado por defecto**. Si se activa, se envían
-  únicamente estados, códigos de error e identificadores internos, y el servicio de Google puede
-  añadir datos técnicos de app, sesión y dispositivo. Textualmente: «**Nunca enviamos facturas,
-  imágenes, texto OCR, importes, motivos, RUC ni correos**». Se puede desactivar en cualquier
-  momento. El SDK de Crashlytics existe solo en la variante con nube, pero su colección automática
-  permanece desactivada y FacturaStock no le entrega excepciones.
+**Un límite importante de esta versión: exportar no es restaurar.** El JSON de «Exportar libro
+contable» (sección 17) permite conservar una copia legible, pero no incluye ventas, deudas ni abonos
+y esta versión no tiene importador. Si se desinstala la app, se borran sus datos desde Android o se
+pierde el dispositivo, solo se recupera lo que esté en el último respaldo completo (sección 12).
 
-Tras confirmar, la app cifra inmediatamente las fotos retenidas con AES-GCM y una clave no exportable de
-AndroidKeyStore. Antes de esa pasada, y durante un borrador activo, siguen protegidas por el sandbox
-privado de Android. La pantalla descifra los bytes en memoria y no crea una copia temporal en claro.
+## 17. Ajustes
 
-Quien haya creado una cuenta en la nube puede eliminarla desde **Ajustes → Cuenta y respaldo →
-«Eliminar mi cuenta»**. El diálogo explica exactamente el alcance antes de confirmar: se borran los
-negocios donde se era el único miembro; en los compartidos se retira el acceso y se anonimizan las
-referencias personales, conservando la historia comercial del negocio; y **las compras, ventas, deudas, abonos y borradores
-locales permanecen en este dispositivo**. Si el negocio tiene otros miembros y se es su propietario, primero
-hay que transferir la propiedad. Para autorizar la acción irreversible se vuelve a pedir la
-contraseña: se usa solo para reautenticar con Firebase, no se guarda ni se envía a la Function. El
-servidor acepta únicamente un inicio de sesión de los últimos cinco minutos; si ya venció, la app
-pide reautenticar en lugar de continuar con un token refrescado.
+El engranaje de la barra superior de **Vender**, **Inventario** y **Reportes** abre **Ajustes**;
+Atrás vuelve a la sección desde la que se abrió. Tiene tres secciones:
 
-**Dos límites importantes de esta versión:**
+| Sección | Qué permite |
+| --- | --- |
+| **Negocio** | Corregir **Razón social** (obligatoria), **Nombre comercial** y **RUC** (11 dígitos; se puede dejar vacío) y tocar **«Guardar»**. Si el dígito de control del RUC no coincide aparece el aviso de la sección 1; tocar **«Guardar»** otra vez lo conserva |
+| **Impuestos y costos** | Cambiar **IGV (%)** (entre 0 y 100) y la **Política de costos**: «Neto (sin IGV)» o «Bruto (IGV incluido)». Al tocar **«Guardar»** se confirma **«Aplicar solo a cálculos futuros»**: las compras ya registradas no se recalculan |
+| **Datos** | **«Exportar libro contable»** |
 
-1. **Exportar no es restaurar.** El JSON permite conservar una copia legible, pero esta versión no
-   tiene importador. Si se desinstala la app, se borran los datos desde Android o se pierde el
-   teléfono, volver a enlazar el negocio y activar el respaldo recupera catálogo, inventario,
-   ventas, deudas y abonos compartidos presentes en el feed cloud; no reconstruye desde el JSON ni
-   restaura el libro local completo, sus fotos, ajustes o borradores.
-2. **Borrado local y purga cloud son estados separados.** El botón de imágenes locales solo confirma
-   el dispositivo. Si se respaldó un documento, su operación de purga debe alcanzar y mostrar su
-   propio estado antes de afirmar que desapareció de la nube.
+### Exportar libro contable
 
-## 17. Practicar sin riesgo: modo demostración
+Abre el selector de documentos de Android para elegir dónde guardar el archivo
+(`facturastock-libro-contable.json`) y solo después lo escribe. Es un JSON `ACCOUNTING_LEDGER` con
+`schemaVersion=4`:
 
-Para aprender el recorrido sin tocar datos reales existe **Ajustes → Modo demostración**: «Explora la
-app con datos sintéticos sin tocar tu información real».
+- **Incluye** negocio, proveedores, productos, unidades, almacenes, alias, compras y sus líneas,
+  saldos, movimientos, auditoría completa del negocio y metadatos de imágenes retenidas.
+- **Excluye** ventas, deudas, abonos, archivos de imagen, borradores y artefactos OCR,
+  preferencias, estado de sincronización, caché, temporales, credenciales y tokens. Los saldos y
+  movimientos pueden reflejar parte del efecto de las ventas, pero no permiten reconstruirlas: no es
+  una copia de ventas ni de cuentas por cobrar.
 
-Al activarlo («Activar modo demostración») se crean un negocio, unidades, un almacén, proveedores y
-productos de ejemplo. Mientras esté activo se ve el aviso permanente **«Modo demostración activo»**:
-«Estás viendo datos 100 % sintéticos. Lo que registres aquí no afecta tu negocio real».
+El resultado muestra los conteos reales. Si no puede obtener una instantánea estable, no abre ni
+escribe el destino y pide reintentar. Si falla al escribir y Android no puede confirmar que el
+destino quedó vacío o eliminado, pide buscar ese archivo y borrarlo manualmente antes de reintentar.
 
-Dentro del modo demostración está **«Abrir factura demo de 38 líneas»**: una factura sintética
-completa que ejercita a propósito los tres casos difíciles de este manual — una línea que exige
-**elegir** entre varios productos, una que exige **crear** un producto nuevo, y una **diferencia de
-+S/ 0,03** que obliga a aceptar el ajuste con motivo. Es la mejor forma de practicar.
-
-Al salir («Salir del modo demostración») se eliminan **todos** los datos de demostración y vuelve la
-información real intacta.
+Ajustes ya no incluye cuenta ni sincronización, respaldo en la nube, conservación o borrado de
+imágenes, limpieza de caché, bloqueo al volver a la app, política de privacidad, diagnósticos ni
+modo demostración.
 
 ## Preguntas rápidas
 
 | Duda | Respuesta |
 | --- | --- |
-| ¿Necesito internet? | OCR, compras y borradores funcionan sin señal. Una venta o abono solo exige internet cuando el negocio está enlazado a inventario y deudas cloud compartidos |
+| ¿Necesito internet? | No. OCR, compras, ventas, deudas, abonos y borradores funcionan sin señal: todo se guarda en el dispositivo |
 | ¿El lector usa la cámara? | No. **Escáner físico** recibe un lector USB/Bluetooth reconocido por Android como teclado físico HID, tanto en Ventas como en **Inventario → Existencias**. Sin lector, usa **Buscar**; Ventas busca por nombre e Inventario por producto, SKU o almacén. Ninguno interpreta ese texto manual como una lectura HID |
-| ¿Mi venta aparece en el otro celular? | Sí, si ambos usan `cloud`, tienen el mismo negocio enlazado, el respaldo comercial activo y sincronizan. El JSON contable v4, por separado, todavía no incluye ventas, deudas ni abonos completos |
-| ¿La deuda y un abono aparecen en el otro celular? | Sí, bajo las mismas condiciones cloud. Si dos teléfonos intentan cobrar el mismo saldo, uno debe sincronizar y revisar antes de reintentar |
-| ¿Se sube la foto de mi factura? | No por defecto. Solo con respaldo general y documental activos puede viajar un JPEG derivado por HTTPS; Storage lo cifra de forma administrada en reposo, no E2E |
+| ¿Se sube la foto de mi factura? | No. La app no tiene permiso de internet; la foto queda en el almacenamiento privado del dispositivo |
+| ¿Cómo saco una copia de mis datos? | **Ajustes → Datos → «Exportar libro contable»** crea un archivo legible, sin ventas, deudas ni abonos (sección 17). La copia completa la hace quien mantiene la app (sección 12) |
 | Me equivoqué en una compra registrada, ¿la borro? | No se borra: se **anula** (sección 14), y queda el rastro |
 | El total no cuadra por céntimos | Es normal. Acepta el ajuste con un motivo (sección 8) |
 | La app dice que la factura ya está registrada | Revísala con «Ver compra existente». Si de verdad es otra, un Propietario o Administrador autoriza la excepción con motivo (sección 13) |
 | ¿Esto valida mi factura ante SUNAT? | **No.** El OCR y la comprobación del RUC son locales y matemáticos; no consultan a SUNAT ni certifican nada |
 | Se cerró la app a mitad del escaneo | Nada se perdió. En Inicio, el borrador espera con «Reanudar OCR» |
-| ¿Puedo cambiar de teléfono? | Tras enlazar el nuevo equipo y activar el respaldo se recuperan catálogo, inventario, ventas cloud, deudas y abonos compartidos, pero no existe restauración integral de compras, fotos, ajustes y borradores. No borres el equipo anterior sin exportar y verificar |
+| ¿Puedo cambiar de teléfono o tablet? | No hay copia en la nube ni restauración dentro de la app. Avisa antes a quien mantiene la app para que haga el respaldo completo (sección 12), y no borres ni desinstales el equipo anterior sin su confirmación |

@@ -13,6 +13,13 @@ comparación antes/después están en
 El hardening posterior de Room v23, corrupción, WAL y reapertura está registrado en
 [`test-evidence/2026-08-24-base-datos-solida.md`](test-evidence/2026-08-24-base-datos-solida.md).
 
+> **Nota del 24 de septiembre de 2026.** La variante cloud (Firebase, Functions, Emulator Suite),
+> la firma de release y la publicación en Google Play se retiraron: la app tiene un único flavor,
+> `local`, y se instala directamente en la tablet del negocio con el procedimiento de
+> [`RUNBOOK.md`](RUNBOOK.md). Las filas de esta matriz sobre sincronización, Firebase, AAB firmado,
+> Play Console o política pública quedan como registro histórico de la corrida de agosto y ya no son
+> criterios pendientes.
+
 Un control automatizado puede acreditar código, datos y recorridos en AVD; no sustituye un teléfono
 real, una persona siguiendo el manual, secretos productivos ni una instalación desde Play. Por eso
 esta matriz no declara lista la versión aunque gran parte de Fase G ya esté implementada.
@@ -40,8 +47,9 @@ Responsables:
 Esta ampliación no cambia la decisión 1.0 ni convierte un emulador en certificación de hardware.
 El alcance implementado es una venta con precio explícito, salida de inventario y entrada manual o
 por lector que Android reconoce como teclado físico. El mismo contrato HID permite además consultar
-un producto desde **Inventario → Existencias** sin mutarlo. La venta es local sin binding y usa
-autoridad cloud e inventario compartido cuando el negocio está enlazado.
+un producto desde **Inventario → Existencias** sin mutarlo. La venta es local sin binding; hasta el
+retiro de la variante cloud usaba autoridad cloud e inventario compartido cuando el negocio estaba
+enlazado.
 
 | Criterio | Estado | Evidencia | Responsable |
 | --- | --- | --- | --- |
@@ -152,20 +160,22 @@ serie física. Ambos límites están definidos en
 | --- | --- | --- |
 | Restaurar el libro local completo desde cloud | NO APLICA | Fuera del alcance 1.0: el espejo compacto de compras es diagnóstico y no reconstruye su grafo; el feed autoritativo sí materializa en Room catálogo, inventario, ventas, deudas y pagos compartidos, pero no restaura todo el dispositivo |
 | Nube/cuenta en flavor `local` | NO APLICA | La variante elimina INTERNET por diseño |
-| Subida de fotos sin consentimiento | NO APLICA | El respaldo documental es un opt-in separado y apagado inicialmente |
+| Subida de fotos sin consentimiento | NO APLICA | La app no tiene permiso de internet; el respaldo documental opcional se retiró con la variante cloud |
 | Copia automática Android | NO APLICA | `allowBackup="false"` |
 | Rollback descendente de Room | NO APLICA | Las migraciones son solo hacia adelante; una corrección crea una versión superior |
 | Publicidad | NO APLICA | La app no contiene publicidad |
 
 ## Decisión 1.0
 
-**NO CUMPLE la aceptación final; la versión 1.0 no se declara lista para publicación.**
+**NO CUMPLE la aceptación final; la versión 1.0 no se declara aceptada.**
 
-Para cambiar esa decisión hacen falta cuatro evidencias nuevas, no más código supuesto:
+Para cambiar esa decisión hacen falta tres evidencias nuevas, no más código supuesto:
 
 1. Continuar la optimización del p95 de la lista y ejecutar 30 muestras en el Pixel 6a físico; los
    tirones extremos ya mejoraron, pero los dos límites de frame siguen rojos en AVD.
 2. Completar en ese teléfono el checklist TalkBack/fuente 200 %, cámara real y el guion humano de
    [`PILOTO_CERRADO.md`](PILOTO_CERRADO.md).
-3. Conseguir firma, Firebase e identidad/URLs legales productivas; generar el candidato definitivo.
-4. Instalar ese AAB desde la pista interna de Play y registrar versión, dispositivo y resultado.
+3. Instalar el APK optimizado en la tablet del negocio con el procedimiento de
+   [`RUNBOOK.md`](RUNBOOK.md) —respaldo `run-as` previo incluido— y registrar versión, dispositivo
+   y resultado. Los antiguos puntos de firma, Firebase, URLs legales y pista interna de Play dejaron
+   de aplicar al retirarse la publicación.

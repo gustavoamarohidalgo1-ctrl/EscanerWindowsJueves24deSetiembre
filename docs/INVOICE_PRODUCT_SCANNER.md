@@ -84,9 +84,9 @@ lote. Si discrepan en producto, cantidad, costo, moneda o almacén, se conserva 
 exige reconciliar la entrada previa; no se intenta corregirla añadiendo más stock.
 
 Este flujo ingresa existencias y costo, pero no genera una compra publicada ni un documento
-tributario. Actualmente se rechaza para negocios enlazados a un negocio cloud: el inventario
-compartido necesita su confirmación remota autoritativa y este ajuste solo tiene commit local.
-Elegir el flavor `cloud` por sí solo no implica que el negocio esté enlazado.
+tributario. El código conserva el rechazo para negocios enlazados a un negocio cloud, pero desde el
+24 de septiembre de 2026 la única variante, `local`, no puede crear ese enlace, así que el ingreso
+siempre se confirma en Room.
 
 ## Recuperación de la revisión y privacidad
 

@@ -70,8 +70,10 @@ motivo que nunca fue capturado.
 
 ## Entrada y límites
 
-El acceso parte del CTA **Abrir factura demo de 38 líneas**, visible únicamente en Ajustes con
-modo demostración activo. `StartDemoInvoiceScenarioUseCase` deriva un `draftId` estable del
+El acceso partía del CTA **Abrir factura demo de 38 líneas**, visible únicamente en Ajustes con
+modo demostración activo. Desde el 24 de septiembre de 2026 Ajustes quedó en su forma mínima y ya
+no ofrece el modo demostración ni ese CTA; el escenario se sigue ejercitando en las pruebas
+descritas abajo. `StartDemoInvoiceScenarioUseCase` deriva un `draftId` estable del
 negocio demo y un `imageId` estable para la página canónica, e importa el JPEG mediante la misma
 entrada de bytes de cámara y el mismo
 almacenamiento privado. `Ready(draftId, captureId)` abre la vista previa tipada; desde allí OCR,

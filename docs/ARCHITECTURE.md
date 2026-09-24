@@ -10,27 +10,29 @@ UI (Composable) → ViewModel → UseCase → Repository (interfaz de dominio)
 
 La UI emite acciones y observa estado. El ViewModel traduce acciones a llamadas de casos de uso. Un caso de uso aplica reglas y solo conoce interfaces de repositorio. `data` implementa esas interfaces con Room, archivos, cámara u otros adaptadores. La inyección se resuelve en `di`; ninguna capa busca dependencias globalmente.
 
-## Flavors de respaldo
+## Variante única: flavor `local`
 
-El módulo define dos flavors (dimensión `backend`):
+El módulo define un único flavor, **`local`** (dimensión `backend`): la aplicación offline-first
+completa. `src/local/AndroidManifest.xml` elimina `INTERNET` y `verifyOfflineFirstBoundaries`
+exige esa eliminación; además inspecciona el modelo de configuraciones y falla la compilación si
+cualquier configuración declara un módulo `com.google.firebase`. El flavor `cloud` (Firebase,
+Functions, cuenta, membresías y sincronización entre teléfonos) y el build type `spark` se
+retiraron el 24 de septiembre de 2026.
 
-- **`local`**: la aplicación offline-first completa. `src/local/AndroidManifest.xml` elimina
-  `INTERNET`; el transporte de respaldo es `UnavailablePurchaseBackupTransport` y el reporte
-  de fallos es un no-op. Ninguna dependencia Firebase puede declararse en una configuración
-  compartida: `verifyOfflineFirstBoundaries` inspecciona el modelo de configuraciones y falla
-  la compilación si un módulo `com.google.firebase` sale de `cloudImplementation`.
-- **`cloud`**: añade el respaldo opcional con Firebase (BoM 34.17.0) detrás del puerto
-  `PurchaseBackupTransport`: `src/cloud` contiene el runtime, el transporte, el reportero
-  Analytics redactado, lectura autorizada de Storage y el módulo DI de la variante. El SDK de
-  Crashlytics está presente solo en `cloud`, pero la colección automática queda siempre en
-  `false`, no existe un canal de excepciones manuales y el mapping R8 no se sube. Debug apunta al
-  Emulator Suite; release lee `local.properties` (no versionado). Sin configuración, el
-  transporte declara no estar disponible y el comportamiento es el del flavor local. El contrato
-  completo está en [`docs/CLOUD_BACKUP_FIREBASE.md`](CLOUD_BACKUP_FIREBASE.md).
-  App Check también se separa por build type: debug compila solo el provider de emulador y
-  release solo Play Integrity; el runtime cloud común no importa ninguno de los dos.
+Los puertos remotos siguen declarados en `domain` y la lógica de outbox, drenado y pull sigue en
+`src/main`, pero `src/local` los enlaza a implementaciones sin destino remoto:
 
-Las fuentes compartidas viven en `src/main` y no cambian de comportamiento por flavor.
+- `BackupTransportModule`: `UnavailablePurchaseBackupTransport` (`configured = false`) y los
+  repositorios remotos de catálogo, documentos, ventas y deudas en su versión no disponible. Sin
+  transporte, el programador no encola trabajo y la outbox queda en `PENDING_SYNC`.
+- `AccountModule`: cuenta, membresías y libro remoto no disponibles. La autorización de
+  excepciones de duplicado y de anulaciones usa `LocalOwnerPurchaseOverrideAuthorizationRepository`,
+  que representa al propietario (`OWNER`) del negocio activo.
+- `ObservabilitySinkModule`: `NoOpObservabilitySink`; no hay telemetría ni reporte de fallos.
+
+Las fuentes compartidas viven en `src/main`. Las ramas que dependían de un negocio enlazado a la
+nube (checkout y abonos con autorización remota, pull incremental) permanecen en el código, pero
+quedan inactivas porque la variante única no puede crear ese enlace.
 
 ## Fronteras de seguridad móvil
 
@@ -43,7 +45,9 @@ Las fuentes compartidas viven en `src/main` y no cambian de comportamiento por f
   configuración de red y el manifiesto niegan cleartext; el flavor `local` elimina además
   `INTERNET`.
 - `MainActivity` aplica `FLAG_SECURE` antes de componer, de modo que pantallas con facturas,
-  inventario y cuenta no aparecen en capturas o vistas recientes. El bloqueo opcional solicita
+  ventas e inventario no aparecen en capturas o vistas recientes. El bloqueo biométrico opcional
+  sigue implementado en `MainActivity`, pero Ajustes ya no ofrece activarlo: solo actúa si la
+  preferencia `biometric_lock_enabled` quedó activa desde una versión anterior. En ese caso solicita
   biometría fuerte o credencial del dispositivo solo desde estado `RESUMED`; la credencial es la
   ruta de recuperación y un dispositivo que ya no pueda autenticar desactiva el ajuste en vez de
   bloquear los datos para siempre.
@@ -53,13 +57,12 @@ Las fuentes compartidas viven en `src/main` y no cambian de comportamiento por f
   el ensamblador no registra ni conserva el último código completo.
 - Las imágenes retenidas se cifran AES-GCM mediante una clave no exportable de AndroidKeyStore;
   que tenga hardware seguro depende del dispositivo. La UI recibe bytes descifrados en memoria,
-  no una ruta ni un temporal plaintext. Los tokens los mantiene Firebase Auth en su almacenamiento
-  soportado; FacturaStock nunca persiste contraseñas ni vuelca tokens a Room, DataStore o logs.
+  no una ruta ni un temporal plaintext. La app no tiene cuentas: no maneja contraseñas ni tokens.
 - Release habilita minificación y reducción de recursos. Las reglas conservan las entradas por
-  reflexión/serialización de Room, Hilt, WorkManager, Firebase y enums durables. Los gates
+  reflexión/serialización de Room, Hilt, WorkManager y enums durables. Los gates
   `verifyReleaseManifests`, `verifyMobileSecurityBoundaries`, `verifyNoSensitiveLogging` y
-  `verifyReleaseArtifacts` revisan manifiestos fusionados/artefactos, HTTP, mutabilidad de
-  `PendingIntent` si se introduce alguno, secretos y componentes críticos.
+  `verifyAndroidReleaseConfiguration` revisan manifiestos fusionados, configuración release/R8,
+  HTTP, mutabilidad de `PendingIntent` si se introduce alguno, secretos y componentes críticos.
 
 
 ## Paquetes
@@ -176,15 +179,18 @@ contrato completo y sus ejemplos están en
 
 ## Persistencia Room
 
-`FacturaStockDatabase` (versión 27, en `data/local`) define treinta y dos tablas: `businesses`,
+`FacturaStockDatabase` (versión 29, en `data/local`) define treinta y cinco tablas: `businesses`,
 `suppliers`, `units`, `inventory_locations`, `products`, `supplier_product_aliases`,
 `invoice_drafts`, `invoice_images`, `captured_page_publications`, `invoice_lines`, `invoice_ocr_snapshots`,
 `invoice_ocr_snapshot_pages`, `invoice_parsed_results`, `invoice_header_edits` e
 `invoice_line_edits`, `prepared_purchases`, `purchases`, `purchase_lines`, `sales`, `sale_lines`,
 `inventory_balances`, `stock_movements`, `audit_events`, `outbox_operations`,
 `remote_sync_states`, `remote_purchase_changes`, `remote_movement_summaries`,
-`remote_catalog_changes`, `catalog_sync_links`, `cloud_business_bindings`, `debts` y
-`debt_payments`. El esquema se exporta
+`remote_catalog_changes`, `catalog_sync_links`, `cloud_business_bindings`, `debts`,
+`debt_payments`, `pending_sale_checkouts`, `invoice_inventory_receipts` y `sale_voids`. Las tablas
+de espejo remoto y enlace cloud (`remote_*`, `catalog_sync_links`, `cloud_business_bindings`) y
+`pending_sale_checkouts` provienen de la etapa cloud: siguen en el esquema, sin migración, aunque
+la variante `local` no tiene transporte que las alimente. El esquema se exporta
 a `app/schemas` en cada compilación y se versiona con el código. **La migración destructiva está
 prohibida**: el builder nunca invoca `fallbackToDestructiveMigration`, la apertura falla cerrada
 ante corrupción y todo cambio de versión exige `Migration` explícitas. El builder fija WAL en vez de
@@ -242,9 +248,9 @@ delegar la elección al modo automático. Las garantías y límites completos es
   Confirmar vuelve a validar existencias, aplica por CAS los movimientos negativos `SALE`, mantiene
   el costo promedio y publica venta, líneas y auditoría en una sola transacción idempotente. Una
   línea sin precio puede guardarse en el carrito, pero nunca publicarse, y el checkout no permite
-  stock negativo. Sin binding el checkout es local; con binding cloud, `postSale` autoriza y
-  descuenta primero el saldo remoto y el feed incremental materializa el mismo grafo en los demás
-  dispositivos. Las ventas no usan outbox y un fallo de red no degrada a commit solo local.
+  stock negativo. El checkout es siempre local: la rama que, con un binding cloud, autorizaba y
+  descontaba primero el saldo remoto mediante `postSale` sigue en el código compartido, pero la
+  variante única no puede crear ese binding. Las ventas no usan outbox.
   Las entidades Room y `RoomSaleRepository` son la autoridad de la aritmética decimal exacta; los
   triggers SQLite refuerzan forma, pertenencia, transiciones e inmutabilidad, pero no se presentan
   como un segundo motor universal de `BigDecimal`. Ninguna ruta productiva escribe una venta
@@ -253,8 +259,8 @@ delegar la elección al modo automático. Las garantías y límites completos es
   nombre normalizado, moneda, importe original, saldo, estado, versión y fechas. `debt_payments` es
   su libro append-only con importe, método, referencia/nota opcionales, versión esperada y saldo
   resultante. Insertar un abono y avanzar la deuda ocurre en la misma transacción con CAS; los
-  triggers exigen el grafo exacto y una deuda no puede existir sin su venta. Con binding cloud, la
-  autorización remota precede al commit Room y el feed inserta el pago antes de actualizar el saldo.
+  triggers exigen el grafo exacto y una deuda no puede existir sin su venta. La rama con
+  autorización remota previa, propia de un binding cloud, queda inactiva por la misma razón.
 - `stock_movements` y `audit_events` son libros append-only reforzados con triggers contra
   `UPDATE`, `DELETE` e `INSERT OR REPLACE`. `inventory_balances` es una proyección versionada:
   el coordinador comprueba cantidad, conversión de unidades y costo promedio ponderado contra
@@ -268,8 +274,8 @@ delegar la elección al modo automático. Las garantías y límites completos es
   por deadline, constraint de red y backoff exponencial por operación). Privacidad usa un canal
   `purgeOnly` independiente del opt-in comercial. Solo un acuse cuyo eco coincide con la
   `idempotencyKey` la marca `COMPLETED`.
-  Mientras no exista backend, el transporte enlazado declara no configurado y la cola queda
-  honestamente en `PENDING_SYNC`. El protocolo completo está en
+  Sin backend, el transporte enlazado declara no estar configurado, WorkManager no programa
+  ningún drenado y la cola queda honestamente en `PENDING_SYNC`. El protocolo completo está en
   [`BACKUP_SYNC.md`](BACKUP_SYNC.md).
 - `PurchasePostingDao.postAtomically` escribe compra DRAFT, líneas, enlace del borrador, saldos,
   movimientos, auditoría y outbox, y recién entonces ejecuta DRAFT → POSTED. Todo ocurre en una
@@ -310,8 +316,8 @@ delegar la elección al modo automático. Las garantías y límites completos es
   La outbox de respaldo expone además tres puertos: `PurchaseBackupRepository` (observación y
   reintento manual para la UI), `PurchaseBackupOutboxRepository` (CAS para el procesador) y
   `PurchaseBackupScheduler` (programación del drenado), más el puerto de transporte
-  `PurchaseBackupTransport`: `local` enlaza `UnavailablePurchaseBackupTransport` y `cloud`
-  enlaza el adaptador Firebase configurable, sin hacer que el dominio dependa de la red.
+  `PurchaseBackupTransport`, que `local` enlaza a `UnavailablePurchaseBackupTransport` sin hacer
+  que el dominio dependa de la red.
 - El puerto de archivos `DraftFileStore` (implementado por `LocalDraftFileStore` en
   `data/files`, enlazado en `di/RepositoryModule`) cubre las imágenes de los borradores:
   al eliminar un borrador, Room borra primero el agregado; luego `deleteDraftTreeIf` toma el
@@ -402,7 +408,9 @@ propio (`di/AppConfigurationModule`) para que los tests instrumentados lo reempl
   ids hijos se derivan del id de negocio y claves semánticas estables. Una descripción adicional
   permanece ausente para ejercitar la creación explícita. Salir borra la clave demo y elimina
   el negocio demo, cuya cascada limpia el resto. El contrato sintético completo está en
-  `docs/DEMO_SCENARIO.md`.
+  `docs/DEMO_SCENARIO.md`. Desde que Ajustes quedó en su forma mínima (septiembre de 2026), la
+  interfaz no ofrece entrar ni salir del modo demostración; los casos de uso y el escenario
+  sintético siguen en el código y en las pruebas.
 - El iniciador visible de la factura demo deriva y materializa un único borrador estable por
   negocio antes de generar el JPEG que pasa a `ImportDraftImageUseCase`; no inserta resultados
   OCR/parseados. Un mutex y

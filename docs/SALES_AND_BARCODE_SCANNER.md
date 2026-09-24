@@ -2,16 +2,13 @@
 
 Este documento delimita el alcance funcional de ventas y del registro de inventario mediante
 códigos en FacturaStock. Describe el contrato del repositorio; no acredita por sí solo una
-compilación, una instalación desde Google Play ni una publicación productiva.
+compilación ni una instalación en el dispositivo del negocio.
 
 ## Alcance
 
 El carrito de venta es **local y offline-first**. Para el negocio activo se conserva un único
-`DRAFT` por moneda; cerrar la pantalla o perder la conexión no publica ni descuenta existencias. La
-autoridad del checkout depende del negocio: uno sin enlace cloud confirma íntegramente en Room y
-puede hacerlo sin internet; uno enlazado de forma durable a un negocio cloud exige respaldo activo,
-sesión verificada y conexión para que Functions autorice primero la venta contra el saldo compartido.
-El carrito permite:
+`DRAFT` por moneda; cerrar la pantalla o perder la conexión no publica ni descuenta existencias. El
+checkout confirma íntegramente en Room y puede hacerlo sin internet. El carrito permite:
 
 - agregar un producto escribiendo su nombre y eligiendo entre coincidencias similares;
 - recibir el código de un lector físico USB o Bluetooth configurado como teclado
@@ -111,8 +108,8 @@ formulario está abierto, el lector de Ventas y el cobro quedan en pausa.
 
 Se completan nombre, cantidad inicial de inventario, precio de compra y precio de venta. La
 cantidad del formulario es el stock que ingresa; la cantidad que se venderá se ajusta después
-en el carrito. Se aplican las mismas validaciones, transacción y restricciones de negocio cloud
-que al registrar desde Inventario.
+en el carrito. Se aplican las mismas validaciones y la misma transacción que al registrar desde
+Inventario.
 
 Al guardar, la app vuelve a la misma venta, relee el producto guardado y sus existencias, y lo
 incorpora una sola vez con su precio de venta. Si requiere elegir almacén, muestra esa elección.
@@ -149,9 +146,7 @@ requiere unidad y almacén activos del negocio y una moneda compatible para ambo
 Guardar confirma en una transacción local el producto, su código y precio de venta, las
 existencias iniciales, el costo y el movimiento de inventario. Si falla alguna escritura, se
 revierte todo el registro. Un reintento del mismo producto o un código ya registrado no vuelve
-a sumar existencias. Abrir o cancelar el formulario no crea productos ni mueve stock. Esta alta
-local con existencias está bloqueada para negocios que ya tienen un enlace durable a inventario
-cloud; no sustituye la autoridad del saldo compartido.
+a sumar existencias. Abrir o cancelar el formulario no crea productos ni mueve stock.
 
 Mientras se consulta un código, se abre el formulario o se muestra el detalle, la captura queda
 en pausa. Guardar correctamente o cancelar el formulario de un código nuevo vuelve automáticamente
@@ -174,13 +169,12 @@ Entrar desde **Deudores → Registrar deuda** abre la elección del modo con **�
 preseleccionado y conserva ese tipo al volver entre el lector y el catálogo.
 
 La confirmación a crédito es atómica con la venta y el inventario. Room crea una deuda `OPEN`, con
-saldo igual al total y una identidad determinística derivada de `saleId`; en cloud, `postSale` usa
-el documento v2 y Functions crea la misma cuenta dentro de la transacción que reserva el stock. No
-existe una ruta para crear una deuda sin una venta `POSTED` exacta.
+saldo igual al total y una identidad determinística derivada de `saleId`. No existe una ruta para
+crear una deuda sin una venta `POSTED` exacta.
 
 El acceso **Deudores** lista cuentas abiertas/pagadas, muestra los productos originales y conserva
 un libro append-only de abonos. Los cobros parciales o totales usan control optimista de versión e
-idempotencia; un negocio enlazado exige autorización remota antes de escribir en Room. El contrato
+idempotencia. El contrato
 funcional, de concurrencia y privacidad está en
 [`DEBTORS_AND_CREDIT_SALES.md`](DEBTORS_AND_CREDIT_SALES.md).
 
@@ -348,8 +342,8 @@ presenta una proyección cuando falta precio, no hay stock valorizado o los dato
 comparables. Los importes se calculan con aritmética decimal exacta; el margen tiene redondeo
 explícito solo para presentación.
 
-Agregar o editar líneas solo modifica el carrito local. En un negocio no enlazado, el stock cambia al
-confirmar el checkout en una única transacción Room que:
+Agregar o editar líneas solo modifica el carrito local. El stock cambia al confirmar el checkout en
+una única transacción Room que:
 
 1. vuelve a comprobar negocio, productos, unidades y almacenes activos;
 2. vuelve a calcular el contenido y los totales del carrito;
@@ -357,16 +351,6 @@ confirmar el checkout en una única transacción Room que:
 4. descuenta los saldos mediante control optimista de versión;
 5. escribe movimientos `SALE` negativos y un evento de auditoría local;
 6. marca la venta como `POSTED` con una clave idempotente ligada a la versión y al contenido.
-
-En un negocio cloud enlazado, la preparación local aplica las mismas comprobaciones, pero la
-confirmación no degrada a una venta offline. La app traduce las identidades locales de catálogo a
-las remotas y envía a Functions la venta completa con una clave idempotente ligada a `saleId`,
-versión y hash de contenido. El servidor vuelve a validar autenticación, membresía, catálogo,
-totales y saldo; en una sola transacción autoritativa registra la venta y sus movimientos, actualiza
-los saldos y publica el cambio incremental. Solo después del ACK la app confirma en Room la venta,
-los movimientos `SALE`, la auditoría y los saldos recibidos. Sin conexión, sesión plena, enlace
-coherente o respaldo activo, el checkout queda bloqueado y no crea una venta local invisible para
-el otro teléfono.
 
 El carrito no admite dos líneas para el mismo par producto–almacén. En modo escáner, un producto
 que ya esté en cualquier línea no se incorpora otra vez; la cantidad se modifica manualmente.
@@ -376,15 +360,6 @@ Si el carrito o el inventario cambió concurrentemente, la operación falla sin 
 y debe recargarse. Repetir la misma confirmación o tocar dos veces no crea un segundo descuento. El
 checkout **no permite stock negativo**.
 
-La idempotencia también cubre un ACK perdido o la muerte del proceso entre el commit remoto y el
-commit Room. Un reintento del mismo contenido obtiene el mismo hecho remoto; el pull puede completar
-un `DRAFT` local normal solo cuando identidad, versión, creación, líneas, totales y hash todavía
-coinciden con la venta aceptada. Si el carrito se modificó, falla cerrado en vez de atribuirle el
-hecho remoto. En otro dispositivo, el pull aplica primero el catálogo y luego materializa en una
-única transacción la venta completa, sus movimientos y auditoría, los saldos finales autoritativos y
-el avance del cursor. Sus UUID locales de producto o almacén pueden diferir: la resolución usa el
-enlace de catálogo y el nombre canónico no ambiguo del almacén.
-
 Las cantidades y precios editados se guardan antes de salir. Si Room informa que el borrador fue
 eliminado o publicado por otra operación mientras había una edición local, la app intenta persistirla
 contra la versión capturada; si no puede, mantiene el valor visible y exige una confirmación explícita
@@ -393,41 +368,34 @@ antes de descartarlo.
 ## Offline, privacidad y respaldo
 
 Los borradores, búsquedas, lecturas y ediciones se guardan en Room dentro del sandbox de la
-aplicación y siguen funcionando sin internet. La confirmación también es offline para el flavor
-`local` y para un negocio que nunca fue enlazado. En cambio, un negocio con binding cloud durable
-usa autoridad remota síncrona: apagar el respaldo o perder la conexión no elimina el binding ni
-habilita un checkout local alternativo.
-
-Las ventas cloud no usan la outbox comercial diferida de compras. Functions conserva el hecho
-idempotente y un feed incremental de inventario; cada dispositivo enlazado descarga por pull la
-venta completa y los saldos finales. Este mecanismo comparte hechos `POSTED`, pero no convierte
-Firebase en una restauración integral de la instalación: no recupera borradores, preferencias ni
-todo el estado local, y las imágenes requieren su opt-in documental independiente.
+aplicación y siguen funcionando sin internet. La confirmación también es offline: la app no tiene
+permiso de internet y no comparte ventas con otros dispositivos. Las ventas no usan la outbox de
+compras. El código compartido conserva la rama de autorización remota que usaba un negocio enlazado
+a la variante cloud (retirada el 24 de septiembre de 2026), pero la variante `local` no puede crear
+ese enlace.
 
 La ráfaga cruda del lector solo se mantiene en memoria mientras se ensambla en Ventas o Inventario y
-no se registra en logs, Analytics ni Crashlytics. Un código nuevo leído en Inventario, o elegido para
+no se registra en logs. Un código nuevo leído en Inventario, o elegido para
 registrar desde Ventas, pasa al formulario recuperable para completar el registro. La solicitud de
 registro desde Ventas y su resultado se conservan en `SavedStateHandle` hasta resolver el retorno.
 Al guardar el formulario, o al completar una asociación
 explícita en Ventas, se persiste como campo `barcode` del producto. Consultar un código existente
-no modifica ese campo. En el flavor `cloud`, el dato de catálogo puede entrar en el respaldo
-opcional cuando se cumplen sus condiciones. Si el negocio está enlazado y el respaldo activo,
-esa identidad de catálogo participa además en la venta remota compartida.
+no modifica ese campo.
 
 El JSON `ACCOUNTING_LEDGER` con `schemaVersion = 4` no incluye cabeceras/líneas de venta, deudas ni abonos. Sus
 saldos, movimientos genéricos y auditoría pueden reflejar el efecto sobre inventario, pero no
-constituyen una exportación restaurable de la venta. No se debe borrar el teléfono contando con ese
-JSON ni considerar el pull de Firebase como copia integral del dispositivo.
+constituyen una exportación restaurable de la venta. No se debe borrar el dispositivo contando con
+ese JSON: la única copia completa es el respaldo `adb run-as` descrito en [`RUNBOOK.md`](RUNBOOK.md).
 
 ## Fuera de alcance v1
 
 - Escaneo por cámara dentro de estos flujos de Ventas y Registrar productos, lectores seriales/SPP
   e integraciones propietarias que no entreguen entrada de teclado físico Android.
 - Consulta de catálogos GS1, validación universal de checksum o certificación de simbología.
-- Restauración integral del teléfono, de borradores o de preferencias desde Firebase; el pull solo
-  materializa hechos remotos compartidos y sus saldos.
-- Devolución parcial o anulación de una venta compartida con autoridad cloud. Las ventas locales
-  admiten anulación completa desde Reportes, mediante recibo y movimientos compensatorios.
+- Restauración integral del dispositivo, de borradores o de preferencias dentro de la app, y
+  sincronización de ventas entre dispositivos.
+- Devolución parcial de una venta. Las ventas admiten anulación completa desde Reportes, mediante
+  recibo y movimientos compensatorios.
 - Conversión automática entre monedas o precio de venta calculado automáticamente desde el costo.
 - Utilidad contable realizada, gastos operativos, impuestos de la empresa o reportes por periodo;
   la pantalla de ganancias es una proyección del inventario actual.
@@ -438,7 +406,7 @@ JSON ni considerar el pull de Firebase como copia integral del dispositivo.
 - Cálculo tributario comercial de la venta: el importe escrito es el precio final usado por esta
   salida de inventario; la UI v1 no separa IGV, descuentos ni otros tributos de venta.
 
-Estos límites son distintos del flujo de compras: una compra usa su protocolo propio de outbox,
-respaldo opcional y anulación; una venta enlazada usa autoridad cloud síncrona y pull idempotente,
-pero todavía no ofrece anulación ni restauración integral. No se deben extrapolar capacidades de un
-flujo al otro.
+Estos límites son distintos del flujo de compras: una compra usa su protocolo propio de outbox
+(hoy sin transporte remoto) y anulación; una venta se confirma solo en Room, sin outbox, y se anula
+desde Reportes. Ninguno de los dos ofrece restauración integral. No se deben extrapolar capacidades
+de un flujo al otro.

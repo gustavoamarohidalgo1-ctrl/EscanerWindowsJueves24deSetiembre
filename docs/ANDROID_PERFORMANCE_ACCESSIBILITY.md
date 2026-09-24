@@ -13,7 +13,7 @@ La aceptación se ejecuta en un **Google Pixel 6a físico** con estas condicione
 | SoC / memoria | Google Tensor, 6 GB RAM |
 | Pantalla | 1080 × 2400, 60 Hz |
 | Sistema | Android 15 / API 35, parche estable disponible |
-| Build | `localBenchmark` y `cloudBenchmark`, optimizados, no depurables y en series separadas |
+| Build | `localBenchmark`, optimizado y no depurable (único flavor desde el 24 de septiembre de 2026) |
 | Estado térmico | `NONE` o `LIGHT`; abortar y enfriar si es mayor |
 | Batería | 50–80 %, sin cargar durante la serie normal |
 | Almacenamiento | al menos 5 GB libres durante la serie normal |
@@ -85,6 +85,9 @@ callback; solo se excluye una violación cuyo stack contiene exactamente
 la sección medida. Cualquier otro origen sigue fallando. Inicio frío no usa la actividad exclusiva
 y queda fuera de esta afirmación StrictMode.
 
+La tarea instala y al terminar desinstala `com.facturastock.app`: se ejecuta con `ANDROID_SERIAL`
+apuntando al emulador o al teléfono de referencia, nunca con la tablet del negocio conectada.
+
 ```bash
 ./gradlew --no-daemon --max-workers=1 \
   :benchmark:connectedLocalBenchmarkAndroidTest \
@@ -99,20 +102,10 @@ FACTURASTOCK_MIN_BENCHMARK_SAMPLES=10 \
     "$benchmark_json" scripts/macrobenchmark-budgets.json
 ```
 
-La variante cloud se ejecuta en otra instalación/corrida y se resume antes de iniciar una nueva
-serie; nunca se concatenan sus muestras con local:
-
-```bash
-./gradlew --no-daemon --max-workers=1 \
-  :benchmark:connectedCloudBenchmarkAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=\
-com.facturastock.app.benchmark.FacturaStockMacrobenchmark \
-  -Pandroid.testInstrumentationRunnerArguments.iterations=10
-```
-
-CI usa dos jobs de matriz aislados y publica `android-performance-local-*` y
-`android-performance-cloud-*`. En un teléfono físico hay que archivar el directorio de salida entre
-ambas corridas, porque AndroidX puede reutilizar el mismo nombre de `benchmarkData.json`.
+CI ejecuta un único job de matriz (`local`) y publica `android-performance-local-*`; la serie
+`cloudBenchmark` se retiró con la variante cloud. En un teléfono físico hay que archivar el
+directorio de salida entre corridas, porque AndroidX puede reutilizar el mismo nombre de
+`benchmarkData.json`.
 
 ## Generación de Baseline y Startup Profile
 
@@ -198,8 +191,8 @@ completa de una sola variante para que el resultado no quede vacío o parcial po
   -Pfacturastock.composeCompilerReportVariant=localRelease
 ```
 
-Las variantes aceptadas son `localDebug`, `localRelease`, `localBenchmark`, `localProfile`,
-`cloudDebug`, `cloudRelease`, `cloudBenchmark` y `cloudProfile`. La salida queda separada en
+Las variantes aceptadas son `localDebug`, `localRelease`, `localBenchmark` y `localProfile`. La
+salida queda separada en
 `app/build/reports/compose-compiler/<variante>/metrics` y `reports`; se revisan especialmente
 `*-classes.txt` y `*-composables.csv` antes de modificar la estructura de una tarjeta.
 
@@ -213,7 +206,8 @@ Las variantes aceptadas son `localDebug`, `localRelease`, `localBenchmark`, `loc
   trabajo. Cancelar no publica un lote parcial, no avanza un cursor y no confirma una outbox a medias.
 - El respaldo WorkManager exige red, batería no baja y almacenamiento no bajo; el canal mínimo de
   purga exige solo red para poder liberar datos incluso con poco espacio. Las pruebas inyectan ENOSPC antes
-  y durante una pasada y exigen `retry` sin perder la fila durable.
+  y durante una pasada y exigen `retry` sin perder la fila durable. Sin transporte, en la variante
+  `local`, no se programa ninguno de los dos canales.
 
 ## Checklist manual con TalkBack y fuente 200 %
 

@@ -19,13 +19,14 @@ propia compuerta reacciona al cambio de configuración. Con `useInjectedViewMode
 
 ## Destinos registrados
 
-El registro canónico contiene exactamente 32 patrones y rechaza patrones duplicados o
+El registro canónico contiene exactamente 29 patrones y rechaza patrones duplicados o
 metadatos de argumentos que no coincidan con sus placeholders.
 
 | Área | Destino | Patrón | Argumentos |
 | --- | --- | --- | --- |
 | Compatibilidad | Redirección a Vender | `home` | Ninguno |
 | Superior | Ventas | `sales` | Ninguno |
+| Ventas | Registrar producto desde la venta | `sales/register?barcode={barcode}&requestId={requestId}&businessId={businessId}` | `barcode`, `requestId` y `businessId` |
 | Compatibilidad | Redirección a Vender | `invoices` | Ninguno |
 | Superior | Inventario | `inventory` | Ninguno |
 | Inventario | Registro con escáner físico | `inventory/register` | Ninguno |
@@ -33,7 +34,7 @@ metadatos de argumentos que no coincidan con sus placeholders.
 | Arranque | Onboarding | `onboarding` | Ninguno |
 | Catálogo | Productos | `products?barcode={barcode}` | `barcode` (opcional) |
 | Compra | Historial | `purchases` | Ninguno |
-| Ajustes | Ajustes | `settings` | Ninguno |
+| Secundaria | Ajustes (engranaje) | `settings` | Ninguno |
 | Deudores | Lista | `debtors` | Ninguno |
 | Deudores | Registrar deuda mediante venta a crédito | `debtors/new` | Ninguno |
 | Deudores | Detalle y abonos | `debtors/{debtId}` | `debtId` |
@@ -52,28 +53,25 @@ metadatos de argumentos que no coincidan con sus placeholders.
 | Compra | Detalle | `purchases/{purchaseId}` | `purchaseId` |
 | Compra | Anular compra | `purchases/{purchaseId}/void` | `purchaseId` |
 | Inventario | Trazabilidad de producto | `inventory/{productId}` | `productId` |
-| Cuenta | Cuenta y respaldo | `account` | Ninguno |
-| Cuenta | Miembros del negocio | `account/members` | Ninguno |
-| Cuenta | Mis invitaciones | `account/invitations` | Ninguno |
-| Cuenta | Sincronización | `sync` | Ninguno |
 
-Ajustes dejó de ser un marcador de posición: muestra el perfil del negocio, impuestos y
-costos, la región de solo lectura y el modo demostración. Con la demo activa, su CTA genera e
-importa la factura sintética por la frontera normal de captura y abre
-`purchase/draft/{draftId}/preview/{captureId}`; si el borrador estable ya terminó, abre
-`purchases/{purchaseId}`. Ambos saltos transportan solo ids tipados y reutilizan rutas existentes:
-no añaden un deep link de escritura.
+## Ajustes: ruta secundaria
 
-La entrada “Sincronización” de esa misma sección abre `sync`: cola de respaldo con sus
-intentos y próximo intento, conflictos con comparación local/nube y resolución explícita,
-y el pull incremental con reconciliación diagnóstica auditada. Sin sesión enlazada (o en el
-flavor local) el destino muestra su estado no disponible sin ofrecer acciones.
+`settings` no es un destino superior: no aparece en la barra inferior ni en la lateral. Se abre
+con el icono de engranaje («Abrir ajustes») de la barra superior, visible solo en los tres destinos
+superiores —Vender, Inventario y Reportes—, y se apila con `launchSingleTop`, de modo que Atrás
+vuelve a la sección desde la que se abrió. Desde Vender, la solicitud pasa primero por el mismo
+guardado de salida de Ventas que cualquier otro cambio de destino.
 
-Desde Ajustes también se abre `settings/privacy`: política de retención de imágenes (tras
-OCR, tras confirmar, 30/90 días o conservar), limpieza y borrado de imágenes con contadores
-reales, exportación JSON de los datos propios, interruptor del respaldo y eliminación de la
-cuenta y los datos en la nube con resultado verificable. El detalle de qué dato sale del
-dispositivo y qué nunca sale está en [`PRIVACY_DATA_LIFECYCLE.md`](PRIVACY_DATA_LIFECYCLE.md).
+La pantalla es mínima y solo tiene tres secciones: **Negocio** (razón social, nombre comercial y
+RUC), **Impuestos y costos** (IGV y política de costo neto/bruto, con la confirmación «Aplicar solo
+a cálculos futuros») y **Datos** («Exportar libro contable», que abre el selector de documentos de
+Android para crear el JSON). No abre otras rutas ni añade deep links.
+
+Las rutas `account`, `account/members`, `account/invitations` y `sync` (Cuenta, Miembros, Mis
+invitaciones y Sincronización) se retiraron junto con la variante cloud el 24 de septiembre de
+2026. Ajustes tampoco ofrece ya la privacidad avanzada (retención y borrado de imágenes, limpieza de
+caché, bloqueo biométrico, diagnósticos) ni el modo demostración. El detalle de los datos locales
+está en [`PRIVACY_DATA_LIFECYCLE.md`](PRIVACY_DATA_LIFECYCLE.md).
 
 ## Rutas de facturas conservadas
 
@@ -165,8 +163,9 @@ público resoluble por otras aplicaciones.
 
 ## Verificación
 
-`NavigationContractTest` fija el registro (31 patrones, 3 destinos superiores), builders,
-UUID y deep links. `AppNavigationTest` compara los nodos reales con el contrato, recorre
+`NavigationContractTest` fija el registro (29 patrones, 3 destinos superiores, `settings` como
+ruta secundaria y ausencia de las rutas de cuenta y sincronización), builders, UUID y deep links.
+`AppNavigationTest` compara los nodos reales con el contrato, recorre
 las tres secciones y comprueba las redirecciones de compatibilidad; los flujos internos de captura
 se prueban mediante sus rutas, sin una pestaña Facturas. `NavigationRecreationTest` y
 `HiltUdfRuntimeTest` son `@HiltAndroidTest` con `@TestInstallIn` sobre

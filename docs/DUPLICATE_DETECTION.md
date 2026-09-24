@@ -39,11 +39,9 @@ instantánea preparada.
 
 Para continuar ante una coincidencia `EXACT` se requiere un principal entregado por
 `PurchaseOverrideAuthorizationRepository`, rol `OWNER` o `MANAGER` y un motivo de 10 a 500
-caracteres. La UI no puede suministrar ni modificar el rol. El flavor `local` representa al
-propietario del negocio activo como `OWNER`; el flavor `cloud` toma el UID de la sesión autenticada
-y el último rol de membresía confirmado (`OWNER`/`ADMIN` autorizan; `OPERATOR`/`READER` no). Un
-refresco remoto exitoso degrada el rol o revoca el enlace; sin red se conserva el último rol
-confirmado para que la detección siga siendo offline.
+caracteres. La UI no puede suministrar ni modificar el rol. El flavor `local`, único desde el 24 de
+septiembre de 2026, representa al propietario del negocio activo como `OWNER`
+(`LocalOwnerPurchaseOverrideAuthorizationRepository`); ya no existen roles de membresía cloud.
 
 La autorización vuelve a ejecutar la búsqueda para evitar usar una coincidencia obsoleta y
 entrega una decisión tipada al posting. La transacción la revalida y escribe
@@ -52,27 +50,15 @@ append-only registra borrador, compra coincidente, clasificación, señales y ro
 texto libre. La compra conserva de forma inmutable el target, actor, rol y motivo; el detalle los
 muestra como evidencia operativa. Ambos registros comparten el commit y no pueden quedar huérfanos.
 
-Si el flavor cloud respalda esa compra, una segunda barrera independiente corre en Functions. El
-envelope vigente `payloadVersion=3` genera `document.version=2` con
-`{ existingPurchaseId, sourceDraftId, auditEventId, reason }`; no envía un actor ni rol afirmado por
-el cliente. El servidor deriva la membresía efectiva, admite solo OWNER/ADMIN, revalida negocio,
-identidad y estado `POSTED|VOIDED` del target, conserva el índice `PRIMARY` y crea un slot secundario
-por identidad + borrador en la misma transacción. Si el target todavía no se respaldó, el resultado
-es transitorio y se reintenta sin tomar el slot primario.
-
-Firestore minimiza esa excepción: conserva target, borrador, evento y rol autorizado, pero no UID,
-motivo, hash ni longitud del motivo. El texto se valida transitoriamente y el detalle exacto
-permanece en Room. Las outboxes legacy v2 siguen produciendo documento v1 para poder recuperar un
-ACK perdido; no se convierten a v3 ni reciben un backfill de datos que no existían. El orden de
-rollout es Functions compatible con v2/v3 primero y Android emisor de v3 después.
+La variante cloud añadía una segunda barrera independiente en Functions al respaldar la compra.
+Se retiró el 24 de septiembre de 2026: la operación de outbox que transporta la excepción se sigue
+escribiendo en el mismo commit, pero ya no sale del dispositivo (ver [`BACKUP_SYNC.md`](BACKUP_SYNC.md)).
 
 ## Pruebas
 
 La suite cubre coincidencia exacta tolerante a formato, probable por padding y señales
 secundarias, distinto, prohibición de usar el hash como única clave, rechazo de rol no autorizado,
-motivo obligatorio, navegación a la compra existente y persistencia append-only del evento. En
-cloud cubre además OWNER/ADMIN frente a OPERATOR/READER, target ausente o ajeno, slot excepcional,
-replay v2/v1, contrato v3/v2 y ausencia de motivo/identidad personal en Firestore.
+motivo obligatorio, navegación a la compra existente y persistencia append-only del evento.
 
 ## Integración con la publicación
 

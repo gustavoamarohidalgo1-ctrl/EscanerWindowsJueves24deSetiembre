@@ -11,7 +11,7 @@ implementadas de los límites que todavía requieren una fase distinta de respal
 | --- | --- |
 | Escritura parcial de una compra o venta | Las cabeceras, líneas, saldos, movimientos, auditoría y outbox correspondientes se confirman en una sola transacción Room. Un fallo tardío revierte el lote completo. |
 | Doble toque o reintento | Claves únicas, claves idempotentes y compare-and-set (CAS) hacen que el segundo intento devuelva el resultado ya publicado o falle sin repetir inventario. |
-| Respuesta perdida al confirmar una venta cloud | `pending_sale_checkouts` conserva la intención antes de llamar a la nube y congela el borrador y sus líneas. Una respuesta incierta conserva esa intención para reintentar el mismo documento y la misma clave. |
+| Respuesta perdida al confirmar una venta cloud (variante retirada el 2026-09-24) | `pending_sale_checkouts` conservaba la intención antes de llamar a la nube y congelaba el borrador y sus líneas. La tabla y su código siguen en el esquema, pero la variante `local` confirma las ventas en una sola transacción Room y no la usa. |
 | Ingreso OCR parcialmente aplicado | Productos nuevos, outbox de catálogo, inventario, recibo y cierre del borrador se confirman juntos. `invoice_inventory_receipts` permite recuperar el éxito después de perder la respuesta y rechaza reintentos con contenido diferente. |
 | Concurrencia sobre existencias | `inventory_balances.version` protege cada cambio con CAS; los movimientos son append-only y permiten recalcular y comparar el saldo. |
 | Referencias inválidas | Foreign keys, índices únicos y triggers verifican negocio, catálogo, borrador, compra, venta, deuda, pago, producto, unidad y almacén, incluso cuando una FK simple no puede expresar el aislamiento entre negocios. |
@@ -67,8 +67,9 @@ ventas, deudas ni movimientos históricos:
   aplicadas y fecha. No depende por FK del borrador, porque ese borrador se elimina dentro del
   mismo commit del ingreso.
 
-En una venta cloud, una confirmación remota definitiva puede completar el documento congelado
-aunque después se hayan archivado su producto, unidad o almacén. El commit exige que la confirmación
+En una venta cloud (ruta de la variante retirada el 24 de septiembre de 2026, que el código
+compartido conserva inactiva), una confirmación remota definitiva puede completar el documento
+congelado aunque después se hayan archivado su producto, unidad o almacén. El commit exige que la confirmación
 remota corresponda a la intención pendiente y mantiene la identidad y los datos históricos de
 las líneas. Esa excepción no permite vender catálogo archivado mediante una venta local.
 Si la respuesta remota es incierta, el carrito sigue bloqueado hasta resolver el mismo intento;
@@ -149,9 +150,9 @@ Una base local robusta no equivale a recuperación ante pérdida del dispositivo
 
 - Desinstalar, borrar los datos de la app o perder el equipo elimina Room. `allowBackup=false`
   excluye la copia automática de Android.
-- Firebase cubre compras, catálogo, inventario, ventas publicadas, deudas y pagos de negocios
-  enlazados. El pull materializa saldos, ventas y cuentas por cobrar compartidas, pero no restaura
-  compras completas, imágenes, borradores ni ajustes.
+- No hay copia en la nube: la variante cloud se retiró el 24 de septiembre de 2026. La única copia
+  completa es el respaldo `adb run-as` que se hace desde la Mac de desarrollo antes de cada
+  actualización ([`RUNBOOK.md`](RUNBOOK.md)).
 - El JSON `ACCOUNTING_LEDGER` v4 es una exportación manual legible. No es un snapshot completo, no
   incluye cabeceras/líneas de venta y la app todavía no puede importarlo.
 - Ante corrupción, la base se conserva y la app falla cerrada; aún no hay una reparación o
@@ -159,8 +160,8 @@ Una base local robusta no equivale a recuperación ante pérdida del dispositivo
 - Room no usa SQLCipher. El archivo queda protegido por el sandbox y el cifrado del dispositivo;
   el cifrado AES-GCM propio se aplica a imágenes retenidas, no a todas las tablas.
 
-Antes de borrar datos, desinstalar o cambiar de equipo se debe conservar la exportación y contactar
-a soporte. Existe una base interna de `FULL_DEVICE_SNAPSHOT` con formato ZIP, validación y
+Antes de borrar datos, desinstalar o cambiar de equipo se debe hacer el respaldo `run-as` y
+contactar a soporte; la exportación JSON sola no basta. Existe una base interna de `FULL_DEVICE_SNAPSHOT` con formato ZIP, validación y
 primitivas de recuperación, pero todavía no ofrece exportación/importación completa al usuario:
 la activación sigue en `NOT_READY` y no reemplaza la base activa. El trabajo pendiente se detalla en
 [`FULL_DEVICE_SNAPSHOT_FOUNDATION.md`](FULL_DEVICE_SNAPSHOT_FOUNDATION.md).

@@ -44,49 +44,28 @@ la referencia son opcionales. Un abono parcial reduce el saldo; uno por el saldo
 cuenta como pagada. Un doble toque, un reintento o un ACK perdido no deben cobrar dos veces.
 
 La deuda, la venta y los abonos son historia: no se sobrescriben ni se eliminan desde esta pantalla.
-Desde **Reportes → Anular venta**, un negocio local puede anular la venta a crédito completa.
+Desde **Reportes → Anular venta** se puede anular la venta a crédito completa.
 El recibo `sale_voids` cancela el saldo exigible y conserva el saldo histórico y los abonos originales;
 las consultas de cuentas por cobrar excluyen esa venta y se rechazan nuevos pagos. La confirmación
 muestra los abonos ya cobrados para que se devuelvan al cliente por el medio de cobro correspondiente.
-No se corrige individualmente un abono ni se anulan localmente ventas con inventario compartido cloud.
+No se corrige individualmente un abono.
 
-## Dos teléfonos y conexión
+## Conexión y otros dispositivos
 
-El comportamiento depende del flavor y del negocio:
+La venta a crédito y los abonos se confirman en Room y funcionan sin internet. No se comparten con
+otro teléfono o tablet: la variante cloud, que sincronizaba ventas, deudas y abonos entre
+dispositivos, se retiró el 24 de septiembre de 2026.
 
-| Caso | Venta a crédito | Abono | Otro teléfono |
-| --- | --- | --- | --- |
-| `local` o negocio nunca enlazado | Se confirma en Room y puede funcionar sin internet | Se registra en Room | No se comparte automáticamente |
-| `cloud`, mismo negocio enlazado y respaldo activo | Requiere internet y autorización de Functions antes del commit local | Requiere internet y control de versión remoto | El pull incremental materializa venta, deuda, abonos y saldo autoritativo |
-
-Para compartir entre dispositivos, ambos deben usar la variante `cloud`, iniciar sesión con cuentas
-miembro del **mismo negocio**, mantener ese negocio enlazado y activar **«Respaldar registros en la
-nube»**. Quien registra la venta o el abono necesita rol `OWNER`, `ADMIN` u `OPERATOR`; `READER`
-puede consultar, pero no cobrar. Si falta conexión, sesión verificada, enlace coherente o respaldo,
-la app conserva el carrito y bloquea la mutación en vez de crear una verdad distinta en un solo
-teléfono.
-
-El backend usa una transacción y una versión de deuda: dos dispositivos no pueden aplicar al mismo
-tiempo dos cobros sobre el mismo saldo. Si otro teléfono ganó la carrera, la app muestra que la
-cuenta cambió y debe sincronizarse/revisarse antes de reintentar.
+Cada abono usa control optimista de versión e idempotencia: un doble toque o un reintento no aplica
+dos cobros sobre el mismo saldo, y si la cuenta cambió mientras se registraba el pago, la app pide
+revisarla antes de reintentar.
 
 ## Datos y privacidad
 
-El nombre del deudor, la venta, los productos y los abonos se guardan en Room. En un negocio cloud
-enlazado también se guardan en Firestore y son legibles solo por miembros autorizados del negocio;
-las reglas niegan escrituras directas del cliente y los cambios pasan por Functions. El backend no
-guarda el UID de quien hizo la venta o el cobro dentro de la deuda o el abono.
+El nombre del deudor, la venta, los productos y los abonos se guardan solo en Room, dentro del
+dispositivo.
 
 La lectura cruda del lector vive solo en memoria. Al asociar un código a un producto, ese código sí
 pasa a formar parte del catálogo. Las notas y referencias de pago deben evitar información sensible
-innecesaria. La cuenta por cobrar no forma parte todavía del JSON `ACCOUNTING_LEDGER` v4 y el feed
-cloud no es una restauración integral de toda la instalación.
-
-## Puesta en servicio
-
-El repositorio contiene el cliente Android, migración Room, reglas Firestore, callables y pruebas.
-Eso no significa que exista un proyecto productivo desplegado: para sincronizar teléfonos hay que
-configurar el flavor `cloud`, desplegar Functions y reglas, y verificar el proyecto Firebase real.
-El flavor `local` sigue siendo gratuito y completamente local, pero por definición no sincroniza
-automáticamente dos dispositivos. Los requisitos y advertencias de costo del backend están en
-[`CLOUD_BACKUP_FIREBASE.md`](CLOUD_BACKUP_FIREBASE.md).
+innecesaria. La cuenta por cobrar no forma parte todavía del JSON `ACCOUNTING_LEDGER` v4: la única
+copia completa es el respaldo `adb run-as` descrito en [`RUNBOOK.md`](RUNBOOK.md).

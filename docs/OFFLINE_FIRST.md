@@ -25,14 +25,15 @@ Son garantías distintas y nunca se presentan como equivalentes:
 - **Guardado en este celular** significa que la transacción Room terminó. El dato ya puede
   consultarse sin conexión y sobrevive al cierre del proceso.
 - **Respaldado** significa que la outbox local conserva un acuse exitoso (`SYNCED`) de un
-  adaptador remoto. Estar sin conexión no revierte ni oculta la copia local.
+  adaptador remoto. Estar sin conexión no revierte ni oculta la copia local. Sin transporte
+  remoto, ninguna compra llega hoy a este estado.
 
 El proyecto implementa la outbox durable, su observación, su recuperación y el worker
-WorkManager que la drena (`data/sync`). El flavor `local` usa
-`UnavailablePurchaseBackupTransport`; el flavor `cloud` incluye Firebase configurable, aunque
-el repositorio no contiene ni prueba un proyecto productivo desplegado. Sin configuración una
-compra queda en `PENDING_SYNC`: está guardada y es plenamente utilizable en el teléfono, pero no
-se afirma que tenga respaldo externo. El protocolo completo —claim con
+WorkManager que la drena (`data/sync`). La única variante, `local`, enlaza
+`UnavailablePurchaseBackupTransport`: el programador no encola trabajo y una compra queda en
+`PENDING_SYNC`. Está guardada y es plenamente utilizable en el dispositivo, pero no se afirma que
+tenga respaldo externo. La variante cloud, con transporte Firebase, se retiró el 24 de septiembre
+de 2026. El protocolo completo —claim con
 token y lease, backoff exponencial durable, acuse validado por clave idempotente— está
 probado contra transportes de guion y documentado en
 [`BACKUP_SYNC.md`](BACKUP_SYNC.md).
@@ -52,6 +53,9 @@ al arranque como en caliente al inicio de cada pasada.
 | `SYNCED` | El acuse de respaldo fue persistido en Room | Ninguna |
 | `ERROR` | Fallo recuperable persistido y sanitizado | Reintentar; el doble toque no duplica la operación |
 | `CONFLICT` | El destino requiere conciliación explícita | Revisar el impacto y reintentar explícitamente |
+
+En la variante `local` una compra publicada permanece en `PENDING_SYNC`; `SYNCING`, `SYNCED`,
+`ERROR` y `CONFLICT` solo se alcanzaban con el transporte retirado.
 
 `attemptCount`, `lastError`, `updatedAt`, `operationId` e `idempotencyKey` viven en Room. Un
 reintento cambia `ERROR/CONFLICT → PENDING_SYNC` mediante CAS, conserva identidad y contador, y
@@ -145,9 +149,10 @@ abre la compra una sola vez, sin volver a ejecutar preflight ni publicación.
 Publicar la compra no espera la red. La outbox nace dentro del mismo commit en
 `PENDING_SYNC`. Un claim interrumpido se reencola cuando su lease vence —al inicio de la
 siguiente pasada o del siguiente arranque— y `ERROR/CONFLICT` conservan la compra local
-completa mientras se ofrece reintentar. Publicar, anular o reintentar encolan el drenado
-único (KEEP) con constraint de red: recuperar conectividad dispara el procesamiento sin que
-la UI consuma ninguna respuesta remota.
+completa mientras se ofrece reintentar. Con un transporte configurado, publicar, anular o
+reintentar encolaban el drenado único con constraint de red; en la variante `local` el
+programador no encola nada y la operación permanece en `PENDING_SYNC`. En ningún caso la UI
+consume una respuesta remota.
 
 ## Poco almacenamiento
 
