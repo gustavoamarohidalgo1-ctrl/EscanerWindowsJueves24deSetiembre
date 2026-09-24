@@ -227,7 +227,7 @@ internal class FullDeviceSnapshotAtomicDatabaseFiles(
     }
 
     private fun forceRootDirectory() {
-        FileChannel.open(root, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+        DirectoryDurability.open(root).use { channel ->
             channel.force(true)
         }
     }

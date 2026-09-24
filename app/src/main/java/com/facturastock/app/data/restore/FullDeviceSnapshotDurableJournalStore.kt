@@ -241,7 +241,7 @@ internal class FullDeviceSnapshotDurableJournalStore(
     }
 
     private fun forceRootDirectory() {
-        FileChannel.open(root, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { directory ->
+        DirectoryDurability.open(root).use { directory ->
             directory.force(true)
         }
     }

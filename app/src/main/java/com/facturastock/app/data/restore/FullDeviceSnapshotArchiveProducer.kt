@@ -116,11 +116,7 @@ class FullDeviceSnapshotArchiveProducer internal constructor(
             val destinationParent = normalizedDestination.parent
                 ?: reject(FullDeviceSnapshotArchiveProductionFailureCode.DESTINATION_PARENT_UNSAFE)
 
-            FileChannel.open(
-                destinationParent,
-                StandardOpenOption.READ,
-                LinkOption.NOFOLLOW_LINKS,
-            ).use { parentDirectoryChannel ->
+            DirectoryDurability.open(destinationParent).use { parentDirectoryChannel ->
                 // Comprueba la capacidad de fsync antes de crear temporales o publicar el destino.
                 parentDirectoryChannel.force(true)
 
@@ -601,7 +597,7 @@ class FullDeviceSnapshotArchiveProducer internal constructor(
         }
     }
 
-    private fun forceDirectoryWithoutThrowing(channel: FileChannel): Boolean = try {
+    private fun forceDirectoryWithoutThrowing(channel: DirectoryDurability): Boolean = try {
         channel.force(true)
         true
     } catch (_: IOException) {
@@ -611,11 +607,7 @@ class FullDeviceSnapshotArchiveProducer internal constructor(
     }
 
     private fun forceDirectory(path: Path): Boolean = try {
-        FileChannel.open(
-            path,
-            StandardOpenOption.READ,
-            LinkOption.NOFOLLOW_LINKS,
-        ).use { directory -> directory.force(true) }
+        DirectoryDurability.open(path).use { directory -> directory.force(true) }
         true
     } catch (_: IOException) {
         false

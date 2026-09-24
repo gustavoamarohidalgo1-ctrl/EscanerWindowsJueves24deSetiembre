@@ -43,9 +43,11 @@ internal object ImageMetadataStripper {
     }
 
     /**
-     * Variante de archivo usada por producción. El origen se mapea en modo solo lectura y los
+     * Variante de archivo usada por producción. El origen se lee una sola vez a un búfer y los
      * rangos que sí pertenecen a la imagen se copian directamente al canal de salida; por tanto,
-     * un archivo admitido por la política no se duplica varias veces en el heap. [checkpoint] se
+     * un archivo admitido por la política no se duplica varias veces en el heap. No se usa
+     * `FileChannel.map`: en Windows un mapeo sigue vivo hasta que el GC lo libera y, mientras
+     * tanto, el archivo no puede reemplazarse ni borrarse (`AccessDeniedException`). [checkpoint] se
      * ejecuta durante el escaneo y cada bloque copiado para que el llamador pueda hacer la tarea
      * cooperativamente cancelable.
      *
@@ -62,7 +64,12 @@ internal object ImageMetadataStripper {
         FileInputStream(source).channel.use { input ->
             val fileSize = input.size()
             if (fileSize <= 0L || fileSize > Int.MAX_VALUE.toLong()) return corrupt()
-            val mapped = input.map(FileChannel.MapMode.READ_ONLY, 0L, fileSize)
+            val mapped = ByteBuffer.allocate(fileSize.toInt())
+            while (mapped.hasRemaining()) {
+                if (input.read(mapped) < 0) return corrupt()
+                checkpoint()
+            }
+            mapped.flip()
             FileOutputStream(destination).channel.use { output ->
                 return when (mimeType) {
                     MIME_JPEG -> stripJpeg(mapped, fileSize.toInt(), output, checkpoint)
