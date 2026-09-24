@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.3.21"
+kotlin = "2.4.20"
 ksp = "2.3.11"
 composeMultiplatform = "1.12.1"
 navigation = "2.9.2"
