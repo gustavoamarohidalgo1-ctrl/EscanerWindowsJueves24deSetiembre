@@ -1591,8 +1591,8 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
             runCurrent()
 
-            // El SKU ajeno no cuenta como exacto: la lectura se ignora sin ofrecer asociación.
-            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            // El SKU ajeno no cuenta como exacto: la lectura sólo queda pendiente de asociar.
+            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
             assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
             assertTrue(viewModel.uiState.value.canRouteScannerInput)
             assertTrue(sales.saveLineCalls.isEmpty())
@@ -2095,8 +2095,8 @@ class SalesViewModelTest {
             val viewModel = createReadyViewModel(original)
             viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
             runCurrent()
-            // Sin exacto ni recuperación segura la lectura se ignora: no abre sugerencias.
-            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            // Sin exacto ni recuperación segura la lectura queda pendiente de asociar, sin sugerencias.
+            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
             assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
             assertTrue(viewModel.uiState.value.canRouteScannerInput)
 
@@ -2119,7 +2119,7 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `unknown barcode without safe recovery is ignored without suggestions`() =
+    fun `unknown barcode without safe recovery asks to associate or register it without suggestions`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val original = cart(withLine = false)
             val viewModel = createReadyViewModel(original)
@@ -2132,13 +2132,13 @@ class SalesViewModelTest {
             assertEquals(listOf(NEW_BARCODE), products.barcodeLookups.map { it.second })
             assertEquals(1, products.catalogReadCalls)
             val state = viewModel.uiState.value
-            assertNull(state.pendingAssociationBarcode)
+            assertEquals(NEW_BARCODE, state.pendingAssociationBarcode)
             assertNull(state.barcodeSelectionReason)
             assertTrue(state.barcodeSuggestions.isEmpty())
             assertNull(state.pendingReplacement)
             assertTrue(state.pendingLocations.isEmpty())
             assertNull(state.productRegistration)
-            assertFalse(state.canRegisterProduct)
+            assertTrue(state.canRegisterProduct)
             assertNull(state.failure)
             assertNull(state.lastScanAdded)
             assertEquals(0, state.pendingBarcodeCount)
@@ -2147,19 +2147,40 @@ class SalesViewModelTest {
             assertTrue(sales.saveLineCalls.isEmpty())
             assertEquals(0, products.updateCalls)
 
-            // No hay registro que ofrecer para una lectura ignorada.
+            // La lectura pendiente puede registrarse como producto nuevo sin salir de la venta.
             viewModel.onAction(SalesContract.Action.RegisterProductRequested(NEW_BARCODE))
             runCurrent()
-            assertFalse(registration.isCompleted)
-            assertNull(viewModel.uiState.value.productRegistration)
+            val request = (registration.await() as SalesContract.Effect.RegisterProduct).request
+            assertEquals(NEW_BARCODE, request.barcode)
+            assertEquals(request, viewModel.uiState.value.productRegistration)
+        }
 
+    @Test
+    fun `an unknown second code asks for association instead of leaving the first product as the result`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false))
             sales.saveLineHandler = { SaleCartMutationResult.Saved(cart(withLine = true)) }
             viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
             runCurrent()
-            assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
             assertEquals(PRODUCT_ID, viewModel.uiState.value.lastScanAdded?.productId)
+
+            // El segundo producto todavía no tiene este código: la lectura queda pendiente de
+            // asociar y la confirmación del primero ya no es el resultado visible del escáner.
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(NEW_BARCODE))
+            runCurrent()
+            assertEquals(NEW_BARCODE, viewModel.uiState.value.pendingAssociationBarcode)
+            assertTrue(viewModel.uiState.value.isAssociating)
+            assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
+            assertEquals(1, sales.saveLineCalls.size)
+            assertEquals(0, products.updateCalls)
+            assertTrue(viewModel.uiState.value.canRouteScannerInput)
+
+            // Escanear otro producto conocido descarta la lectura pendiente y sigue la venta.
+            viewModel.onAction(SalesContract.Action.BarcodeScanned(EXISTING_BARCODE))
+            runCurrent()
             assertNull(viewModel.uiState.value.pendingAssociationBarcode)
-            registration.cancel()
+            assertEquals(PRODUCT_ID, viewModel.uiState.value.lastScanAdded?.productId)
+            assertEquals(0, products.updateCalls)
         }
 
     @Test
@@ -2514,6 +2535,32 @@ class SalesViewModelTest {
                     .single()
                     .nameMatchKind,
             )
+        }
+
+    @Test
+    fun `typing keeps related results visible while the next name search runs`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            val viewModel = createReadyViewModel(cart(withLine = false))
+            viewModel.onAction(SalesContract.Action.SearchChanged("Produ"))
+            advanceTimeBy(NAME_SEARCH_DEBOUNCE_MILLIS)
+            runCurrent()
+            val found = viewModel.uiState.value.productOptions
+            assertEquals(1, found.size)
+
+            // Extender o recortar la consulta no vacía la lista mientras llega la nueva búsqueda.
+            viewModel.onAction(SalesContract.Action.SearchChanged("Producto"))
+            runCurrent()
+            assertTrue(viewModel.uiState.value.isNameSearchRunning)
+            assertSame(found, viewModel.uiState.value.productOptions)
+            viewModel.onAction(SalesContract.Action.SearchChanged("Prod"))
+            runCurrent()
+            assertSame(found, viewModel.uiState.value.productOptions)
+
+            // Una consulta sin relación no muestra resultados ajenos: espera los suyos.
+            viewModel.onAction(SalesContract.Action.SearchChanged("Leche"))
+            runCurrent()
+            assertTrue(viewModel.uiState.value.isNameSearchRunning)
+            assertTrue(viewModel.uiState.value.productOptions.isEmpty())
         }
 
     @Test
@@ -3184,7 +3231,7 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `out of stock competitor prevents automatic recovery and the reading is ignored`() =
+    fun `out of stock competitor prevents automatic recovery and the reading asks for association`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val scanned = "77512345000"
             val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "7751234500004")
@@ -3194,9 +3241,9 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
 
-            // Dos candidatos impiden recuperar; sin exacto, la lectura se ignora sin sugerencias.
+            // Dos candidatos impiden recuperar; sin exacto, la lectura queda pendiente sin sugerencias.
             assertTrue(sales.saveLineCalls.isEmpty())
-            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
             assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
             assertNull(viewModel.uiState.value.barcodeSelectionReason)
             assertNull(viewModel.uiState.value.lastScanAdded)
@@ -3564,7 +3611,7 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `unverified codes with one to three missing digits are ignored without suggestions`() =
+    fun `unverified codes with one to three missing digits ask for association without suggestions`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val complete = "7753176004931"
             val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = complete)
@@ -3572,10 +3619,10 @@ class SalesViewModelTest {
             listOf("753176004931", "53176004931", "3176004931").forEachIndexed { index, scanned ->
                 viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
                 runCurrent()
-                // Sin checksum válido no hay recuperación segura: la lectura se ignora.
+                // Sin checksum válido no hay recuperación segura: la lectura queda pendiente de asociar.
                 assertEquals(index + 1, BarcodeSimilarity.missingDigits(scanned, complete))
                 assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
-                assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+                assertEquals(scanned, viewModel.uiState.value.pendingAssociationBarcode)
                 assertNull(viewModel.uiState.value.barcodeSelectionReason)
                 assertTrue(viewModel.uiState.value.canRouteScannerInput)
             }
@@ -3585,14 +3632,14 @@ class SalesViewModelTest {
         }
 
     @Test
-    fun `complete scan is ignored when the stored barcode misses three digits`() =
+    fun `complete scan asks for association when the stored barcode misses three digits`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             val viewModel = createReadyViewModel(cart(withLine = false), productBarcode = "3176004931")
             viewModel.onAction(SalesContract.Action.BarcodeScanned("7753176004931"))
             runCurrent()
-            // Tres cifras omitidas nunca se recuperan; sin exacto, la lectura se ignora.
+            // Tres cifras omitidas nunca se recuperan; sin exacto, la lectura queda pendiente de asociar.
             assertTrue(viewModel.uiState.value.barcodeSuggestions.isEmpty())
-            assertNull(viewModel.uiState.value.pendingAssociationBarcode)
+            assertEquals("7753176004931", viewModel.uiState.value.pendingAssociationBarcode)
             assertTrue(viewModel.uiState.value.canRouteScannerInput)
             assertTrue(sales.saveLineCalls.isEmpty())
             assertEquals("3176004931", products.findById(PRODUCT_ID)?.barcode)
@@ -4634,9 +4681,9 @@ class SalesViewModelTest {
         }
 
     /**
-     * Una lectura sin coincidencia exacta ni recuperación segura se ignora; el registro solo se
-     * ofrece desde una elección pendiente. Aquí se alcanza por la vía AMBIGUOUS, con productos
-     * sugeridos que tienen stock para resolverse desde la proyección ya cargada.
+     * El registro solo se ofrece desde una elección pendiente. Aquí se alcanza por la vía
+     * AMBIGUOUS, con productos sugeridos que tienen stock para resolverse desde la proyección ya
+     * cargada.
      */
     private suspend fun TestScope.beginProductRegistration(
         viewModel: SalesViewModel,

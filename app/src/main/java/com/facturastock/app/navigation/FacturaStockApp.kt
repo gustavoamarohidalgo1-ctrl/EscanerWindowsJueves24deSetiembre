@@ -24,6 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavGraphBuilder
@@ -608,6 +613,13 @@ private fun FacturaStockNavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier,
+        // El valor por defecto es un fundido cruzado de 700 ms: durante ~42 cuadros se componen y
+        // dibujan las dos pantallas en capas semitransparentes. Entre Vender, Inventario y Reportes
+        // el cambio es inmediato; hacia pantallas secundarias queda un fundido breve.
+        enterTransition = { navigationEnterTransition(initialState, targetState) },
+        exitTransition = { navigationExitTransition(initialState, targetState) },
+        popEnterTransition = { navigationEnterTransition(initialState, targetState) },
+        popExitTransition = { navigationExitTransition(initialState, targetState) },
     ) {
         composable(AppRoutes.ONBOARDING) {
             if (useInjectedViewModels) {
@@ -1714,3 +1726,34 @@ internal fun NavHostController.openLineReviewFromPrepared(draftId: DraftId) {
         launchSingleTop = true
     }
 }
+
+private val TopLevelRoutePatterns: Set<String> = AppRoutes.topLevel.mapTo(HashSet()) { it.pattern }
+
+/** Duración del fundido hacia y desde pantallas secundarias; entre pestañas no hay animación. */
+internal const val SECONDARY_NAVIGATION_FADE_MILLIS = 150
+
+private fun isTopLevelSwitch(
+    initial: NavBackStackEntry,
+    target: NavBackStackEntry,
+): Boolean =
+    initial.destination.route in TopLevelRoutePatterns && target.destination.route in TopLevelRoutePatterns
+
+private fun navigationEnterTransition(
+    initial: NavBackStackEntry,
+    target: NavBackStackEntry,
+): EnterTransition =
+    if (isTopLevelSwitch(initial, target)) {
+        EnterTransition.None
+    } else {
+        fadeIn(animationSpec = tween(SECONDARY_NAVIGATION_FADE_MILLIS))
+    }
+
+private fun navigationExitTransition(
+    initial: NavBackStackEntry,
+    target: NavBackStackEntry,
+): ExitTransition =
+    if (isTopLevelSwitch(initial, target)) {
+        ExitTransition.None
+    } else {
+        fadeOut(animationSpec = tween(SECONDARY_NAVIGATION_FADE_MILLIS))
+    }

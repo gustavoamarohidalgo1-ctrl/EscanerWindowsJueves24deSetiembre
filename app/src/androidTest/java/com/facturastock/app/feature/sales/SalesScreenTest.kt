@@ -594,6 +594,9 @@ class SalesScreenTest {
         composeRule.runOnIdle {
             state = state.copy(isMutating = true, scannerActive = false)
         }
+        // La tarjeta de progreso sólo entra si la mutación dura más que su espera.
+        composeRule.onNodeWithContentDescription(processing).assertDoesNotExist()
+        composeRule.mainClock.advanceTimeBy(MUTATION_PROGRESS_DELAY_MILLIS + 100)
         composeRule
             .onNodeWithTag(SalesTestTags.SCREEN)
             .performScrollToNode(hasContentDescription(processing))
@@ -673,6 +676,9 @@ class SalesScreenTest {
             .performClick()
 
         composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        // Si la operación se prolonga, «Procesando…» entra arriba y el botón puede salir de la vista.
+        composeRule.onNodeWithTag(SalesTestTags.SCREEN)
+            .performScrollToNode(hasTestTag(SalesTestTags.CHECKOUT))
         composeRule.onNodeWithTag(SalesTestTags.CHECKOUT)
             .assertIsNotEnabled()
             .performClick()

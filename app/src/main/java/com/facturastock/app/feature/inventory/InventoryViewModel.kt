@@ -6,6 +6,8 @@ import com.facturastock.app.core.input.KeyboardWedgeReadError
 import com.facturastock.app.domain.model.BarcodeValue
 import com.facturastock.app.domain.model.CatalogStatus
 import com.facturastock.app.domain.model.InventoryDataAlert
+import com.facturastock.app.domain.model.InventoryDiagnosticIssue
+import com.facturastock.app.domain.model.InventoryDiagnosticPosition
 import com.facturastock.app.domain.model.InventoryDiagnosticReport
 import com.facturastock.app.domain.model.InventoryReadItem
 import com.facturastock.app.domain.model.ProductProfit
@@ -28,6 +30,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -491,7 +494,13 @@ class InventoryViewModel @Inject constructor(
                 }
                 if (!automaticDiagnosisRequested && prepared.items.isNotEmpty()) {
                     automaticDiagnosisRequested = true
-                    diagnose(silent = true)
+                    // Leer y recalcular todos los movimientos compite con los primeros cuadros de
+                    // Inventario (en la tablet, más de un segundo de CPU): la revisión espera a que
+                    // la lista ya esté visible. Salir de la pantalla cancela la espera.
+                    executeMain {
+                        delay(AUTOMATIC_DIAGNOSIS_DELAY_MILLIS)
+                        diagnose(silent = true)
+                    }
                 }
                 break
             }
@@ -1022,6 +1031,9 @@ class InventoryViewModel @Inject constructor(
     }
 }
 
+/** Espera tras la primera lista antes de la revisión automática del inventario. */
+internal const val AUTOMATIC_DIAGNOSIS_DELAY_MILLIS = 2_500L
+
 private fun restoredInventoryState(savedStateHandle: SavedStateHandle): InventoryContract.State {
     // Cada apertura vuelve al catálogo activo. Una confirmación antigua nunca se restaura
     // ni bloquea el lector; retirar o restaurar requiere una nueva revisión explícita.
@@ -1125,7 +1137,9 @@ private suspend fun List<InventoryReadItem>.withDiagnosticAlerts(
     val divergentProducts = buildSet {
         report?.positions?.forEachIndexed { index, position ->
             if (index % 64 == 0) context.ensureActive()
-            if (!position.matches) add(position.productId)
+            // Sólo una existencia que de verdad difiere de sus movimientos avisa en el producto. Los
+            // límites para verificar costos (ajustes sin costo, orden ambiguo) no cambian el stock.
+            if (position.hasStockDivergence()) add(position.productId)
         }
     }
     var changed: MutableList<InventoryReadItem>? = null
@@ -1144,6 +1158,10 @@ private suspend fun List<InventoryReadItem>.withDiagnosticAlerts(
     // repetiría esas operaciones para todos los productos en cada emisión de Room.
     return changed ?: this
 }
+
+private fun InventoryDiagnosticPosition.hasStockDivergence(): Boolean =
+    InventoryDiagnosticIssue.QUANTITY_DIVERGENCE in issues ||
+        InventoryDiagnosticIssue.MISSING_CACHED_BALANCE in issues
 
 private suspend fun InventoryDiagnosticReport.matchesSnapshot(items: List<InventoryReadItem>): Boolean {
     val context = currentCoroutineContext()

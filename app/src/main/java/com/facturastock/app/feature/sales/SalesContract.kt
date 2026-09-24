@@ -247,6 +247,13 @@ object SalesContract {
                 !catalogLoadFailed && !cartLoadFailed &&
                 !discardEditsReview)
 
+        /**
+         * Una lectura del escáner en curso no deshabilita las líneas del carrito: cada escaneo las
+         * repintaría dos veces. Sus ediciones pasan por el mismo mutex y se aplican después.
+         */
+        val isBlockingMutation: Boolean
+            get() = isMutating && !isProcessingBarcode
+
         val canRouteScannerInput: Boolean
             get() = weightSaleEditor == null && entryStep == EntryStep.SELL && mode == EntryMode.SCANNER && !isLoading &&
                 productRegistration == null &&

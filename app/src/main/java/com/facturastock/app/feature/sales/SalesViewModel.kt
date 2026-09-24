@@ -64,6 +64,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.util.UUID
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
@@ -112,6 +113,12 @@ class SalesViewModel
             val candidates: List<ProductMatchCandidate>,
         )
 
+        private class NameSearchOptions(
+            val snapshot: NameSearchSnapshot,
+            val catalog: Map<ProductId, List<SalesContract.ProductOption>>,
+            val options: List<SalesContract.ProductOption>,
+        )
+
         private data class QueuedBarcode(
             val value: String,
             val businessId: BusinessId,
@@ -145,6 +152,9 @@ class SalesViewModel
         private var catalogObservation: Job? = null
         private var nameSearchJob: Job? = null
         private var nameSearchSnapshot: NameSearchSnapshot? = null
+
+        /** Opciones ya proyectadas de la última búsqueda: cada tecla no vuelve a copiar la lista. */
+        private var nameSearchOptions: NameSearchOptions? = null
         private var deferredContextSnapshot: CatalogInventorySnapshot? = null
         private var activeBusinessId: BusinessId? = null
         private var configuredCurrency: CurrencyCode = CurrencyCode.of("PEN")
@@ -1252,8 +1262,9 @@ class SalesViewModel
             pendingBarcodeRecovery = null
             if (product == null) {
                 // Sin coincidencia exacta solo se intenta la recuperación automática segura. Si
-                // tampoco encaja con un único producto, la lectura se ignora sin abrir sugerencias.
-                tryAutomaticBarcodeRecovery(scan)
+                // tampoco encaja con un único producto, se pide asociar el código nuevo sin sugerir
+                // productos por parecido: ignorarlo dejaba a la vista el producto de la lectura anterior.
+                if (!tryAutomaticBarcodeRecovery(scan) && scan.isCurrent()) openBarcodeAssociation(scan)
                 return
             }
             // Un código personalizado exacto puede ser también una lectura truncada de otro GTIN.
@@ -1352,12 +1363,28 @@ class SalesViewModel
                 }.map { it.productId }.distinct().take(2).count() > 1
             }
             if (!scan.isCurrent()) return
+            openBarcodeAssociation(
+                scan,
+                reason = reason ?: SalesContract.BarcodeSelectionReason.AMBIGUOUS.takeIf { hasMultipleIdentities },
+                suggestions = suggestions,
+            )
+        }
+
+        /**
+         * Deja la lectura pendiente para asociarla a un producto elegido por nombre o registrarlo.
+         * Nunca modifica el catálogo por sí misma: sólo la elección explícita guarda el código.
+         */
+        private fun openBarcodeAssociation(
+            scan: QueuedBarcode,
+            reason: SalesContract.BarcodeSelectionReason? = null,
+            suggestions: List<SalesContract.BarcodeSuggestion> = emptyList(),
+        ) {
             cancelNameSearch()
             pendingBarcodeRecovery = null
             updateState {
                 copy(
                     pendingAssociationBarcode = scan.value,
-                    barcodeSelectionReason = reason ?: SalesContract.BarcodeSelectionReason.AMBIGUOUS.takeIf { hasMultipleIdentities },
+                    barcodeSelectionReason = reason,
                     barcodeSuggestions = suggestions,
                     pendingReplacement = null,
                     pendingLocations = emptyList(),
@@ -2004,7 +2031,11 @@ class SalesViewModel
             preserveFailure: Boolean = false,
             onlyIfQueryUnchanged: Boolean = false,
         ) {
-            cancelNameSearch()
+            // A diferencia de cancelNameSearch, escribir conserva la instantánea anterior: mientras
+            // corre la búsqueda de una consulta relacionada, la lista sigue visible en vez de
+            // vaciarse y mostrar la carga con cada tecla. Catálogo, negocio o asociación la anulan.
+            nameSearchJob?.cancel()
+            nameSearchJob = null
             val query = value.take(MAX_QUERY_LENGTH)
             nameSearchJob =
                 executeMain {
@@ -2608,20 +2639,43 @@ class SalesViewModel
             val businessId = activeBusinessId ?: return emptyList()
             val snapshot =
                 nameSearchSnapshot?.takeIf {
-                    it.businessId == businessId && it.query == query
+                    it.businessId == businessId && (it.query == query || isRelatedNameQuery(it.query, query))
                 } ?: return emptyList()
-            return snapshot.candidates.flatMap { candidate ->
+            val catalog = availableProductOptionsByProduct
+            nameSearchOptions?.let { cached ->
+                if (cached.snapshot === snapshot && cached.catalog === catalog) return cached.options
+            }
+            return projectNameSearchOptions(snapshot, catalog).also { options ->
+                nameSearchOptions = NameSearchOptions(snapshot, catalog, options)
+            }
+        }
+
+        /** Una consulta extiende o recorta la anterior: sus resultados siguen siendo pertinentes mientras llega la nueva. */
+        private fun isRelatedNameQuery(
+            previous: String,
+            current: String,
+        ): Boolean {
+            val before = previous.trim().lowercase(Locale.ROOT)
+            val after = current.trim().lowercase(Locale.ROOT)
+            return before.length >= MIN_NAME_QUERY_LENGTH && after.length >= MIN_NAME_QUERY_LENGTH &&
+                (after.startsWith(before) || before.startsWith(after))
+        }
+
+        private fun projectNameSearchOptions(
+            snapshot: NameSearchSnapshot,
+            catalog: Map<ProductId, List<SalesContract.ProductOption>>,
+        ): List<SalesContract.ProductOption> =
+            snapshot.candidates.flatMap { candidate ->
                 val matchKind =
                     when (candidate.reason) {
                         ProductMatchReason.EXACT_NAME -> SalesContract.NameMatchKind.EXACT
                         ProductMatchReason.SIMILAR_NAME -> SalesContract.NameMatchKind.SIMILAR
                         else -> return@flatMap emptyList()
                     }
-                availableProductOptionsByProduct[candidate.product.productId].orEmpty().map { option ->
+                catalog[candidate.product.productId].orEmpty().map { option ->
                     option.copy(nameMatchKind = matchKind)
                 }
             }
-        }
 
         private fun replaceProjectedProduct(product: Product) {
             val previousOptions = availableProductOptionsByProduct[product.productId].orEmpty()

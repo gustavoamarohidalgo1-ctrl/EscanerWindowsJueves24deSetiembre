@@ -31,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -68,6 +69,7 @@ import com.facturastock.app.ui.format.formatForDisplay
 import com.facturastock.app.ui.format.currencyLabelForDisplay
 import com.facturastock.app.ui.format.formatCurrencyAmountForDisplay
 import com.facturastock.app.ui.theme.FacturaStockDesign
+import kotlinx.coroutines.delay
 
 @Composable
 fun SalesScreen(
@@ -97,6 +99,12 @@ fun SalesScreen(
     LaunchedEffect(scannedBarcode) {
         if (scannedBarcode != null) listState.scrollToItem(0)
     }
+    // La tarjeta «Procesando…» entra arriba de la lista y desplaza todo el contenido. Una mutación
+    // breve (agregar un producto, guardar una línea) no debe moverla dos veces: sólo aparece si la
+    // operación supera [MUTATION_PROGRESS_DELAY_MILLIS]. Los controles se deshabilitan al instante.
+    val showMutationProgress =
+        rememberDelayedVisibility(state.isMutating && !state.isProcessingBarcode, MUTATION_PROGRESS_DELAY_MILLIS)
+
     LazyColumn(
         state = listState,
         modifier = modifier
@@ -230,7 +238,7 @@ fun SalesScreen(
                 }
             }
 
-            if (state.isMutating && !state.isProcessingBarcode) {
+            if (showMutationProgress) {
                 item(key = "progress", contentType = "loading") {
                     LoadingState(message = stringResource(R.string.sales_processing))
                 }
@@ -468,7 +476,9 @@ fun SalesScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                        } else if (state.isNameSearchRunning) {
+                        } else if (state.isNameSearchRunning && state.productOptions.isEmpty()) {
+                            // Con resultados de la consulta anterior la lista sigue visible mientras se
+                            // actualiza: la carga sólo ocupa su lugar cuando todavía no hay nada que mostrar.
                             item(key = "name_search_progress", contentType = "loading") {
                                 LoadingState(
                                     message = stringResource(R.string.sales_name_search_running),
@@ -635,10 +645,10 @@ fun SalesScreen(
                             SaleLineCard(
                                 line = line,
                                 currencyCode = state.currencyCode,
-                                editingEnabled = !state.isCheckoutPending && !state.isMutating && !state.catalogLoadFailed &&
-                                    !state.cartLoadFailed,
-                                removeEnabled = !state.isCheckoutPending && !state.isMutating && !state.isSavingLineEdits &&
+                                editingEnabled = !state.isCheckoutPending && !state.isBlockingMutation &&
                                     !state.catalogLoadFailed && !state.cartLoadFailed,
+                                removeEnabled = !state.isCheckoutPending && !state.isBlockingMutation &&
+                                    !state.isSavingLineEdits && !state.catalogLoadFailed && !state.cartLoadFailed,
                                 onAction = onAction,
                             )
                         }
@@ -1667,4 +1677,23 @@ private fun BarcodeReplacementDialog(
         dismissEnabled = !isMutating,
         modifier = Modifier.testTag(SalesTestTags.REPLACEMENT_DIALOG),
     )
+}
+
+/** Espera antes de mostrar la tarjeta de progreso de una mutación que no es un escaneo. */
+internal const val MUTATION_PROGRESS_DELAY_MILLIS = 400L
+
+/** `true` sólo mientras [active] lleve más de [delayMillis] activo; se oculta al instante. */
+@Composable
+private fun rememberDelayedVisibility(
+    active: Boolean,
+    delayMillis: Long,
+): Boolean {
+    val elapsed by produceState(initialValue = false, active) {
+        value = false
+        if (active) {
+            delay(delayMillis)
+            value = true
+        }
+    }
+    return active && elapsed
 }

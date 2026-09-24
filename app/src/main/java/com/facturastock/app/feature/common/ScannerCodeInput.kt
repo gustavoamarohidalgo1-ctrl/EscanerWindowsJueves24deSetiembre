@@ -8,6 +8,7 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
@@ -127,14 +128,13 @@ fun ScannerCodeInput(
                 view.onClearPhysicalInput = { currentClearPhysicalInput() }
                 view.onContentChanged = { hasText = it.isNotEmpty() }
                 view.onInvalidChanged = { invalid = it }
-                view.contentDescription = label
-                view.hint = hint
-                view.setTextColor(colors.onSurface.toArgb())
-                view.setHintTextColor(colors.onSurfaceVariant.toArgb())
-                view.backgroundTintList =
-                    ColorStateList.valueOf(
-                        if (invalid) colors.error.toArgb() else colors.outline.toArgb(),
-                    )
+                view.applyAppearance(
+                    label = label,
+                    hint = hint,
+                    textColor = colors.onSurface.toArgb(),
+                    hintColor = colors.onSurfaceVariant.toArgb(),
+                    underlineColor = if (invalid) colors.error.toArgb() else colors.outline.toArgb(),
+                )
                 view.setCaptureEnabled(active)
                 view.updatePhysicalInput(physicalInput)
                 view.syncSearchQuery(searchQuery)
@@ -217,12 +217,7 @@ internal class ScannerCodeEditText(
         imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         showSoftInputOnFocus = false
         isFocusableInTouchMode = true
-        setOnClickListener {
-            if (captureAllowed()) {
-                keyboardRequestedByUser = true
-                inputMethodManager?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
-            }
-        }
+        setOnClickListener { showKeyboardRequestedByUser() }
         setOnEditorActionListener { _, action, event ->
             if (event == null) handleEditorAction(action) else submit()
             true
@@ -265,6 +260,30 @@ internal class ScannerCodeEditText(
                 }
             },
         )
+    }
+
+    private var appliedUnderlineColor: Int? = null
+
+    /**
+     * El bloque update de AndroidView corre en cada recomposición del campo, incluido cada carácter
+     * del lector. `setHint` fuerza `checkForRelayout` y los colores invalidan la vista: aplicarlos
+     * sólo cuando cambian evita remedir el EditText y regenerar su layout con cada tecla.
+     */
+    fun applyAppearance(
+        label: String,
+        hint: String,
+        textColor: Int,
+        hintColor: Int,
+        underlineColor: Int,
+    ) {
+        if (contentDescription?.toString() != label) contentDescription = label
+        if (this.hint?.toString() != hint) this.hint = hint
+        if (currentTextColor != textColor) setTextColor(textColor)
+        if (currentHintTextColor != hintColor) setHintTextColor(hintColor)
+        if (appliedUnderlineColor != underlineColor) {
+            appliedUnderlineColor = underlineColor
+            backgroundTintList = ColorStateList.valueOf(underlineColor)
+        }
     }
 
     fun setCaptureEnabled(enabled: Boolean) {
@@ -357,7 +376,11 @@ internal class ScannerCodeEditText(
     // ACTION_MULTIPLE sigue siendo necesario para lectores que envían un bloque de texto virtual.
     @Suppress("DEPRECATION")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_MULTIPLE) {
+        // Sólo el lector físico cierra el teclado. Borrar o escribir números con el teclado en
+        // pantalla también llega como tecla, y cerrarlo ahí cortaba lo que la persona escribía.
+        if ((event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_MULTIPLE) &&
+            event.device?.isVirtual == false
+        ) {
             keepKeyboardClosedUnlessRequested()
         }
         if (event.keyCode in TERMINATOR_KEYS) {
@@ -510,6 +533,28 @@ internal class ScannerCodeEditText(
         if (!gainFocus) {
             connectionGeneration += 1L
             keyboardRequestedByUser = false
+        }
+    }
+
+    /**
+     * El primer toque sobre el campo sin foco sólo lo enfoca y Android no emite el clic: había que
+     * tocar dos veces para escribir. Cualquier toque terminado abre el teclado.
+     */
+    @SuppressLint("ClickableViewAccessibility") // El clic de accesibilidad sigue por el listener.
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val handled = super.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_UP && isEnabled) showKeyboardRequestedByUser()
+        return handled
+    }
+
+    /** Tocar el campo es la única forma de abrir el teclado; un escaneo nunca lo despliega. */
+    private fun showKeyboardRequestedByUser() {
+        if (!captureAllowed()) return
+        keyboardRequestedByUser = true
+        // Tras el foco que acaba de tomar el toque. Sin SHOW_IMPLICIT: es un pedido directo de la
+        // persona, y Android puede omitir uno implícito con el lector conectado como teclado físico.
+        post {
+            if (keyboardRequestedByUser && hasFocus()) inputMethodManager?.showSoftInput(this, 0)
         }
     }
 
