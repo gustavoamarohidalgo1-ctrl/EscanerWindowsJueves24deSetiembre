@@ -2130,7 +2130,7 @@ class SalesViewModelTest {
 
             // Se intentó la recuperación automática con el catálogo fresco, pero no encajó.
             assertEquals(listOf(NEW_BARCODE), products.barcodeLookups.map { it.second })
-            assertEquals(1, products.listForBusinessCalls)
+            assertEquals(1, products.catalogReadCalls)
             val state = viewModel.uiState.value
             assertNull(state.pendingAssociationBarcode)
             assertNull(state.barcodeSelectionReason)
@@ -3389,7 +3389,7 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned(barcode))
             runCurrent()
 
-            assertEquals(0, products.listForBusinessCalls)
+            assertEquals(0, products.catalogReadCalls)
             assertSame(unrelatedReadFailure, products.nextCatalogReadFailure)
             assertEquals(PRODUCT_ID, sales.saveLineCalls.single().productId)
             assertNull(sales.saveLineCalls.single().barcodeRecovery)
@@ -3399,7 +3399,7 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned(barcode))
             runCurrent()
 
-            assertEquals(0, products.listForBusinessCalls)
+            assertEquals(0, products.catalogReadCalls)
             assertEquals(1, sales.saveLineCalls.size)
             assertEquals(true, viewModel.uiState.value.lastScanAdded?.alreadyInCart)
             assertEquals(barcode, products.findById(PRODUCT_ID)?.barcode)
@@ -3414,7 +3414,7 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned("753176004930"))
             runCurrent()
 
-            assertEquals(1, products.listForBusinessCalls)
+            assertEquals(1, products.catalogReadCalls)
             assertNull(products.nextCatalogReadFailure)
             assertTrue(sales.saveLineCalls.isEmpty())
             assertEquals(SalesContract.Failure.SAVE_FAILED, viewModel.uiState.value.failure)
@@ -3430,7 +3430,9 @@ class SalesViewModelTest {
             viewModel.onAction(SalesContract.Action.BarcodeScanned(scanned))
             runCurrent()
 
-            assertEquals(1, products.listForBusinessCalls)
+            // Una lectura acotada por longitud detecta al competidor; sólo entonces se relee el
+            // catálogo con código/SKU para construir las opciones.
+            assertEquals(2, products.catalogReadCalls)
             assertTrue(sales.saveLineCalls.isEmpty())
             assertEquals(SalesContract.BarcodeSelectionReason.AMBIGUOUS, viewModel.uiState.value.barcodeSelectionReason)
             assertEquals(setOf(PRODUCT_ID, competitor.productId), viewModel.uiState.value.barcodeSuggestions.map { it.product.productId }.toSet())
@@ -4899,7 +4901,7 @@ class SalesViewModelTest {
         val barcodeLookups = mutableListOf<Pair<BusinessId, String>>()
         var observeForBusinessCalls: Int = 0
             private set
-        var listForBusinessCalls: Int = 0
+        var catalogReadCalls: Int = 0
             private set
         var nameSearchCalls: Int = 0
             private set
@@ -4921,12 +4923,31 @@ class SalesViewModelTest {
         }
 
         override suspend fun listForBusiness(businessId: BusinessId): List<Product> {
-            listForBusinessCalls += 1
+            countCatalogRead()
+            return delegate.listForBusiness(businessId)
+        }
+
+        // Las lecturas acotadas del escáner cuentan igual que una instantánea completa.
+        override suspend fun listScannerIdentityCandidates(businessId: BusinessId): List<Product> {
+            countCatalogRead()
+            return delegate.listScannerIdentityCandidates(businessId)
+        }
+
+        override suspend fun listByBarcodeLength(
+            businessId: BusinessId,
+            minLength: Int,
+            maxLength: Int,
+        ): List<Product> {
+            countCatalogRead()
+            return delegate.listByBarcodeLength(businessId, minLength, maxLength)
+        }
+
+        private fun countCatalogRead() {
+            catalogReadCalls += 1
             nextCatalogReadFailure?.let { failure ->
                 nextCatalogReadFailure = null
                 throw failure
             }
-            return delegate.listForBusiness(businessId)
         }
 
         override fun observeForBusiness(businessId: BusinessId): Flow<List<Product>> {

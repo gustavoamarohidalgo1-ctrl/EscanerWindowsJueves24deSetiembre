@@ -20,8 +20,10 @@ internal object StartupJourney {
     private const val ONBOARDING_SCREEN_TAG = "onboarding_screen"
     private const val BUSINESS_NAME_TAG = "onboarding_business_name"
     private const val SUBMIT_TAG = "onboarding_submit"
-    private const val SALES_READY_TAG = "sales_entry_kind_screen"
-    private const val SALES_CASH_ENTRY_TAG = "sales_cash_entry"
+    // Vender abre directamente la venta al contado con el lector; ya no existe la selección previa.
+    // El campo nativo del lector no publica su tag a UiAutomator. «Reiniciar lector» sí lo hace
+    // y se habilita en cuanto el lector acepta lecturas (agregar exige además texto escrito).
+    private const val SALES_READY_TAG = "scanner_code_reset"
     private const val BENCHMARK_BUSINESS_NAME = "BenchmarkBusiness"
     private const val SUPPRESS_DEFERRED_STARTUP_EXTRA =
         "com.facturastock.app.performance.SUPPRESS_DEFERRED_STARTUP"
@@ -68,22 +70,16 @@ internal object StartupJourney {
         device.waitForIdle()
     }
 
-    /** La primera selección de Vender está lista cuando muestra su acción de contado habilitada. */
+    /** Vender está lista cuando habilita la acción del lector de la venta al contado. */
     fun waitForSalesReady(device: UiDevice) {
-        check(
+        checkNotNull(
             device.wait(
-                Until.hasObject(By.res(SALES_READY_TAG)),
+                Until.findObject(By.res(SALES_READY_TAG).enabled(true)),
                 SALES_TIMEOUT_MS,
             ),
         ) {
-            "Vender no publicó la selección de tipo de venta ($SALES_READY_TAG)"
+            "Vender no habilitó la acción del lector ($SALES_READY_TAG)"
         }
-        checkNotNull(
-            device.wait(
-                Until.findObject(By.res(SALES_CASH_ENTRY_TAG).enabled(true).clickable(true)),
-                SALES_TIMEOUT_MS,
-            ),
-        ) { "Vender no habilitó la acción de venta al contado ($SALES_CASH_ENTRY_TAG)" }
         device.waitForIdle()
     }
 

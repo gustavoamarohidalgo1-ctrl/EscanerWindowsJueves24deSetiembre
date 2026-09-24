@@ -58,6 +58,27 @@ fun SalesRoute(
     val currentExitRegistration by rememberUpdatedState(onExitRequestAvailable)
     val lifecycleOwner = LocalLifecycleOwner.current
     val consumeRegistrationResult by rememberUpdatedState(onRegistrationResultConsumed)
+    // Un callback estable evita recomponer cada tarjeta de producto/carrito en cada emisión del
+    // estado (cada lectura emite varias). Lee los valores vigentes al ejecutarse la acción.
+    val latestState by rememberUpdatedState(state)
+    val latestAllowEntryKindSelection by rememberUpdatedState(allowEntryKindSelection)
+    val latestOnExitCancelled by rememberUpdatedState(onExitCancelled)
+    val screenAction: (SalesContract.Action) -> Unit =
+        remember(viewModel) {
+            { action ->
+                if (action == SalesContract.Action.DiscardEditsDismissed) {
+                    latestOnExitCancelled()
+                }
+                if (action == SalesContract.Action.StepBackSelected &&
+                    !latestAllowEntryKindSelection &&
+                    latestState.entryStep == SalesContract.EntryStep.SELECT_MODE
+                ) {
+                    viewModel.onAction(SalesContract.Action.BackSelected)
+                } else {
+                    viewModel.onAction(action)
+                }
+            }
+        }
     var physicalInput by remember(viewModel) { mutableStateOf("") }
     val clearScannerInput = {
         KeyboardWedgeRouter.reset()
@@ -234,18 +255,7 @@ fun SalesRoute(
             }
             SalesScreen(
                 state = state,
-                onAction = { action ->
-                    if (action == SalesContract.Action.DiscardEditsDismissed) {
-                        onExitCancelled()
-                    }
-                    if (action == SalesContract.Action.StepBackSelected &&
-                        !allowEntryKindSelection && state.entryStep == SalesContract.EntryStep.SELECT_MODE
-                    ) {
-                        viewModel.onAction(SalesContract.Action.BackSelected)
-                    } else {
-                        viewModel.onAction(action)
-                    }
-                },
+                onAction = screenAction,
                 modifier = Modifier.weight(1f),
                 allowEntryKindSelection = allowEntryKindSelection,
                 showScannerStatus = false,

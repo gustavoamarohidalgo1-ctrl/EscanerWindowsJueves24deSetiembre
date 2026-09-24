@@ -1259,15 +1259,19 @@ class SalesViewModel
             // Un código personalizado exacto puede ser también una lectura truncada de otro GTIN.
             // Nunca se sustituye por el código largo: ambos requieren una elección explícita.
             if (requiresSuspiciousExactBarcodeReview(scan.value)) {
-                val catalog = withContext(dispatcherProvider.io) { products.listForBusiness(scan.businessId) }
+                // Sólo un código guardado 1–2 dígitos más largo puede competir con este exacto:
+                // SQLite los filtra sin materializar el catálogo completo en cada lectura.
+                val lengthCandidates = withContext(dispatcherProvider.io) {
+                    products.listByBarcodeLength(scan.businessId, scan.value.length + 1, scan.value.length + 2)
+                }
                 val competitors = withContext(dispatcherProvider.default) {
-                    findSuspiciousExactBarcodeMatches(scan.value, scan.businessId, product.productId, catalog)
+                    findSuspiciousExactBarcodeMatches(scan.value, scan.businessId, product.productId, lengthCandidates)
                 }
                 if (!scan.isCurrent()) return
                 if (competitors.isNotEmpty()) {
                     showBarcodeChoices(
-                        scan, catalog, SalesContract.BarcodeSelectionReason.AMBIGUOUS,
-                        listOf(product.productId) + competitors.map { it.productId },
+                        scan, reason = SalesContract.BarcodeSelectionReason.AMBIGUOUS,
+                        preferredProductIds = listOf(product.productId) + competitors.map { it.productId },
                     )
                     return
                 }
@@ -1301,12 +1305,12 @@ class SalesViewModel
 
         private suspend fun showBarcodeChoices(
             scan: QueuedBarcode,
-            snapshot: List<Product>? = null,
             reason: SalesContract.BarcodeSelectionReason? = null,
             preferredProductIds: List<ProductId> = emptyList(),
         ) {
-            val catalog = snapshot ?: withContext(dispatcherProvider.io) {
-                products.listForBusiness(scan.businessId)
+            // Sólo productos con código o SKU pueden coincidir; el resto nunca aparece como opción.
+            val catalog = withContext(dispatcherProvider.io) {
+                products.listScannerIdentityCandidates(scan.businessId)
             }
             if (!scan.isCurrent()) return
             val eligible = catalog.filter { it.businessId == scan.businessId && it.status == CatalogStatus.ACTIVE }
@@ -1363,7 +1367,7 @@ class SalesViewModel
 
         private suspend fun tryAutomaticBarcodeRecovery(scan: QueuedBarcode): Boolean {
             // La consulta fresca también cubre altas/cambios cuya proyección visual aún no emitió.
-            val catalog = withContext(dispatcherProvider.io) { products.listForBusiness(scan.businessId) }
+            val catalog = withContext(dispatcherProvider.io) { products.listScannerIdentityCandidates(scan.businessId) }
             val candidate = withContext(dispatcherProvider.default) {
                 findAutomaticBarcodeRecovery(scan.value, scan.businessId, catalog)
             } ?: return false
@@ -1394,7 +1398,9 @@ class SalesViewModel
         }
 
         private suspend fun isBarcodeRecoveryCurrent(recovery: PendingBarcodeRecovery): Boolean {
-            val catalog = withContext(dispatcherProvider.io) { products.listForBusiness(recovery.scan.businessId) }
+            val catalog = withContext(dispatcherProvider.io) {
+                products.listScannerIdentityCandidates(recovery.scan.businessId)
+            }
             val match = withContext(dispatcherProvider.default) {
                 findAutomaticBarcodeRecovery(recovery.scan.value, recovery.scan.businessId, catalog)
             }

@@ -500,6 +500,26 @@ class RoomProductRepository @Inject constructor(
             storageCatching { productDao.listForBusiness(businessId.value).map(ProductEntity::toDomain) }
         }
 
+    override suspend fun listScannerIdentityCandidates(businessId: BusinessId): List<Product> =
+        withContext(dispatchers.io) {
+            storageCatching {
+                productDao.listScannerIdentityCandidates(businessId.value).map(ProductEntity::toDomain)
+            }
+        }
+
+    override suspend fun listByBarcodeLength(
+        businessId: BusinessId,
+        minLength: Int,
+        maxLength: Int,
+    ): List<Product> =
+        withContext(dispatchers.io) {
+            storageCatching {
+                productDao
+                    .listByBarcodeLength(businessId.value, minLength, maxLength)
+                    .map(ProductEntity::toDomain)
+            }
+        }
+
     override suspend fun archive(productId: ProductId): Boolean = setStatus(
         productId,
         CatalogStatus.ARCHIVED,

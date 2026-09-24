@@ -72,6 +72,7 @@ class ReportsViewModel @Inject constructor(
                 observeSelectedPeriod(keepCurrentContent = uiState.value.report != null)
             }
             ReportsContract.Action.Resumed -> resumeObservation()
+            ReportsContract.Action.Stopped -> pauseObservation()
             is ReportsContract.Action.VoidRequested -> requestVoid(action.saleId)
             ReportsContract.Action.VoidConfirmed -> confirmVoid()
             ReportsContract.Action.VoidDismissed -> if (!voidCommitPending) {
@@ -275,6 +276,24 @@ class ReportsViewModel @Inject constructor(
 
     private data class PdfContext(val requestId: String, val businessId: BusinessId, val currency: CurrencyCode, val zoneId: ZoneId) {
         fun matches(report: SalesReport): Boolean = report.businessId == businessId && report.primaryCurrency == currency && report.range.zoneId == zoneId
+    }
+
+    /**
+     * Reportes permanece en la pila al cambiar de pestaña y su consulta observa ventas y líneas:
+     * sin pausa, cada producto agregado en Ventas recalcularía el periodo completo en segundo
+     * plano. Solo se pausa sin anulaciones ni PDF en curso, que dependen de las emisiones vivas;
+     * [resumeObservation] reabre la consulta conservando el contenido visible.
+     */
+    private fun pauseObservation() {
+        if (voidCommitPending || voidPreviewPending || voidContext != null ||
+            pdfPreparationJob?.isActive == true || pdfPickerRequestId != null || pdfWritePending
+        ) {
+            return
+        }
+        observation?.cancel()
+        observation = null
+        rangeBoundaryRefresh?.cancel()
+        rangeBoundaryRefresh = null
     }
 
     private fun resumeObservation() {

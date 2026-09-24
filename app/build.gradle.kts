@@ -1899,18 +1899,16 @@ val verifyR8ReleaseConfiguration by tasks.registering {
             "El perfil debe recorrer el arranque hasta que Vender esté operativo"
         }
         val startupJourneyText = startupJourney.asFile.readText()
+        // Vender abre directamente la venta al contado: el recorrido espera el lector habilitado.
         check(
             startupJourneyText.contains(
-                "private const val SALES_READY_TAG = \"sales_entry_kind_screen\"",
-            ) && startupJourneyText.contains("Until.hasObject(By.res(SALES_READY_TAG))") &&
+                "private const val SALES_READY_TAG = \"scanner_code_reset\"",
+            ) &&
                 startupJourneyText.contains(
-                    "private const val SALES_CASH_ENTRY_TAG = \"sales_cash_entry\"",
-                ) &&
-                startupJourneyText.contains(
-                    "Until.findObject(By.res(SALES_CASH_ENTRY_TAG).enabled(true).clickable(true))",
+                    "Until.findObject(By.res(SALES_READY_TAG).enabled(true))",
                 ),
         ) {
-            "El recorrido de perfil debe esperar el selector de ventas y su acción habilitada"
+            "El recorrido de perfil debe esperar el lector de Vender habilitado"
         }
     }
 }

@@ -65,6 +65,8 @@ object ReportsContract {
         data class PeriodSelected(val period: SalesReportPeriod) : Action
         data object Retry : Action
         data object Resumed : Action
+        /** La pantalla dejó de ser visible; la consulta en vivo puede pausarse hasta [Resumed]. */
+        data object Stopped : Action
         data class VoidRequested(val saleId: SaleId) : Action
         data object VoidConfirmed : Action
         data object VoidDismissed : Action

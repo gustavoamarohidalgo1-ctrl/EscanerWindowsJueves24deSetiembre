@@ -150,6 +150,40 @@ class ReportsViewModelTest {
         }
 
     @Test
+    fun `stopping pauses the live report and resuming reopens it keeping visible content`() =
+        runTest(context = mainDispatcherRule.dispatcher) {
+            completeOnboarding()
+            val viewModel = viewModel()
+            val states = mutableListOf<ReportsContract.State>()
+            val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.uiState.collect { states += it }
+            }
+            try {
+                runCurrent()
+                assertEquals(1, sales.observedProfitRequests.size)
+                val shown = viewModel.uiState.value.report
+                assertTrue(shown != null)
+
+                viewModel.onAction(ReportsContract.Action.Stopped)
+                runCurrent()
+                // Pausar no borra el contenido ni emite estados de carga.
+                assertEquals(shown, viewModel.uiState.value.report)
+                assertFalse(viewModel.uiState.value.isLoading)
+
+                states.clear()
+                viewModel.onAction(ReportsContract.Action.Resumed)
+                runCurrent()
+                assertEquals(2, sales.observedProfitRequests.size)
+                assertTrue(states.none { it.report == null || it.isLoading })
+                assertFalse(viewModel.uiState.value.isRefreshing)
+                assertEquals(shown!!.range, viewModel.uiState.value.report?.range)
+            } finally {
+                collector.cancel()
+                viewModel.viewModelScope.cancel()
+            }
+        }
+
+    @Test
     fun `a later resume after the displayed range expired recalculates calendar boundaries`() =
         runTest(context = mainDispatcherRule.dispatcher) {
             completeOnboarding()

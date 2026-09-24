@@ -310,6 +310,27 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE businessId = :businessId ORDER BY productId")
     suspend fun listForBusiness(businessId: String): List<ProductEntity>
 
+    /**
+     * Productos que pueden explicar una lectura del escáner: sin código ni SKU nunca coinciden.
+     * SQLite filtra sin materializar el resto del catálogo; el orden no afecta a los consumidores.
+     */
+    @Query(
+        "SELECT * FROM products WHERE businessId = :businessId " +
+            "AND (barcode IS NOT NULL OR sku IS NOT NULL)",
+    )
+    suspend fun listScannerIdentityCandidates(businessId: String): List<ProductEntity>
+
+    /** Códigos guardados de longitud acotada; un exacto truncado sólo compite con 1–2 dígitos más. */
+    @Query(
+        "SELECT * FROM products WHERE businessId = :businessId AND barcode IS NOT NULL " +
+            "AND length(barcode) BETWEEN :minLength AND :maxLength ORDER BY productId",
+    )
+    suspend fun listByBarcodeLength(
+        businessId: String,
+        minLength: Int,
+        maxLength: Int,
+    ): List<ProductEntity>
+
     @Query("SELECT COUNT(*) FROM products WHERE businessId = :businessId")
     suspend fun countForBusiness(businessId: String): Int
 

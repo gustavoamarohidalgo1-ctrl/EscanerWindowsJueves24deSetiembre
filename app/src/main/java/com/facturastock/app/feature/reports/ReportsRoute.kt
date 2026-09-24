@@ -101,8 +101,10 @@ fun ReportsRoute(
 
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.onAction(ReportsContract.Action.Resumed)
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onAction(ReportsContract.Action.Resumed)
+                Lifecycle.Event.ON_STOP -> viewModel.onAction(ReportsContract.Action.Stopped)
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

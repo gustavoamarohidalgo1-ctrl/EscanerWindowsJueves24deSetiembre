@@ -174,6 +174,24 @@ interface ProductRepository {
     suspend fun listForBusiness(businessId: BusinessId): List<Product> =
         observeForBusiness(businessId).first()
 
+    /**
+     * Subconjunto de [listForBusiness] con código de barras o SKU, incluidos archivados y
+     * agotados. Un producto sin ninguno de los dos nunca coincide con una lectura del escáner,
+     * así que cualquier evaluación de identidad sobre este subconjunto equivale a la completa.
+     */
+    suspend fun listScannerIdentityCandidates(businessId: BusinessId): List<Product> =
+        listForBusiness(businessId).filter { it.barcode != null || it.sku != null }
+
+    /** Subconjunto de [listForBusiness] cuyo código guardado mide entre ambos límites. */
+    suspend fun listByBarcodeLength(
+        businessId: BusinessId,
+        minLength: Int,
+        maxLength: Int,
+    ): List<Product> =
+        listForBusiness(businessId).filter { product ->
+            product.barcode?.length?.let { it in minLength..maxLength } == true
+        }
+
     /** Archivo lógico sobre la versión vigente; nunca elimina saldos ni historia. */
     suspend fun archive(productId: ProductId): Boolean
 

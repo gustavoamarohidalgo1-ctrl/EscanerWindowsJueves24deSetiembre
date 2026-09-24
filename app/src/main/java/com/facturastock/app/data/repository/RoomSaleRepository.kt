@@ -272,9 +272,11 @@ class RoomSaleRepository @Inject constructor(
             ) {
                 return SaleCartMutationResult.BarcodeRecoveryChanged
             }
-            // Releer sólo el candidato no detecta un nuevo competidor. El catálogo completo se
-            // evalúa bajo la misma transacción que insertará la línea, sin filtrar stock o estado.
-            val catalog = database.productDao().listForBusiness(businessId.value).map { it.toDomain() }
+            // Releer sólo el candidato no detecta un nuevo competidor. El catálogo se evalúa bajo la
+            // misma transacción que insertará la línea, sin filtrar stock o estado; se omiten sólo
+            // productos sin código ni SKU, que nunca pueden coincidir con la lectura.
+            val catalog =
+                database.productDao().listScannerIdentityCandidates(businessId.value).map { it.toDomain() }
             val match = findAutomaticBarcodeRecovery(expectation.scannedBarcode, businessId, catalog)
             if (match == null || match.productId != command.productId ||
                 match.barcode != expectation.expectedStoredBarcode
